@@ -16,6 +16,7 @@ A lire en debut de chaque session si la tache touche du code TACTICA.
 - Tailwind CSS + Radix UI (Dialog, Dropdown, Tooltip)
 - Supabase (auth, BDD, Realtime, Edge Functions)
 - react-router-dom v6
+- sonner (toasts)
 - Zod pour la validation
 - Vitest pour les tests
 
@@ -84,7 +85,7 @@ Regles non negociables :
 
 ## Pieges connus
 
-A enrichir au fil des phases. En Phase 0 :
+A enrichir au fil des phases.
 
 1. Melanger les conventions de coordonnees hex (axial / offset / cubique). Tout passe par les fonctions de conversion centralisees dans `engine/hex/`.
 2. Oublier la RLS sur une table. Verifier dans le dashboard Supabase apres chaque migration : icone cadenas visible.
@@ -93,3 +94,5 @@ A enrichir au fil des phases. En Phase 0 :
 5. Confondre Y et Z dans Three.js. Conversion uniquement a la frontiere du module render.
 6. Coupler un composant render a une echelle. `<TacticalScene>` peut connaitre sa scale, mais `<HexGrid>` non.
 7. Creer une Edge Function `resolve_tactical_turn` au lieu de `resolve_turn(scale)`.
+8. **RLS recursive entre 2 tables qui se referencent**. Cause : policy A fait `EXISTS (SELECT FROM B)`, policy B fait `EXISTS (SELECT FROM A)` -> Postgres detecte une recursion infinie. Vu sur `games` <-> `game_players` au Lot 4 (migration 003 puis 004). Fix : creer des fonctions `SECURITY DEFINER` qui contournent la RLS pour le check booleen, puis utiliser ces fonctions dans les policies. Pattern : `is_player_in_game(_game_id uuid)`, `is_game_host(_game_id uuid)`, etc. Toujours `revoke execute from public, anon` + `grant execute to authenticated`. Detection : erreur Postgres "infinite recursion detected in policy for relation".
+9. **Policies legacy non supprimees lors d'une migration de fix RLS**. Postgres combine TOUTES les policies PERMISSIVE en OR : si on ecrit une nouvelle policy "propre" sans dropper les anciennes, les anciennes restent actives et peuvent re-introduire la recursion. Vu au Lot 4 (migration 005). Fix : toujours `DROP POLICY IF EXISTS` les anciennes par leur nom exact (verifier via `select policyname from pg_policies where tablename = '...'`).

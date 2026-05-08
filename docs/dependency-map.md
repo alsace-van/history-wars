@@ -15,6 +15,7 @@ src/lib/env.ts
 src/lib/supabase.ts
   <- src/hooks/useAuth.ts
   <- src/hooks/useGames.ts
+  <- src/hooks/useGame.ts
   <- src/hooks/useRealtime.ts
 ```
 
@@ -28,6 +29,8 @@ src/lib/cn.ts
   <- src/ui/components/PasswordInput.tsx
   <- src/ui/lobby/GameCard.tsx
   <- src/ui/pages/Lobby.tsx
+  <- src/ui/pages/Game.tsx
+  <- src/ui/game/PlayerSlot.tsx
 
 src/ui/components/Label.tsx
   <- src/ui/components/PasswordInput.tsx
@@ -56,6 +59,7 @@ src/hooks/useAuth.ts
 
 src/hooks/useRequireAuth.ts
   <- src/ui/pages/Lobby.tsx
+  <- src/ui/pages/Game.tsx
 
 src/ui/pages/Auth.tsx
   <- src/App.tsx
@@ -64,25 +68,31 @@ src/App.tsx
   <- src/main.tsx
 ```
 
-## Lot 4 (sous-lots 4A + 4B)
+## Lot 4 (sous-lots 4A + 4B + 4C)
 
 ```
 src/types/game.ts
   <- src/hooks/useGames.ts
+  <- src/hooks/useGame.ts
   <- src/ui/lobby/GameCard.tsx
   <- src/ui/lobby/CreateGameDialog.tsx
   <- src/ui/pages/Lobby.tsx
+  <- src/ui/pages/Game.tsx
+  <- src/ui/game/PlayerSlot.tsx
 
 src/hooks/useGames.ts
   <- src/ui/pages/Lobby.tsx
 
+src/hooks/useGame.ts
+  <- src/ui/pages/Game.tsx
+
 src/hooks/useRealtime.ts
   <- src/ui/pages/Lobby.tsx
-  (sera importe par Game.tsx au sous-lot 4C)
+  <- src/ui/pages/Game.tsx
 
 src/ui/layout/PageBackground.tsx
   <- src/ui/pages/Lobby.tsx
-  (sera importe par Game.tsx au sous-lot 4C)
+  <- src/ui/pages/Game.tsx
 
 src/ui/lobby/GameCard.tsx
   <- src/ui/pages/Lobby.tsx
@@ -90,17 +100,23 @@ src/ui/lobby/GameCard.tsx
 src/ui/lobby/CreateGameDialog.tsx
   <- src/ui/pages/Lobby.tsx
 
+src/ui/game/PlayerSlot.tsx
+  <- src/ui/pages/Game.tsx
+
 src/ui/pages/Lobby.tsx
+  <- src/App.tsx
+
+src/ui/pages/Game.tsx
   <- src/App.tsx
 ```
 
-**Fichiers supprimes** (sous-lot 4B) :
+**Fichiers supprimes** (Lot 4) :
 ```
 src/ui/pages/Home.tsx                          [remplace par redirection / -> /lobby]
 src/ui/auth/scenes/SceneInfantryMarch.tsx      [non importe depuis Lot 2 Session 4]
-src/ui/auth/scenes/SceneCavalryCharge.tsx      [non importe depuis Lot 2 Session 4]
-src/ui/auth/scenes/SceneBattleFormation.tsx    [non importe depuis Lot 2 Session 4]
-src/ui/auth/scenes/SceneTopoMap.tsx            [non importe depuis Lot 2 Session 4]
+src/ui/auth/scenes/SceneCavalryCharge.tsx
+src/ui/auth/scenes/SceneBattleFormation.tsx
+src/ui/auth/scenes/SceneTopoMap.tsx
 ```
 
 ---
