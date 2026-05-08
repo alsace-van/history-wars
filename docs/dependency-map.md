@@ -42,7 +42,19 @@ src/ui/components/PasswordInput.tsx
   <- src/ui/pages/Auth.tsx
 
 src/ui/components/Typewriter.tsx
-  <- src/ui/pages/Auth.tsx
+  <- src/ui/auth/AuthBackground.tsx
+
+src/ui/auth/scenes/SceneInfantryMarch.tsx
+  <- src/ui/auth/AuthBackground.tsx
+
+src/ui/auth/scenes/SceneCavalryCharge.tsx
+  <- src/ui/auth/AuthBackground.tsx
+
+src/ui/auth/scenes/SceneBattleFormation.tsx
+  <- src/ui/auth/AuthBackground.tsx
+
+src/ui/auth/scenes/SceneTopoMap.tsx
+  <- src/ui/auth/AuthBackground.tsx
 
 src/ui/auth/AuthBackground.tsx
   <- src/ui/pages/Auth.tsx

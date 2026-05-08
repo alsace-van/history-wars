@@ -4,6 +4,33 @@ Journal des sessions de developpement, plus recente en haut. Maximum 10 entrees,
 
 ---
 
+## Session 3 &mdash; 08/05/2026 &mdash; Lot 2 addendum carrousel
+
+**Fait** :
+- Refonte de `AuthBackground.tsx` en carrousel automatique : 4 slides, tempo 8s, transition fade 1s, effet Ken Burns (zoom 1.08x + leger translate sur 9s).
+- 4 scenes SVG separees dans `src/ui/auth/scenes/` :
+  - `SceneInfantryMarch.tsx` (l'originale, infanterie en marche + lune + grille hex)
+  - `SceneCavalryCharge.tsx` (cavaliers au galop + poussiere)
+  - `SceneBattleFormation.tsx` (formations carrees vues du dessus, drapeaux, deux camps)
+  - `SceneTopoMap.tsx` (carte topographique style etat-major, courbes de niveau, riviere, villages)
+- Citations defilent en sync avec les images (4 citations, une par slide). Le Typewriter se reset a chaque changement de slide via cle React.
+- `Auth.tsx` simplifie : la zone citation disparait du composant, gere par `AuthBackground`. La page mode-specifique ne contient plus que titre + sous-titre + formulaire cote gauche.
+- Tailwind config etendue avec keyframe `kenburns` et animation `animate-kenburns`.
+
+**A faire cote utilisateur** :
+- Dezipper sur le dossier existant (ecrase Auth.tsx, AuthBackground.tsx, tailwind.config.js, WIP.md, dependency-map.md ; ajoute les 4 scenes).
+- `npm run dev` (pas de nouvelles deps).
+- Tester : aller sur `/auth?mode=signin`, voir les 4 images defiler toutes les 8 secondes avec un leger zoom, et la citation changer en sync.
+
+**Decisions** :
+- Les SVG restent placeholders. Quand l'utilisateur trouvera ses 3-4 vraies gravures/cartes, il suffira de remplacer le tableau `SLIDES` dans `AuthBackground.tsx` par des `<img src="..." />` ou des composants Scene custom.
+- Les citations sont independantes du mode (signin/signup/reset). Quel que soit le mode, le carrousel droite tourne. Le titre/sous-titre cote formulaire reste lui mode-specifique.
+
+**Prochain Lot** :
+- Lot 3 : Lobby (creer/lister/rejoindre une partie) + Realtime sync 2 onglets. Avant : maquette HTML du lobby.
+
+---
+
 ## Session 2 &mdash; 08/05/2026 &mdash; Phase 0 Lot 2
 
 **Fait** :
@@ -14,44 +41,30 @@ Journal des sessions de developpement, plus recente en haut. Maximum 10 entrees,
 - Nouvelles deps installees (a faire `npm install` cote utilisateur) : `@radix-ui/react-slot`, `@radix-ui/react-label`, `class-variance-authority`, `clsx`, `lucide-react`, `tailwind-merge`, `tailwindcss-animate`.
 - Tailwind config etendue avec systeme shadcn (CSS variables HSL : `--background`, `--foreground`, `--primary`, etc.) en plus des tokens custom TACTICA.
 - `src/index.css` avec definitions CSS variables dark mode.
-- Composants atomes ajoutes :
-  - `src/ui/components/Label.tsx` (Radix Label)
-  - `src/ui/components/Input.tsx`
-  - `src/ui/components/Button.tsx` (variants : default, outline, ghost, link, destructive)
-  - `src/ui/components/PasswordInput.tsx` (toggle eye/eye-off)
-  - `src/ui/components/Typewriter.tsx` (effet machine a ecrire)
-- `src/ui/auth/AuthBackground.tsx` : illustration SVG champ de bataille (silhouettes + grille hex). Placeholder, remplaceable par image historique plus tard.
-- `src/ui/pages/Auth.tsx` : page split-screen complete avec 4 modes via query param `?mode=signin|signup|reset|update-password`. Toggle in-place, transition `animate-slide-up`.
-- `src/ui/pages/Home.tsx` : page d'accueil placeholder protegee, charge le pseudo depuis `profiles`, bouton de deconnexion.
-- `src/hooks/useAuth.ts` : session + signUp + signIn + signOut + resetPassword + updatePassword.
-- `src/hooks/useRequireAuth.ts` : redirige vers `/auth?mode=signin` si pas connecte.
-- `src/lib/cn.ts` : utilitaire clsx + tailwind-merge.
-- `src/App.tsx` : router avec routes `/` (Home, protegee), `/auth` (Auth), fallback redirect `/`.
-
-**A faire cote utilisateur** :
-- `npm install` (nouvelles deps).
-- Configurer Supabase Auth :
-  - Dashboard > Authentication > URL Configuration.
-  - Site URL : `http://localhost:5173`.
-  - Ajouter `http://localhost:5173/**` dans Redirect URLs (necessaire pour reset password).
-- `npm run dev`.
-- Tester :
-  1. Aller sur `http://localhost:5173` -> redirection vers `/auth?mode=signin`.
-  2. Cliquer "Creer un compte" -> URL devient `?mode=signup`, formulaire bascule.
-  3. Creer un compte avec email + pseudo + password.
-  4. Verifier dans Supabase Dashboard > Table Editor que le profil est cree dans `profiles`.
-  5. Confirmer l'email (clic sur lien dans la boite mail).
-  6. Se connecter -> redirection vers `/` qui affiche "Bienvenue, [pseudo]".
-  7. Se deconnecter -> redirection vers `/auth`.
-  8. Tester "Mot de passe oublie" (necessite que le Site URL soit configure).
-- `npm run tsc` doit passer 0 erreur.
-- Premier commit Lot 2 sur GitHub.
-
-**Decisions** :
-- Pas de toast UI (sonner) pour le Lot 2, messages d'erreur in-form. Sera reconsidere Lot 3 si besoin.
-- Pas de protection des routes via composant `<ProtectedRoute>` mais via hook `useRequireAuth` dans la page elle-meme. Plus simple, pas besoin de composant wrapper.
-- Tailwind config etendue (pas remplacee) : on garde les tokens TACTICA existants en plus des variables shadcn pour les composants atomes.
-- Citations historiques verifiees, pas inventees : Napoleon (signin, reset), Sun Tzu (signup), Clausewitz (update-password).
+- Composants atomes ajoutes : `Label`, `Input`, `Button`, `PasswordInput`, `Typewriter`.
+- `AuthBackground.tsx` initial avec un seul SVG.
+- `Auth.tsx` : page split-screen 4 modes (`?mode=signin|signup|reset|update-password`).
+- `Home.tsx` : page d'accueil placeholder protegee.
+- Hooks : `useAuth`, `useRequireAuth`.
+- `cn.ts` utility clsx + tailwind-merge.
+- `App.tsx` : router avec `/` (Home protegee) et `/auth`.
 
 **Prochain Lot** :
-- Lot 3 : Lobby (creer/lister/rejoindre une partie) + Realtime sync 2 onglets. Avant : maquette HTML du lobby.
+- Lot 3 : Lobby + Realtime.
+
+---
+
+## Session 1 &mdash; 08/05/2026 &mdash; Phase 0 Lot 1
+
+**Fait** :
+- Initialisation du projet Vite + React 18 + TypeScript strict.
+- Configuration Tailwind, Radix, alias d'imports (`@/`, `@engine/`, `@render/`, `@ui/`, `@hooks/`, `@lib/`).
+- Structure de dossiers complete `src/{engine,render,ui,hooks,types,styles,lib}` avec README placeholders.
+- Validation Zod des env vars (`src/lib/env.ts`).
+- Client Supabase singleton (`src/lib/supabase.ts`).
+- Page d'accueil minimale (App.tsx) qui affiche TACTICA + statut config Supabase.
+- `.env.local` rempli avec credentials projet "history wars".
+- Documentation initiale.
+
+**Prochain Lot** :
+- Lot 2 : Supabase + auth.

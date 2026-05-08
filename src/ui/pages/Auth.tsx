@@ -1,3 +1,5 @@
+// v1.0b (08/05/2026) — citation deplacee dans AuthBackground (carrousel)
+// v1.0a (08/05/2026) — typage NavigateFunction propre
 // v1.0 (08/05/2026) — Page auth split-screen, 4 modes via query param
 import { useState, useEffect, type FormEvent } from 'react'
 import { useNavigate, useSearchParams, type NavigateFunction } from 'react-router-dom'
@@ -5,7 +7,6 @@ import { Label } from '@ui/components/Label'
 import { Input } from '@ui/components/Input'
 import { Button } from '@ui/components/Button'
 import { PasswordInput } from '@ui/components/PasswordInput'
-import { Typewriter } from '@ui/components/Typewriter'
 import { AuthBackground } from '@ui/auth/AuthBackground'
 import { useAuth } from '@hooks/useAuth'
 
@@ -13,31 +14,11 @@ type Mode = 'signin' | 'signup' | 'reset' | 'update-password'
 
 const VALID_MODES: Mode[] = ['signin', 'signup', 'reset', 'update-password']
 
-const COPY: Record<Mode, { title: string; subtitle: string; quote: string; author: string }> = {
-  signin: {
-    title: 'Connexion',
-    subtitle: 'Reprenez le commandement',
-    quote: 'Le genie de la guerre est de bien voir tout d\'un coup d\'oeil.',
-    author: 'Napoleon Bonaparte'
-  },
-  signup: {
-    title: 'Creer un compte',
-    subtitle: 'Rejoignez la Grande Armee',
-    quote: 'Connaitre l\'adversaire et se connaitre soi-meme : en cent batailles, jamais en peril.',
-    author: 'Sun Tzu'
-  },
-  reset: {
-    title: 'Mot de passe oublie',
-    subtitle: 'On vous renvoie en formation',
-    quote: 'En guerre, le moral fait les trois quarts ; les forces reelles, l\'autre quart.',
-    author: 'Napoleon Bonaparte'
-  },
-  'update-password': {
-    title: 'Nouveau mot de passe',
-    subtitle: 'Reformez les rangs',
-    quote: 'La guerre est la continuation de la politique par d\'autres moyens.',
-    author: 'Clausewitz'
-  }
+const COPY: Record<Mode, { title: string; subtitle: string }> = {
+  signin: { title: 'Connexion', subtitle: 'Reprenez le commandement' },
+  signup: { title: 'Creer un compte', subtitle: 'Rejoignez la Grande Armee' },
+  reset: { title: 'Mot de passe oublie', subtitle: 'On vous renvoie en formation' },
+  'update-password': { title: 'Nouveau mot de passe', subtitle: 'Reformez les rangs' }
 }
 
 function getMode(raw: string | null): Mode {
@@ -89,19 +70,6 @@ export function Auth() {
 
       <div className="hidden md:block relative overflow-hidden bg-[#0a1224]">
         <AuthBackground />
-        <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-background to-transparent" />
-        <div className="relative z-10 flex h-full flex-col items-center justify-end p-6 pb-10">
-          <blockquote className="space-y-2 text-center">
-            <p className="text-base italic font-light text-text-primary leading-relaxed max-w-md">
-              &laquo;{' '}
-              <Typewriter key={copy.quote} text={copy.quote} speed={45} />{' '}
-              &raquo;
-            </p>
-            <cite className="block text-xs text-muted-foreground not-italic">
-              &mdash; {copy.author}
-            </cite>
-          </blockquote>
-        </div>
       </div>
 
     </div>

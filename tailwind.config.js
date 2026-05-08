@@ -74,11 +74,16 @@ export default {
         'slide-up': {
           from: { opacity: '0', transform: 'translateY(8px)' },
           to: { opacity: '1', transform: 'translateY(0)' }
+        },
+        kenburns: {
+          '0%': { transform: 'scale(1) translate(0, 0)' },
+          '100%': { transform: 'scale(1.08) translate(-1.5%, -0.8%)' }
         }
       },
       animation: {
         'fade-in': 'fade-in 250ms ease-out',
-        'slide-up': 'slide-up 300ms ease-out'
+        'slide-up': 'slide-up 300ms ease-out',
+        kenburns: 'kenburns 9s ease-in-out forwards'
       }
     }
   },
