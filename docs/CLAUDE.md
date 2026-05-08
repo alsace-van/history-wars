@@ -1,0 +1,95 @@
+# CLAUDE.md
+
+A lire en debut de chaque session si la tache touche du code TACTICA.
+
+## Source de verite
+
+1. Derniere version livree dans la session en cours.
+2. Fichiers du repo local (cloned).
+3. GitHub si fallback necessaire.
+
+## Stack
+
+- React 18 + TypeScript strict (jamais `any` sans justification commentee) + Vite
+- Three.js + @react-three/fiber + @react-three/drei
+- @react-three/postprocessing pour effets (Phase 5-6)
+- Tailwind CSS + Radix UI (Dialog, Dropdown, Tooltip)
+- Supabase (auth, BDD, Realtime, Edge Functions)
+- react-router-dom v6
+- Zod pour la validation
+- Vitest pour les tests
+
+## Architecture 3 niveaux (CRITIQUE)
+
+3 echelles : `tactical` | `operational` | `strategic`. Definies dans `src/engine/scales/types.ts`.
+
+Regles non negociables :
+- Aucun composant R3F couple a une echelle. `<HexGrid>` ne sait pas s'il est tactique. Il prend sa config en props.
+- Aucune valeur de jeu hardcodee : tailles d'hex, contraintes camera, time-per-turn passent par `SCALE_CONFIG`.
+- Edge Function de resolution = `resolve_turn(game_id, scale)` parametree par echelle, pas une fonction par echelle.
+- Etat JSONB structure : `state.tactical`, `state.operational`, `state.strategic`.
+- En MVP (Phases 1-7) seul `tactical` est implemente. Les scenes `OperationalScene` et `StrategicScene` existent en placeholder.
+
+## Conventions 3D
+
+- Convention Z = hauteur (cohrerente avec Fusion 360 et VPB).
+- Three.js utilise Y vertical par defaut : conversion uniquement a la frontiere du module render, pas dans l'API publique.
+- Coordonnees hex : cubique pour la logique, flat-top pour le rendu.
+
+## Conventions code
+
+### Architecture
+- Max 500-600 lignes par fichier, hooks separes pour alleger.
+- TypeScript strict, pas de `any` sauf exception justifiee en commentaire.
+- Try/catch + toast visible sur tout appel Supabase / API externe.
+- Etats de chargement : tout fetch a un `loading` visible + fallback donnees vides.
+- Pas de valeurs hardcodees (couleurs, textes, IDs) : constantes, theme Tailwind, ou `SCALE_CONFIG`.
+
+### Versioning fichiers
+- Header fichier = 4 entrees max (courante + 3 precedentes).
+- Une ligne par entree : `// v1.3a (DD/MM/YYYY) — resume 10 mots max`.
+- TAG `console.log` doit matcher la version du header.
+- Version mineure = suffixe lettre (v2.0 -> v2.0a -> v2.0b).
+
+### React hooks
+- Ne JAMAIS deplacer un hook d'une position a une autre dans un composant existant.
+- Tout nouveau hook s'ajoute EN QUEUE, avant le return.
+- Test mental avant chaque edit `.tsx` : "est-ce que je change l'ordre des hooks existants ?" Si oui, STOP.
+
+### BDD
+- RLS activee sur TOUTE nouvelle table.
+- Toutes les valeurs de jeu en JSONB ou tables, jamais hardcodees dans le moteur (preparation Phase 13 moddabilite).
+- Verifier l'absence d'erreurs critiques via `Supabase:get_advisors` apres chaque migration.
+
+### Securite
+- `service_role` jamais cote client. Uniquement dans Edge Functions.
+- Resolution de combat 100% serveur, jamais cote client.
+
+## Avant de coder
+
+- Confiance < 95% : poser des questions, ne pas coder.
+- Tache complexe : decouper en sous-taches numerotees.
+- Reutiliser les hooks/composants/utils existants avant d'en creer de nouveaux.
+- Verifier que chaque import utilise existe reellement.
+- Pour une nouvelle table : verifier si une table existante couvre le besoin avant d'en creer une.
+- Pour une nouvelle modale ou popup : maquette HTML d'abord, puis demander draggable / overlay / redimensionnable.
+
+## Apres le code
+
+- Relire, simuler mentalement chaque bouton et input.
+- Supprimer les console.log de debug. Garder uniquement les logs versionnes avec le TAG.
+- `npm run tsc` sur les fichiers modifies : 0 erreur obligatoire.
+- Bug resolu absent de la liste des pieges : ajouter en format compact.
+- WIP.md : ajouter entree de session en tete, 10 sessions max.
+
+## Pieges connus
+
+A enrichir au fil des phases. En Phase 0 :
+
+1. Melanger les conventions de coordonnees hex (axial / offset / cubique). Tout passe par les fonctions de conversion centralisees dans `engine/hex/`.
+2. Oublier la RLS sur une table. Verifier dans le dashboard Supabase apres chaque migration : icone cadenas visible.
+3. Mettre des valeurs de jeu en dur dans le code. Tout passe par `SCALE_CONFIG` ou des tables BDD.
+4. Hardcoder une taille d'hex dans `HexGrid` ou les fonctions de conversion. Ces fonctions DOIVENT accepter `hexSize` en parametre.
+5. Confondre Y et Z dans Three.js. Conversion uniquement a la frontiere du module render.
+6. Coupler un composant render a une echelle. `<TacticalScene>` peut connaitre sa scale, mais `<HexGrid>` non.
+7. Creer une Edge Function `resolve_tactical_turn` au lieu de `resolve_turn(scale)`.
