@@ -1,4 +1,3 @@
-// v1.0a (08/05/2026) — Sous-titre header plus grand
 // v1.0 (08/05/2026) — Page Game placeholder : 2 panneaux equipes + actions
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -172,7 +171,7 @@ export function Game() {
             </button>
             <div className="text-[20px] font-bold tracking-[0.32em] text-foreground">
               TACTICA
-              <span className="ml-3 align-middle font-serif italic font-normal text-[18px] tracking-[0.04em] text-tactica-amber">
+              <span className="ml-2 align-middle font-serif italic font-normal text-[12px] tracking-[0.05em] text-tactica-amber">
                 — Brief
               </span>
             </div>
