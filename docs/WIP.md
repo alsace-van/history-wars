@@ -4,6 +4,56 @@ Journal des sessions de developpement, plus recente en haut. Maximum 10 entrees,
 
 ---
 
+## Session 5 &mdash; 08/05/2026 &mdash; Phase 0 Lot 4 sous-lot 4A : migration BDD + types + maquettes
+
+**Fait** :
+- Migration `003_lobby_columns.sql` ecrite (idempotente, peut etre rejouee sans casser).
+  - Colonnes ajoutees a `games` : `turn_number`, `mode`, `is_private`, `invite_code`, `last_action_at`, `max_players`, `scenario_id`.
+  - CHECK constraints sur `mode`, `status`, `max_players`.
+  - Index unique partiel sur `invite_code` (NULL autorise).
+  - Colonnes ajoutees a `game_players` : `team`, `role`, `slot_index`, `is_bot`, `bot_difficulty`.
+  - CHECK constraints sur `team`, `role`, `bot_difficulty`.
+  - Contraintes UNIQUE sur `(game_id, user_id)` et `(game_id, slot_index)`.
+  - 4 RLS policies sur `games` (select public lobby, select member, insert self, update host, delete host).
+  - 4 RLS policies sur `game_players` (select visible, insert self humain, delete self, delete host kick).
+  - Publication `supabase_realtime` etendue a `games` et `game_players` (idempotent via `pg_publication_tables`).
+  - Index secondaires : `games_status_idx` (partiel sur lobby), `games_created_by_idx`, `game_players_game_id_idx`, `game_players_user_id_idx`.
+
+- `src/types/game.ts` cree :
+  - Types literaux : `GameStatus`, `GameMode`, `Scale`, `Team`, `PlayerRole`, `BotDifficulty`.
+  - Constantes : `MAX_PLAYERS_DEFAULT/MIN/MAX`, `DEFAULT_SCENARIO_ID`, `DEFAULT_SCALE`, `DEFAULT_MODE`.
+  - Interfaces BDD : `Game`, `GamePlayer`.
+  - Modeles enrichis : `GameWithPlayers`, `GamePlayerWithProfile`.
+  - Helpers : `isHost`, `isPlayerInGame`, `freeSlotsCount`, `isGameFull`, `nextFreeSlot`, `deriveSlotAssignment`.
+
+- 2 maquettes HTML statiques pour validation visuelle avant React :
+  - `maquettes/maquette-lobby.html` : header + sub-header + tabs + 3 cartes de partie + footer compteur + modale "Creer une partie" ouverte.
+  - `maquettes/maquette-game.html` : header + 2 colonnes equipes (blue/red) + slots + bouton Demarrer desactive avec tooltip "Phase 1".
+
+**Decisions retenues (recommandations PLAN-LOT-4)** :
+- Migration **idempotente** avec `DROP POLICY IF EXISTS ... CREATE POLICY ...` (parce que `CREATE POLICY IF NOT EXISTS` n'existe pas avant Postgres 17).
+- `Home.tsx` sera **supprime** au sous-lot 4B au profit d'une redirection `/` -> `/lobby`.
+- `sonner` sera installe au sous-lot 4B pour les toasts.
+- `is_bot` et `bot_difficulty` ajoutees des la migration 003 (Phase 2 ne necessitera pas de migration BDD, juste de l'UI).
+- Code de partie privee : colonne `invite_code` ajoutee mais UI cachee/desactivee en Phase 0.
+
+**A faire cote utilisateur** :
+1. Copier-coller le contenu de `supabase/migrations/003_lobby_columns.sql` dans le SQL editor Supabase et l'executer. **0 erreur attendue**.
+2. Verifier dans Database > Replication que les tables `games` et `game_players` sont bien dans la publication `supabase_realtime`.
+3. Supprimer manuellement les 4 fichiers SVG inutilises :
+   - `src/ui/auth/scenes/SceneCavalryCharge.tsx`
+   - `src/ui/auth/scenes/SceneInfantryMarch.tsx`
+   - `src/ui/auth/scenes/SceneTopoMap.tsx`
+   - `src/ui/auth/scenes/SceneBattleFormation.tsx`
+   - Le dossier `src/ui/auth/scenes/` peut etre supprime s'il est vide.
+4. Ouvrir les 2 maquettes HTML dans un navigateur pour valider l'esthetique avant que je code en React.
+5. Quand tu valides, je passe au sous-lot 4B (hooks `useGames` + `useRealtime`, page `Lobby.tsx`).
+
+**Prochain Lot** :
+- Sous-lot 4B : hooks + page Lobby React. Sous-lot 4C : page Game placeholder + mises a jour finales.
+
+---
+
 ## Session 4 &mdash; 08/05/2026 &mdash; Lot 2 carrousel images reelles
 
 **Fait** :
@@ -28,16 +78,10 @@ Journal des sessions de developpement, plus recente en haut. Maximum 10 entrees,
 - `src/ui/auth/scenes/SceneCavalryCharge.tsx`
 - `src/ui/auth/scenes/SceneBattleFormation.tsx`
 - `src/ui/auth/scenes/SceneTopoMap.tsx`
-A supprimer plus tard si l'utilisateur ne revient pas aux SVG.
-
-**A faire cote utilisateur** :
-- Dezipper sur le dossier existant.
-- `npm run dev` (pas de nouvelles deps).
-- Aller sur `/auth?mode=signin`, voir le carrousel de 3 images defiler avec Ken Burns et citations sync.
-- Demain : ajouter la 4eme image (epoque Renaissance/Marignan ou autre), drag&drop dans la conversation, je l'integrerai.
+A supprimer au Lot 4 (deja flagge).
 
 **Prochain Lot** :
-- Lot 3 : Lobby + Realtime sync 2 onglets. Maquette HTML d'abord.
+- Lot 4 : Lobby + Realtime sync 2 onglets. Maquette HTML d'abord.
 
 ---
 
