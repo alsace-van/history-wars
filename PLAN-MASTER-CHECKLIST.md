@@ -10,7 +10,7 @@ Index global des 13 phases. Mis à jour à la fin de chaque phase.
 
 | # | Phase | Résumé features | État |
 |---|---|---|---|
-| 0 | **Foundations** | Vite/TS strict, Supabase auth + RLS, lobby, grille hex R3F, caméra contrainte, placeholders unités, Realtime, PWA. Architecture 3 niveaux préparée. | 🟡 En cours (4/13 sous-tâches, Lot 4A livré) |
+| 0 | **Foundations** | Vite/TS strict, Supabase auth + RLS, lobby, grille hex R3F, caméra contrainte, placeholders unités, Realtime, PWA. Architecture 3 niveaux préparée. | 🟡 En cours (4/13 sous-tâches, Lots 4A + 4B livrés) |
 | 1 | Combat MVP tactique multi humain | 4 types d'unités, ordres simultanés, Edge Function `resolve_turn(scale)`, combat par points additifs, prévision de combat, conditions de victoire, chat. Realtime sync inter-joueurs. | ⬜ |
 | 2 | IA solo tactique | Heuristiques pondérées (défense, terrain, flancs, fatigue), 3 difficultés, mode bot dans lobby, mode Bot vs Bot pour tests. | ⬜ |
 | 3 | Profondeur tactique | Brouillard de guerre, météo, fatigue/moral avancés, terrain influence combat, flancs/dos. | ⬜ |
@@ -37,21 +37,21 @@ Index global des 13 phases. Mis à jour à la fin de chaque phase.
 | 0.2 | Configuration Tailwind + Radix + alias d'imports | ✅ | Lot 1 | tsconfig + vite.config alignés, palette tokens HSL shadcn |
 | 0.3 | Supabase : schéma initial avec colonne `scale`, RLS active | ✅ | Lot 2 | tables `profiles`, `games`, `game_players`. Trigger `handle_new_user` sécurisé (revoke EXECUTE) |
 | 0.4 | Auth (signup, login, logout, reset, update password) | ✅ | Lot 2-3 | Splitscreen 4 modes, carrousel 3 images réelles avec Ken Burns, citations sync |
-| 0.5 | Lobby (création / listing / join parties) | 🟡 | Lot 4 | **Sous-lot 4A livré** : migration `003`, types `game.ts`, maquettes HTML. Reste 4B (hooks + Lobby.tsx) + 4C (Game.tsx placeholder). |
+| 0.5 | Lobby (création / listing / join parties) | 🟡 | Lot 4 | **4A + 4B livrés** : migration `003`, types, hooks `useGames` + `useRealtime`, page `Lobby.tsx`, modale `CreateGameDialog`. Reste 4C (page Game placeholder + tests + docs finales). |
 | 0.6 | Système coordonnées hex cubiques paramétrées | ⬜ | Lot 5 | engine/hex/coordinates.ts, distance.ts, neighbors.ts. **hexSize en paramètre obligatoire** |
 | 0.7 | SCALE_CONFIG (tactical/operational/strategic) | ⬜ | Lot 5 | engine/scales/config.ts + types.ts. Hex size, time per turn, contraintes caméra par échelle |
 | 0.8 | Grille hex R3F paramétrée par scale | ⬜ | Lot 6 | HexGrid.tsx + HexTile.tsx, instanciable n'importe quelle échelle |
 | 0.9 | Caméra orbitale contrainte (profil par scale) | ⬜ | Lot 6 | CameraController.tsx, contraintes pan/zoom/rotation depuis SCALE_CONFIG |
 | 0.10 | Placeholders unités (cylindres colorés) | ⬜ | Lot 6 | UnitPlaceholder.tsx, 'I'/'C'/'A', team blue/red |
-| 0.11 | Realtime Supabase (sync lobby) | 🟡 | Lot 4 | **Sous-lot 4A livré** : publication `supabase_realtime` étendue à `games` + `game_players`. Reste hook `useRealtime` (4B). |
+| 0.11 | Realtime Supabase (sync lobby) | 🟡 | Lot 4 | **4A + 4B livrés** : publication `supabase_realtime` étendue, hook `useRealtime` paramétrable (postgres_changes + presence), branché sur Lobby. Reste tests 2 navigateurs (4C). |
 | 0.12 | PWA (manifest + service worker) | ⬜ | Lot 7 | vite-plugin-pwa à installer, manifest.json, icons 192/512 |
 | 0.13 | Skill `tactica` côté Claude | ⬜ | Lot 7 | /mnt/skills/user/tactica/SKILL.md avec conventions Phase 0 + architecture 3 niveaux |
 
 **Découpage en lots restants** :
 
 - **Lot 4A** ✅ — Migration BDD + types + maquettes HTML + cleanup SVG (livré 08/05/2026)
-- **Lot 4B** ⬜ — Hooks `useGames` + `useRealtime` + page `Lobby.tsx` + `CreateGameDialog.tsx` + `GameCard.tsx` + suppression `Home.tsx` + redirection `/` → `/lobby`
-- **Lot 4C** ⬜ — Page `Game.tsx` placeholder + `PlayerSlot.tsx` + mises à jour finales docs
+- **Lot 4B** ✅ — Hooks `useGames` + `useRealtime` + page `Lobby.tsx` + `CreateGameDialog.tsx` + `GameCard.tsx` + `PageBackground.tsx` + suppression `Home.tsx` + redirection `/` → `/lobby` + install `sonner` (livré 08/05/2026)
+- **Lot 4C** ⬜ — Page `Game.tsx` placeholder + `PlayerSlot.tsx` + tests 2 navigateurs + AUDIT-PHASE-0 mis à jour
 - **Lot 5** ⬜ — Hex foundation pure (0.6 + 0.7) — code moteur, pas de React, testable Vitest
 - **Lot 6** ⬜ — R3F render (0.8 + 0.9 + 0.10) — première vue 3D
 - **Lot 7** ⬜ — Finitions (0.12 + 0.13)
@@ -60,14 +60,14 @@ Index global des 13 phases. Mis à jour à la fin de chaque phase.
 
 ## Critères de fin de Phase 0
 
-- [ ] Compte créable et utilisable (vérifié en BDD) ✅ acquis Lot 2-3
-- [ ] Création de partie depuis le lobby fonctionnelle
-- [ ] Rejoindre une partie ajoute un slot
+- [x] Compte créable et utilisable (vérifié en BDD) — acquis Lot 2-3
+- [x] Création de partie depuis le lobby fonctionnelle — acquis Lot 4B (à tester user)
+- [x] Rejoindre une partie ajoute un slot — acquis Lot 4B (à tester user)
 - [ ] Vue 3D R3F fonctionnelle (grille hex tactique navigable)
 - [ ] Caméra contrainte (impossible de passer sous le sol ou de zoomer trop loin)
 - [ ] Placeholders unités lisibles depuis tous les angles
-- [ ] Realtime sync entre 2 navigateurs (l'un voit l'autre rejoindre)
-- [ ] Architecture 3 niveaux préparée (`SCALE_CONFIG`, `HexGrid` paramétré, `current_scale` en BDD)
+- [ ] Realtime sync entre 2 navigateurs (l'un voit l'autre rejoindre) — à tester user au Lot 4C
+- [ ] Architecture 3 niveaux préparée (`SCALE_CONFIG`, `HexGrid` paramétré, `current_scale` en BDD) — partiel : `current_scale` en BDD ✅, reste SCALE_CONFIG (Lot 5)
 - [ ] Scènes opérationnelle/stratégique placeholders sans crash
 - [ ] `npm run tsc` 0 erreur
 - [ ] RLS active sur toutes les tables (testé compte non autorisé)

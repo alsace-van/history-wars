@@ -4,6 +4,69 @@ Journal des sessions de developpement, plus recente en haut. Maximum 10 entrees,
 
 ---
 
+## Session 6 &mdash; 08/05/2026 &mdash; Phase 0 Lot 4 sous-lot 4B : hooks + page Lobby React
+
+**Fait** :
+- `package.json` v0.0.3 : ajout dependance `sonner@^1.7.1` (toasts).
+- `index.html` : ajout link Google Fonts pour `Cormorant Garamond` (italique 400-600), preconnect googleapis + gstatic.
+- `src/hooks/useRealtime.ts` v1.0 : hook generique pour Supabase Realtime.
+  - Signature `useRealtime({ channelName, enabled, postgresChanges, presence })`.
+  - `postgresChanges` : tableau de configs `{ table, event, filter, onChange }` — INSERT/UPDATE/DELETE.
+  - `presence` : `{ userId, userMeta, onSync }` — tracker qui est en ligne sur le channel.
+  - Callbacks stockes en ref → passer un nouveau tableau de configs ne re-subscribe pas.
+  - Cleanup obligatoire dans useEffect (`removeChannel`).
+  - Retourne `{ stale }` qui passe a `true` au CHANNEL_ERROR / TIMED_OUT / CLOSED.
+- `src/hooks/useGames.ts` v1.0 : CRUD parties.
+  - `list` (refresh) : 3 requetes (games + game_players + profiles), compose `GameWithPlayers[]` cote client.
+  - `createGame({ name, maxPlayers })` : insert `games`, puis insert host comme slot 0 (general bleu). Rollback si erreur sur le 2e insert.
+  - `joinGame(gameId)` : calcule prochain slot libre via `nextFreeSlot`, derive team/role via `deriveSlotAssignment`, insert.
+  - `leaveGame(gameId)` : delete game_player de l'utilisateur courant.
+  - `kickPlayer(playerId)` : delete par id (RLS verifie que je suis hote).
+  - `deleteGame(gameId)` : delete game (RLS verifie hote + status=lobby, cascade sur game_players).
+  - try/catch + retours `{ error: string | null }` partout. Logs versionnes avec TAG.
+- `src/ui/layout/PageBackground.tsx` v1.0 : composant fond global (carte Austerlitz `/scenes/austerlitz.png` + overlay sombre eclairci). Reutilise par Game.tsx au sous-lot 4C.
+- `src/ui/lobby/GameCard.tsx` v1.0 : carte d'une partie dans la liste.
+  - Bordure gauche ambre quand c'est ma partie.
+  - Pastilles colorees blue/red/free pour les slots.
+  - Bouton variable selon le contexte : "Voir" (mes parties), "Pleine" disabled, "Rejoindre →" pill bleu.
+  - `formatRelative()` interne pour "il y a X min".
+- `src/ui/lobby/CreateGameDialog.tsx` v1.0 : modale "Ordre de bataille".
+  - Radix Dialog (overlay + content + close).
+  - Coin coupe en haut-droite via `clip-path: polygon(...)`, brackets ambre aux 3 autres coins.
+  - 3 champs : nom, effectif (2 ou 4), scenario (disabled MVP-Plaine).
+  - Toggle "Operation secrete" pre-cable mais desactive (Phase 0).
+  - Bouton "Engager" en ambre avec coin coupe.
+  - Validation : nom obligatoire, toast.error sinon. toast.success a la creation.
+- `src/ui/pages/Lobby.tsx` v1.0 : page principale `/lobby`.
+  - Header : logo TACTICA + sous-titre "Salle de commandement", pseudo, bouton Quitter.
+  - Sub-header : titre "Bataillons en attente" en serif italique + bouton "+ Nouvelle operation".
+  - Tabs "Toutes les parties" / "Mes parties" avec badges.
+  - Liste GameCard. Si vide : EmptyState avec CTA. Si loading : SkeletonList (3 placeholders).
+  - Footer compteur : N operations actives + N officiers en ligne (presence Realtime).
+  - useRealtime sur channel `lobby:public` : INSERT/UPDATE/DELETE sur games + game_players → refresh.
+- `src/App.tsx` v1.0b : routes `/lobby` + redirection `/` → `/lobby`. `<Toaster />` sonner monte au top, theme dark, bordure ambre, position top-right.
+
+**Decisions** :
+- Toast lib = `sonner@^1.7.1` (compact, accessible, intégré React 18, ~3KB).
+- Compteur officiers en ligne via Realtime presence sur `lobby:public` channel.
+- Race condition slot au join : on s'appuie sur la contrainte UNIQUE BDD, l'utilisateur voit l'erreur. Pas de retry pour MVP.
+- Pas de pagination Lobby pour Phase 0 (limite 50 parties recentes), suffit largement.
+
+**A faire cote utilisateur** :
+1. **`npm install`** (recupere `sonner`).
+2. **Supprimer manuellement** `src/ui/pages/Home.tsx` — il n'est plus reference, App.tsx route maintenant directement vers Lobby.
+3. Si pas deja fait au sous-lot 4A : supprimer les 4 fichiers `src/ui/auth/scenes/Scene*.tsx` + le dossier `scenes/` vide.
+4. **`npm run dev`** + se connecter, tu atterris sur `/lobby`.
+5. **Tester en 2 navigateurs** (un en navigation privee) :
+   - A cree une partie → B la voit apparaitre **sans refresh**.
+   - B clique Rejoindre → A voit B arriver dans les slots **sans refresh**.
+   - A et B comptent comme "officiers en ligne" en footer.
+6. `npm run tsc` doit passer 0 erreur.
+
+**Prochain sous-lot 4C** : page `Game.tsx` placeholder (route `/game/:id`) avec slots blue/red, kick (hote), bouton "Engager la bataille" disabled. Mises a jour finales `AUDIT-PHASE-0.md`.
+
+---
+
 ## Session 5 &mdash; 08/05/2026 &mdash; Phase 0 Lot 4 sous-lot 4A : migration BDD + types + maquettes
 
 **Fait** :
@@ -17,40 +80,15 @@ Journal des sessions de developpement, plus recente en haut. Maximum 10 entrees,
   - 4 RLS policies sur `games` (select public lobby, select member, insert self, update host, delete host).
   - 4 RLS policies sur `game_players` (select visible, insert self humain, delete self, delete host kick).
   - Publication `supabase_realtime` etendue a `games` et `game_players` (idempotent via `pg_publication_tables`).
-  - Index secondaires : `games_status_idx` (partiel sur lobby), `games_created_by_idx`, `game_players_game_id_idx`, `game_players_user_id_idx`.
+  - Index secondaires.
+- `src/types/game.ts` cree.
+- 2 maquettes HTML statiques validees par utilisateur (BG Austerlitz, typo serif Cormorant, accent ambre, modale "Ordre de bataille" avec coin coupe).
 
-- `src/types/game.ts` cree :
-  - Types literaux : `GameStatus`, `GameMode`, `Scale`, `Team`, `PlayerRole`, `BotDifficulty`.
-  - Constantes : `MAX_PLAYERS_DEFAULT/MIN/MAX`, `DEFAULT_SCENARIO_ID`, `DEFAULT_SCALE`, `DEFAULT_MODE`.
-  - Interfaces BDD : `Game`, `GamePlayer`.
-  - Modeles enrichis : `GameWithPlayers`, `GamePlayerWithProfile`.
-  - Helpers : `isHost`, `isPlayerInGame`, `freeSlotsCount`, `isGameFull`, `nextFreeSlot`, `deriveSlotAssignment`.
-
-- 2 maquettes HTML statiques pour validation visuelle avant React :
-  - `maquettes/maquette-lobby.html` : header + sub-header + tabs + 3 cartes de partie + footer compteur + modale "Creer une partie" ouverte.
-  - `maquettes/maquette-game.html` : header + 2 colonnes equipes (blue/red) + slots + bouton Demarrer desactive avec tooltip "Phase 1".
-
-**Decisions retenues (recommandations PLAN-LOT-4)** :
-- Migration **idempotente** avec `DROP POLICY IF EXISTS ... CREATE POLICY ...` (parce que `CREATE POLICY IF NOT EXISTS` n'existe pas avant Postgres 17).
-- `Home.tsx` sera **supprime** au sous-lot 4B au profit d'une redirection `/` -> `/lobby`.
-- `sonner` sera installe au sous-lot 4B pour les toasts.
-- `is_bot` et `bot_difficulty` ajoutees des la migration 003 (Phase 2 ne necessitera pas de migration BDD, juste de l'UI).
-- Code de partie privee : colonne `invite_code` ajoutee mais UI cachee/desactivee en Phase 0.
-
-**A faire cote utilisateur** :
-1. Copier-coller le contenu de `supabase/migrations/003_lobby_columns.sql` dans le SQL editor Supabase et l'executer. **0 erreur attendue**.
-2. Verifier dans Database > Replication que les tables `games` et `game_players` sont bien dans la publication `supabase_realtime`.
-3. Supprimer manuellement les 4 fichiers SVG inutilises :
-   - `src/ui/auth/scenes/SceneCavalryCharge.tsx`
-   - `src/ui/auth/scenes/SceneInfantryMarch.tsx`
-   - `src/ui/auth/scenes/SceneTopoMap.tsx`
-   - `src/ui/auth/scenes/SceneBattleFormation.tsx`
-   - Le dossier `src/ui/auth/scenes/` peut etre supprime s'il est vide.
-4. Ouvrir les 2 maquettes HTML dans un navigateur pour valider l'esthetique avant que je code en React.
-5. Quand tu valides, je passe au sous-lot 4B (hooks `useGames` + `useRealtime`, page `Lobby.tsx`).
-
-**Prochain Lot** :
-- Sous-lot 4B : hooks + page Lobby React. Sous-lot 4C : page Game placeholder + mises a jour finales.
+**Decisions retenues** :
+- Migration idempotente avec `DROP POLICY IF EXISTS ... CREATE POLICY ...`.
+- `Home.tsx` sera supprime au sous-lot 4B.
+- `sonner` sera installe au sous-lot 4B.
+- `is_bot` et `bot_difficulty` ajoutees des la migration 003.
 
 ---
 
@@ -61,38 +99,22 @@ Journal des sessions de developpement, plus recente en haut. Maximum 10 entrees,
   - `bouvines.png` (peinture cinematique medievale, format vertical 941x1672)
   - `austerlitz.png` (carte ancienne style etat-major, format paysage 1536x1024)
   - `verdun.png` (carte ancienne, format paysage 1536x1024)
-- `AuthBackground.tsx` v1.0b : bascule des SVG composants vers `<img>` avec `object-cover` + `object-position: center`. Tableau `SLIDES` de 3 entrees pour l'instant.
-- Citations adaptees aux epoques :
-  - Bouvines -> Sun Tzu (intemporel, va avec medieval)
-  - Austerlitz -> Napoleon "Le genie de la guerre est de bien voir tout d'un coup d'oeil"
-  - Verdun -> Nivelle "Ils ne passeront pas" (citation iconique de Verdun, 1916)
-- Overlay double : un gradient global + un gradient renforce en bas pour la lisibilite de la citation. Bg de secours `#0a1224` sur le container pendant le chargement de l'image.
-- `loading="eager"` sur la premiere image, `lazy` sur les suivantes pour optimiser le LCP.
+- `AuthBackground.tsx` v1.0b : bascule des SVG composants vers `<img>`.
+- Citations adaptees aux epoques.
+- Overlay double + bg de secours pendant le chargement.
 
-**A noter (incoherence stylistique a regler plus tard)** :
-- Bouvines est en peinture cinematique, Austerlitz et Verdun sont en cartes anciennes.
-- A unifier quand l'utilisateur regenerera des images : soit toutes en peintures, soit toutes en cartes. La 4eme image (Renaissance/Marignan) sera generee demain.
-
-**Non utilises** (mais laisses dans le projet en attendant) :
-- `src/ui/auth/scenes/SceneInfantryMarch.tsx`
-- `src/ui/auth/scenes/SceneCavalryCharge.tsx`
-- `src/ui/auth/scenes/SceneBattleFormation.tsx`
-- `src/ui/auth/scenes/SceneTopoMap.tsx`
-A supprimer au Lot 4 (deja flagge).
-
-**Prochain Lot** :
-- Lot 4 : Lobby + Realtime sync 2 onglets. Maquette HTML d'abord.
+**Non utilises** (a supprimer manuellement au sous-lot 4A/4B) :
+- `src/ui/auth/scenes/Scene*.tsx` (les 4 fichiers)
 
 ---
 
 ## Session 3 &mdash; 08/05/2026 &mdash; Lot 2 addendum carrousel
 
 **Fait** :
-- Refonte de `AuthBackground.tsx` en carrousel automatique : 4 slides, tempo 8s, transition fade 1s, effet Ken Burns (zoom 1.08x + leger translate sur 9s).
-- 4 scenes SVG separees dans `src/ui/auth/scenes/` (qui seront remplacees par des images reelles).
-- Citations defilent en sync avec les images. Le Typewriter se reset a chaque changement de slide via cle React.
-- `Auth.tsx` simplifie : la zone citation deplacee dans `AuthBackground`.
-- Tailwind config etendue avec keyframe `kenburns` et animation `animate-kenburns`.
+- Refonte de `AuthBackground.tsx` en carrousel automatique : 4 slides, tempo 8s, transition fade 1s, effet Ken Burns.
+- 4 scenes SVG separees (remplacees par images reelles en Session 4).
+- Citations defilent en sync avec les images.
+- Tailwind config etendue avec keyframe `kenburns`.
 
 ---
 
@@ -100,13 +122,9 @@ A supprimer au Lot 4 (deja flagge).
 
 **Fait** :
 - Migration BDD `001_foundations` appliquee : tables `profiles`, `games`, `game_players` avec RLS active sur les 3.
-- Trigger `handle_new_user` cree le profil automatiquement au signup.
-- Migration `002_secure_handle_new_user` : revoke EXECUTE pour anon/authenticated/public.
-- Nouvelles deps : `@radix-ui/react-slot`, `@radix-ui/react-label`, `class-variance-authority`, `clsx`, `lucide-react`, `tailwind-merge`, `tailwindcss-animate`.
-- Tailwind config etendue avec systeme shadcn (CSS variables HSL).
+- Trigger `handle_new_user`. Migration `002_secure_handle_new_user`.
 - Composants atomes : `Label`, `Input`, `Button`, `PasswordInput`, `Typewriter`.
-- `Auth.tsx` : page split-screen 4 modes (`?mode=signin|signup|reset|update-password`).
-- `Home.tsx` : page d'accueil placeholder protegee.
+- `Auth.tsx` : page split-screen 4 modes.
 - Hooks : `useAuth`, `useRequireAuth`.
 - `App.tsx` : router avec `/` (Home protegee) et `/auth`.
 
@@ -117,8 +135,5 @@ A supprimer au Lot 4 (deja flagge).
 **Fait** :
 - Initialisation Vite + React 18 + TypeScript strict.
 - Configuration Tailwind, Radix, alias d'imports.
-- Structure de dossiers complete.
 - Validation Zod des env vars.
 - Client Supabase singleton.
-- Page d'accueil minimale.
-- `.env.local` rempli avec credentials projet "history wars".
