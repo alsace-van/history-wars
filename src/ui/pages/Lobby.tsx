@@ -1,3 +1,4 @@
+// v1.0a (08/05/2026) — Sous-titre header plus grand
 // v1.0 (08/05/2026) — Page Lobby : liste parties, creer/rejoindre, sync Realtime
 import { useMemo, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -95,7 +96,7 @@ export function Lobby() {
         <header className="relative flex items-center justify-between px-10 py-[18px] border-b border-[rgba(226,232,240,0.18)] bg-gradient-to-b from-[rgba(8,12,24,0.85)] to-transparent">
           <div className="text-[20px] font-bold tracking-[0.32em] text-foreground">
             TACTICA
-            <span className="ml-2 align-middle font-serif italic font-normal text-[12px] tracking-[0.05em] text-tactica-amber">
+            <span className="ml-3 align-middle font-serif italic font-normal text-[18px] tracking-[0.04em] text-tactica-amber">
               — Salle de commandement
             </span>
           </div>
