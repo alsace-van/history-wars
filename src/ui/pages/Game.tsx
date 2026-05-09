@@ -1,3 +1,4 @@
+// v2.0 (09/05/2026) — Layout 3 zones : header + scene 3D centrale + sidebar equipes droite
 // v1.0a (08/05/2026) — Sous-titre header plus grand
 // v1.0 (08/05/2026) — Page Game placeholder : 2 panneaux equipes + actions
 import { useEffect, useMemo, useState } from 'react'
@@ -7,26 +8,21 @@ import { useRequireAuth } from '@hooks/useRequireAuth'
 import { useGame } from '@hooks/useGame'
 import { useRealtime } from '@hooks/useRealtime'
 import {
-  type GamePlayerWithProfile,
-  type PlayerRole,
-  type Team,
   isHost,
   isPlayerInGame,
-  deriveSlotAssignment
+  deriveSlotAssignment,
 } from '@/types/game'
 import { PageBackground } from '@ui/layout/PageBackground'
-import { PlayerSlot, EmptyPlayerSlot } from '@ui/game/PlayerSlot'
+import { TeamPanel, type SlotData } from '@ui/game/TeamPanel'
+import { TacticalScene, buildMvpUnitPlacement } from '@/render'
+import { spiral } from '@engine/hex'
 import { cn } from '@lib/cn'
 
 const PRIMARY_BTN_CLIP =
   'polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px)'
 
-interface SlotData {
-  index: number
-  team: Team
-  role: PlayerRole
-  player: GamePlayerWithProfile | null
-}
+// MVP-Plaine : disque hex rayon 5 (91 hex) centre origine
+const MVP_CUBES = spiral({ q: 0, r: 0, s: 0 }, 5)
 
 export function Game() {
   const { id: gameId } = useParams<{ id: string }>()
@@ -38,7 +34,6 @@ export function Game() {
 
   const [busy, setBusy] = useState(false)
 
-  // Realtime : tout changement sur cette partie ou ses players → refresh
   useRealtime({
     channelName: gameId ? `game:${gameId}` : '',
     enabled: !!gameId && !!user,
@@ -48,7 +43,7 @@ export function Game() {
             table: 'games',
             event: 'UPDATE',
             filter: `id=eq.${gameId}`,
-            onChange: () => void refresh()
+            onChange: () => void refresh(),
           },
           {
             table: 'games',
@@ -57,19 +52,18 @@ export function Game() {
             onChange: () => {
               toast.error("L'hôte a dissous la partie.")
               navigate('/lobby')
-            }
+            },
           },
           {
             table: 'game_players',
             event: '*',
             filter: `game_id=eq.${gameId}`,
-            onChange: () => void refresh()
-          }
+            onChange: () => void refresh(),
+          },
         ]
-      : undefined
+      : undefined,
   })
 
-  // Si la partie n'existe pas ou que je n'y suis pas, retour au lobby
   useEffect(() => {
     if (loading || authLoading || !user) return
     if (notFound) {
@@ -83,7 +77,6 @@ export function Game() {
     }
   }, [loading, authLoading, user, notFound, game, players, navigate])
 
-  // Construit le tableau des slots (vides + remplis) selon max_players
   const slots = useMemo<SlotData[]>(() => {
     if (!game) return []
     const out: SlotData[] = []
@@ -98,6 +91,9 @@ export function Game() {
   const blueSlots = useMemo(() => slots.filter(s => s.team === 'blue'), [slots])
   const redSlots = useMemo(() => slots.filter(s => s.team === 'red'), [slots])
 
+  // Phase 0 : 6 unites factices (3 vs 3, 1 de chaque type par equipe)
+  const units = useMemo(() => buildMvpUnitPlacement(), [])
+
   const iAmHost = !!game && isHost(game, user?.id ?? null)
   const iAmIn = isPlayerInGame(players, user?.id ?? null)
 
@@ -105,7 +101,7 @@ export function Game() {
     if (!user || busy) return
     if (iAmHost) {
       const ok = window.confirm(
-        'Tu es l\'hôte. Quitter va dissoudre la partie pour tous les joueurs. Continuer ?'
+        "Tu es l'hôte. Quitter va dissoudre la partie pour tous les joueurs. Continuer ?"
       )
       if (!ok) return
       setBusy(true)
@@ -142,7 +138,6 @@ export function Game() {
     toast.success('Officier renvoyé.')
   }
 
-  // États de chargement / non-prêt : on retourne tot
   if (authLoading || !user || loading || !game) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -152,73 +147,85 @@ export function Game() {
   }
 
   const hostUserId = game.created_by
-  const ago = formatRelative(game.created_at)
-  const scaleLabel = game.current_scale === 'tactical' ? 'Échelle tactique' :
-    game.current_scale === 'operational' ? 'Échelle opérationnelle' : 'Échelle stratégique'
+  const scaleLabel =
+    game.current_scale === 'tactical'
+      ? 'Échelle tactique'
+      : game.current_scale === 'operational'
+        ? 'Échelle opérationnelle'
+        : 'Échelle stratégique'
 
   return (
-    <div className="min-h-screen relative font-sans">
+    <div className="h-screen relative font-sans flex flex-col overflow-hidden">
       <PageBackground />
 
-      <div className="flex flex-col min-h-screen">
-        {/* Header */}
-        <header className="relative flex items-center justify-between px-10 py-[18px] border-b border-[rgba(226,232,240,0.18)] bg-gradient-to-b from-[rgba(8,12,24,0.85)] to-transparent">
-          <div className="flex items-center gap-[18px]">
-            <button
-              onClick={() => navigate('/lobby')}
-              className="bg-transparent border-none text-muted-foreground hover:text-tactica-amber px-2 py-[6px] text-[12px] uppercase tracking-[0.12em] cursor-pointer transition-colors"
-            >
-              ← Salle de commandement
-            </button>
-            <div className="text-[20px] font-bold tracking-[0.32em] text-foreground">
-              TACTICA
-              <span className="ml-3 align-middle font-serif italic font-normal text-[18px] tracking-[0.04em] text-tactica-amber">
-                — Brief
-              </span>
-            </div>
+      <header className="relative flex items-center justify-between px-10 py-[18px] border-b border-[rgba(226,232,240,0.18)] bg-gradient-to-b from-[rgba(8,12,24,0.85)] to-transparent shrink-0">
+        <div className="flex items-center gap-[18px]">
+          <button
+            onClick={() => navigate('/lobby')}
+            className="bg-transparent border-none text-muted-foreground hover:text-tactica-amber px-2 py-[6px] text-[12px] uppercase tracking-[0.12em] cursor-pointer transition-colors"
+          >
+            ← Salle de commandement
+          </button>
+          <div className="text-[20px] font-bold tracking-[0.32em] text-foreground">
+            TACTICA
+            <span className="ml-3 align-middle font-serif italic font-normal text-[18px] tracking-[0.04em] text-tactica-amber">
+              — Brief
+            </span>
           </div>
-          <span className="text-[12px] text-muted-foreground tracking-[0.05em]">
-            Officier{' '}
-            <strong className="text-foreground font-semibold">
-              {(user.user_metadata?.username as string | undefined) ?? user.email ?? 'soldat'}
-            </strong>
-          </span>
-          <div
-            aria-hidden
-            className="absolute left-10 right-10 -bottom-px h-px opacity-40"
-            style={{
-              background:
-                'linear-gradient(90deg, transparent 0%, #EF9F27 25%, #EF9F27 75%, transparent 100%)'
-            }}
-          />
-        </header>
+        </div>
+        <span className="text-[12px] text-muted-foreground tracking-[0.05em]">
+          Officier{' '}
+          <strong className="text-foreground font-semibold">
+            {(user.user_metadata?.username as string | undefined) ?? user.email ?? 'soldat'}
+          </strong>
+        </span>
+        <div
+          aria-hidden
+          className="absolute left-10 right-10 -bottom-px h-px opacity-40"
+          style={{
+            background:
+              'linear-gradient(90deg, transparent 0%, #EF9F27 25%, #EF9F27 75%, transparent 100%)',
+          }}
+        />
+      </header>
 
-        {/* Container principal */}
-        <main className="max-w-[880px] w-full mx-auto px-10 pt-9 pb-16 flex-1">
+      <div className="flex flex-1 min-h-0">
 
-          {/* Game header */}
-          <div className="mb-7 pb-[18px] border-b border-[rgba(226,232,240,0.10)]">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.32em] text-tactica-amber mb-[6px]">
+        <div className="flex-1 flex flex-col min-w-0">
+
+          <div className="px-10 py-5 border-b border-[rgba(226,232,240,0.10)] shrink-0">
+            <div className="text-[10px] font-semibold uppercase tracking-[0.32em] text-tactica-amber mb-[4px]">
               Ordre de bataille — {game.status === 'lobby' ? 'En attente' : game.status}
             </div>
-            <h1 className="font-serif italic text-[38px] font-medium m-0 mb-2 leading-[1.05] text-foreground">
+            <h1 className="font-serif italic text-[28px] font-medium m-0 leading-[1.1] text-foreground">
               {game.name}
             </h1>
-            <div className="text-muted-foreground text-[11px] uppercase tracking-[0.08em] flex flex-wrap gap-x-[14px] gap-y-1">
+            <div className="text-muted-foreground text-[10px] uppercase tracking-[0.08em] flex flex-wrap gap-x-[12px] gap-y-1 mt-1">
               <span>{game.scenario_id ?? '—'}</span>
               <span className="opacity-40">/</span>
               <span>{scaleLabel}</span>
               <span className="opacity-40">/</span>
               <span>Hôte : {players.find(p => p.user_id === hostUserId)?.username ?? '...'}</span>
               <span className="opacity-40">/</span>
-              <span>Tour {game.turn_number} — Briefing à venir</span>
-              <span className="opacity-40">/</span>
-              <span>Créée {ago}</span>
+              <span>Tour {game.turn_number}</span>
             </div>
           </div>
 
-          {/* 2 colonnes équipes */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-[18px] mb-7">
+          <div className="flex-1 relative min-h-0">
+            <TacticalScene
+              scale={game.current_scale}
+              cubes={MVP_CUBES}
+              units={units}
+            />
+            <div className="absolute bottom-3 left-3 px-3 py-2 bg-[rgba(15,23,42,0.85)] backdrop-blur-[6px] border border-[rgba(226,232,240,0.18)] rounded-[2px] text-[10px] text-muted-foreground tracking-[0.05em] uppercase pointer-events-none">
+              <div>Drag : rotation · Drag droit : pan · Molette : zoom</div>
+            </div>
+          </div>
+        </div>
+
+        <aside className="w-[340px] shrink-0 border-l border-[rgba(226,232,240,0.18)] bg-[rgba(8,12,24,0.7)] backdrop-blur-[2px] flex flex-col">
+
+          <div className="flex-1 overflow-y-auto p-4 space-y-3">
             <TeamPanel
               team="blue"
               slots={blueSlots}
@@ -226,6 +233,7 @@ export function Game() {
               currentUserId={user.id}
               canKick={iAmHost}
               onKick={handleKick}
+              compact
             />
             <TeamPanel
               team="red"
@@ -234,37 +242,43 @@ export function Game() {
               currentUserId={user.id}
               canKick={iAmHost}
               onKick={handleKick}
+              compact
             />
           </div>
 
-          {/* Footer actions */}
-          <div className="relative flex flex-wrap items-center justify-between gap-[14px] px-[22px] py-[18px] bg-[rgba(15,23,42,0.78)] backdrop-blur-[6px] border border-[rgba(226,232,240,0.18)] rounded-[2px]">
-            {/* Liseré ambre top */}
+          <div className="relative p-4 border-t border-[rgba(226,232,240,0.18)] bg-[rgba(15,23,42,0.85)]">
             <div
               aria-hidden
-              className="absolute top-[-1px] left-5 right-5 h-px opacity-40"
-              style={{
-                background:
-                  'linear-gradient(90deg, transparent, #EF9F27, transparent)'
-              }}
+              className="absolute top-[-1px] left-3 right-3 h-px opacity-40"
+              style={{ background: 'linear-gradient(90deg, transparent, #EF9F27, transparent)' }}
             />
-            {/* Brackets décoratifs */}
             <Bracket position="tl" />
             <Bracket position="tr" />
             <Bracket position="bl" />
             <Bracket position="br" />
 
-            <div className="text-muted-foreground text-[11px] uppercase tracking-[0.12em]">
+            <div className="text-muted-foreground text-[10px] uppercase tracking-[0.12em] mb-3">
               <strong className="text-foreground font-semibold">
                 {players.length} / {game.max_players} officiers
               </strong>
               {' · '}
-              {players.length < game.max_players
-                ? 'en attente de renforts'
-                : 'effectif complet'}
+              {players.length < game.max_players ? 'en attente' : 'effectif complet'}
             </div>
 
-            <div className="flex gap-[10px] items-center">
+            <div className="flex flex-col gap-2">
+              <span className="relative group">
+                <button
+                  disabled
+                  className="w-full bg-tactica-amber/20 text-tactica-amber/40 cursor-not-allowed px-4 py-[10px] text-[11px] font-semibold uppercase tracking-[0.12em]"
+                  style={{ clipPath: PRIMARY_BTN_CLIP }}
+                >
+                  Engager la bataille
+                </button>
+                <span className="absolute bottom-full right-0 mb-[6px] whitespace-nowrap text-[10px] uppercase tracking-[0.12em] bg-[rgba(8,12,24,0.95)] border border-tactica-amber px-[10px] py-[6px] rounded-[2px] text-foreground opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                  Disponible Phase 1
+                </span>
+              </span>
+
               <button
                 onClick={handleLeave}
                 disabled={busy || !iAmIn}
@@ -272,89 +286,10 @@ export function Game() {
               >
                 {iAmHost ? 'Dissoudre la partie' : 'Quitter la bataille'}
               </button>
-
-              <span className="relative group">
-                <button
-                  disabled
-                  className="bg-tactica-amber/20 text-tactica-amber/40 cursor-not-allowed px-[24px] py-[11px] text-[12px] font-semibold uppercase tracking-[0.12em]"
-                  style={{ clipPath: PRIMARY_BTN_CLIP }}
-                >
-                  Engager la bataille
-                </button>
-                <span
-                  className="absolute bottom-full right-0 mb-[6px] whitespace-nowrap text-[10px] uppercase tracking-[0.12em] bg-[rgba(8,12,24,0.95)] border border-tactica-amber px-[10px] py-[6px] rounded-[2px] text-foreground opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
-                >
-                  Disponible Phase 1
-                </span>
-              </span>
             </div>
           </div>
-        </main>
+        </aside>
       </div>
-    </div>
-  )
-}
-
-// ------ subcomponents ------
-
-interface TeamPanelProps {
-  team: Team
-  slots: SlotData[]
-  hostUserId: string
-  currentUserId: string
-  canKick: boolean
-  onKick: (playerId: string) => void
-}
-
-function TeamPanel({
-  team,
-  slots,
-  hostUserId,
-  currentUserId,
-  canKick,
-  onKick
-}: TeamPanelProps) {
-  const filled = slots.filter(s => s.player !== null).length
-  const total = slots.length
-  const titleColor = team === 'blue' ? 'text-tactica-blue-bright' : 'text-tactica-red-bright'
-  const borderTopColor =
-    team === 'blue' ? 'border-t-tactica-blue-bright' : 'border-t-tactica-red-bright'
-  const teamLabel = team === 'blue' ? 'État-Major Bleu' : 'État-Major Rouge'
-  const teamSub = team === 'blue' ? 'Alliés' : 'Adversaires'
-
-  return (
-    <div
-      className={cn(
-        'p-5 bg-[rgba(15,23,42,0.78)] backdrop-blur-[6px] border border-[rgba(226,232,240,0.18)] border-t-[3px] rounded-[2px]',
-        borderTopColor
-      )}
-    >
-      <div className="flex items-center justify-between mb-[14px]">
-        <div className={cn('flex items-center gap-[10px] font-serif italic font-medium text-[18px] tracking-[0.03em]', titleColor)}>
-          {teamLabel}
-          <span className="font-sans not-italic text-[9px] tracking-[0.2em] uppercase text-muted-foreground font-semibold">
-            · {teamSub}
-          </span>
-        </div>
-        <span className="text-[11px] text-muted-foreground uppercase tracking-[0.1em]">
-          {filled} / {total}
-        </span>
-      </div>
-
-      {slots.map(s =>
-        s.player ? (
-          <PlayerSlot
-            key={s.index}
-            player={s.player}
-            isCurrentUser={s.player.user_id === currentUserId}
-            isHost={s.player.user_id === hostUserId}
-            canKick={canKick && s.player.user_id !== currentUserId}
-            onKick={onKick}
-          />
-        ) : (
-          <EmptyPlayerSlot key={s.index} role={s.role} />
-        )
-      )}
     </div>
   )
 }
@@ -364,28 +299,12 @@ function Bracket({ position }: { position: 'tl' | 'tr' | 'bl' | 'br' }) {
     tl: 'top-1 left-1 border-r-0 border-b-0',
     tr: 'top-1 right-1 border-l-0 border-b-0',
     bl: 'bottom-1 left-1 border-r-0 border-t-0',
-    br: 'bottom-1 right-1 border-l-0 border-t-0'
+    br: 'bottom-1 right-1 border-l-0 border-t-0',
   }[position]
   return (
     <span
       aria-hidden
-      className={cn(
-        'absolute w-[10px] h-[10px] border border-tactica-amber opacity-50',
-        cls
-      )}
+      className={cn('absolute w-[10px] h-[10px] border border-tactica-amber opacity-50', cls)}
     />
   )
-}
-
-// ------ helpers ------
-
-function formatRelative(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime()
-  const mins = Math.floor(diff / 60_000)
-  if (mins < 1) return "à l'instant"
-  if (mins < 60) return `il y a ${mins} min`
-  const hours = Math.floor(mins / 60)
-  if (hours < 24) return `il y a ${hours} h`
-  const days = Math.floor(hours / 24)
-  return `il y a ${days} j`
 }

@@ -1,115 +1,93 @@
 # WIP.md
 
-Journal des sessions, plus recente en haut. 10 max.
-
 ---
 
-## Session 9 &mdash; 09/05/2026 &mdash; Phase 0 Lot 6 sous-lot 6A : scene 3D R3F standalone
+## Session 10 &mdash; 09/05/2026 &mdash; Phase 0 Lot 6 sous-lot 6B : intégration TacticalScene dans Game.tsx
 
 **Fait** :
-- `src/types/game.ts` v1.0a : ajout `export type UnitKind = 'I' | 'C' | 'A'` (Infanterie/Cavalerie/Artillerie).
-- `src/render/colors.ts` v1.0 : constantes hex Three.js (teamBlue, teamRed, amber, tile colors). Synchro avec tokens Tailwind.
-- `src/render/types.ts` v1.0 : `UnitInstance`, `HexTileState`, `HexTileVisibility`.
-- `src/render/_data/mvpUnitPlacement.ts` v1.0 : 6 unites factices (3 vs 3, 1 de chaque type par equipe). Distance min blue-red >= 4 hex.
-- `src/render/_data/mvpUnitPlacement.test.ts` : 6 tests verts (count, types, sides, distances, ids).
-- `src/render/lighting/SceneLighting.tsx` v1.0 : ambient + directional principale + fill light.
-- `src/render/hex/HexTile.tsx` v1.0 : cylindre tres aplati (CylinderGeometry 6 segments) + LineSegments edges, geometrie partagee. memo. States : idle/hover/selected (+ visibility fog/hidden).
-- `src/render/hex/HexGrid.tsx` v1.0 : grille parametree par scale (lit `SCALE_CONFIG[scale].hexSize`), gere hover state local.
-- `src/render/units/UnitPlaceholder.tsx` v1.0 : cylindre colore par equipe + torus bordure haut + Billboard avec lettre I/C/A et count, toujours face camera (drei `<Billboard>` + `<Text>`).
-- `src/render/camera/CameraController.tsx` v1.0 : `<PerspectiveCamera makeDefault />` + `<OrbitControls />`, contraintes lues depuis `SCALE_CONFIG[scale].camera` (min/maxDistance, min/maxPolarAngle).
-- `src/render/scenes/SceneLoader.tsx` v1.0 : fallback Suspense via drei `<Html>`.
-- `src/render/scenes/SceneShell.tsx` v1.0 : wrapper Canvas R3F + Suspense + tone mapping ACESFilmic + bg transparent.
-- `src/render/scenes/TacticalScene.tsx` v1.0 : compose camera + lighting + grid + units.
-- `src/render/index.ts` v1.0 : barrel.
-- `src/ui/pages/RenderTest.tsx` v1.0 : page demo plein ecran sur `/render-test`. Affiche 91 hex (spiral rayon 5) + 6 unites factices. Aide controles en overlay.
-- `src/App.tsx` v1.0d : route `/render-test` ajoutee.
+- `src/ui/game/TeamPanel.tsx` v1.0 : extraction du composant `TeamPanel` (était inline dans Game.tsx). Ajout prop `compact` pour le mode sidebar (padding/font size réduits).
+- `src/ui/pages/Game.tsx` v2.0 : refonte complète layout 3 zones :
+  - Header (sticky top, inchangé).
+  - Body flex horizontal avec `flex-1` pour la zone scène et `w-[340px]` sidebar droite.
+  - Zone scène : game-header inline (titre + meta condensés) au-dessus + `<TacticalScene />` plein espace.
+  - Sidebar : 2 panneaux équipes en compact + footer actions sticky.
+  - Disque hex rayon 5 (91 hex) via `spiral({0,0,0}, 5)`, 6 unités factices via `buildMvpUnitPlacement()`.
+- `src/App.tsx` v1.0e : route `/render-test` supprimée.
+- Page `RenderTest.tsx` à supprimer manuellement côté repo.
 
-**Decisions** :
-- Convention Y-up Three.js : `position={[world.x, elevation, world.y]}` dans HexTile/UnitPlaceholder. Convention encapsulee dans render/, jamais dans engine/.
-- Geometrie hex partagee (`HEX_GEOMETRY` const hors composant) → 1 seule allocation pour les 91 tiles.
-- Materials non partages (chaque tile cree son material) : Lot 6A simple, optimisation Phase 5+ si besoin.
-- Bordure tile legerement levee de Y (+0.005) au-dessus de la face superieure pour eviter Z-fighting.
-- `screenSpacePanning={false}` sur OrbitControls : le pan reste dans le plan XZ, pas perpendiculaire a la camera (sinon en vue plongee on peut faire monter la camera dans le ciel).
+**Sous-tâches Phase 0 validées** :
+- 0.8 (Grille hex R3F) : ✅
+- 0.9 (Caméra contrainte) : ✅
+- 0.10 (Placeholders unités) : ✅
 
-**A faire cote utilisateur** :
-1. **`npm run tsc`** doit passer 0 erreur.
-2. **`npm run test`** : 63 tests verts (57 hex + 6 mvp unit placement).
-3. **`npm run dev`** + naviguer vers `http://localhost:5173/render-test` :
-   - Tu vois 91 hex en disque + 6 unites cylindriques (3 bleues a gauche, 3 rouges a droite).
-   - Chaque unite a une lettre (I/C/A) + un nombre (100/60/30) flottant au-dessus, toujours face camera.
-   - Hover sur un hex : bordure ambre + couleur plus claire.
-   - Clic sur un hex : log dans la console `[RenderTest] tile clicked: { q: ..., r: ..., s: ... }`.
-   - Drag souris : rotation orbitale autour du centre.
-   - Drag droit : pan dans le plan.
-   - Molette : zoom (contraint min 3, max 25).
-   - Tu ne peux pas basculer la camera sous l'horizon ni dessus.
+**À faire côté utilisateur** :
+1. **Supprimer `src/ui/pages/RenderTest.tsx`** (n'est plus référencé).
+2. `npm run tsc` 0 erreur, `npm run test` 63 verts.
+3. `npm run dev`, login, `/lobby`, créer une partie → `/game/:id` :
+   - Header en haut, scène 3D au centre prenant l'espace, sidebar 340px à droite avec les 2 équipes + boutons.
+   - 91 hex jointifs + 6 unités factices visibles.
+   - Drag/zoom/pan fonctionnent.
+   - Realtime : 2e navigateur rejoint → tu vois le slot rouge se remplir dans la sidebar sans refresh.
+   - Kick / leave / dissoudre fonctionnent comme avant.
 
-**Sous-lot 6A vert si** :
-- [ ] Page `/render-test` rend la scene sans crash.
-- [ ] 91 hex + 6 unites visibles.
-- [ ] Hover, clic, rotation, zoom, pan fonctionnent.
-- [ ] Caméra contrainte (pas sous le sol, pas trop loin).
+**Phase 0 — état** : 11/13 sous-tâches. Reste 0.12 (PWA) + 0.13 (Skill).
 
-**Prochain sous-lot 6B** : refonte layout `Game.tsx` en 3 zones (header + scene 3D centrale + sidebar equipes droite). Suppression route `/render-test`. Cochage 0.8 + 0.9 + 0.10.
+**Prochain Lot** :
+- Lot 7 : finitions (PWA + skill `tactica`).
 
 ---
 
-## Session 8 &mdash; 08/05/2026 &mdash; Phase 0 Lot 5 : hex foundation + SCALE_CONFIG
+## Session 9 &mdash; 09/05/2026 &mdash; Phase 0 Lot 6 sous-lot 6A
 
-- engine/hex/* (types, coordinates, distance, neighbors, line, key, index, 5 tests Vitest = 57 tests verts).
-- engine/scales/* (types, config, index).
-- vite.config.ts v1.0b ajout config Vitest.
-- Sous-taches 0.6 + 0.7 ✅.
-
----
-
-## Session 7 &mdash; 08/05/2026 &mdash; Lot 4C : page Game + RLS fix recursion
-
-- Migrations 004 + 005 (SECURITY DEFINER pour casser recursion games <-> game_players).
-- useGame.ts, PlayerSlot.tsx, Game.tsx route `/game/:id`.
-- Hotfix sous-titre header 12px → 18px.
+- engine render : colors, types, scenes/SceneShell+Loader+TacticalScene, hex/HexGrid+HexTile, camera/CameraController, units/UnitPlaceholder, lighting, _data/mvpUnitPlacement.
+- Page démo `/render-test`.
+- 6 nouveaux tests (63 total).
+- 3 hotfixes HexTile : retrait rotation incorrecte, edges custom (sans diagonales internes), Shape+ExtrudeGeometry pour aligner mesh sur cubeToWorld.
 
 ---
 
-## Session 6 &mdash; 08/05/2026 &mdash; Lot 4B : hooks + Lobby React
+## Session 8 &mdash; 08/05/2026 &mdash; Lot 5 hex foundation + SCALE_CONFIG
 
-- sonner installe.
-- Cormorant Garamond.
-- useRealtime, useGames, PageBackground, GameCard, CreateGameDialog, Lobby.
-- App.tsx routes /lobby + Toaster.
+57 tests verts.
 
 ---
 
-## Session 5 &mdash; 08/05/2026 &mdash; Lot 4A : migration BDD + types + maquettes
+## Session 7 &mdash; 08/05/2026 &mdash; Lot 4C page Game + RLS fix
 
-- Migration 003 (idempotente).
-- types/game.ts.
-- 2 maquettes HTML.
+Migrations 004 + 005 (SECURITY DEFINER + drop legacy policies).
 
 ---
 
-## Session 4 &mdash; 08/05/2026 &mdash; Lot 2 carrousel images reelles
+## Session 6 &mdash; 08/05/2026 &mdash; Lot 4B hooks + Lobby React
 
-- 3 images public/scenes/.
-- AuthBackground.tsx v1.0b.
+sonner, useRealtime, useGames, Lobby.tsx, CreateGameDialog, GameCard.
+
+---
+
+## Session 5 &mdash; 08/05/2026 &mdash; Lot 4A migration BDD + types + maquettes
+
+Migration 003, types/game.ts, 2 maquettes HTML.
+
+---
+
+## Session 4 &mdash; 08/05/2026 &mdash; Lot 2 carrousel images réelles
+
+Bouvines, Austerlitz, Verdun.
 
 ---
 
 ## Session 3 &mdash; 08/05/2026 &mdash; Lot 2 addendum carrousel
 
-- Refonte AuthBackground.tsx : carrousel 4 slides + Ken Burns.
+AuthBackground.tsx Ken Burns 4 slides.
 
 ---
 
 ## Session 2 &mdash; 08/05/2026 &mdash; Lot 2
 
-- Migrations 001 + 002.
-- Composants atomes + Auth.tsx + hooks auth.
+Migrations 001 + 002, composants atomes, Auth.tsx, hooks auth.
 
 ---
 
 ## Session 1 &mdash; 08/05/2026 &mdash; Lot 1
 
-- Init Vite + React 18 + TS strict.
-- Tailwind, Radix, alias.
-- Validation Zod env vars + Supabase client.
+Init Vite + React 18 + TS strict + Tailwind + Supabase.

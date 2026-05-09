@@ -1,13 +1,12 @@
+// v1.0e (09/05/2026) — Sous-lot 6B : suppression route /render-test
 // v1.0d (09/05/2026) — Route /render-test pour Lot 6A (demo scene 3D)
 // v1.0c (08/05/2026) — Route /game/:id ajoutee
 // v1.0b (08/05/2026) — Routes /lobby + Toaster sonner, redirection / → /lobby
-// v1.0a (08/05/2026) — Router avec /auth et / proteges
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import { Auth } from '@ui/pages/Auth'
 import { Lobby } from '@ui/pages/Lobby'
 import { Game } from '@ui/pages/Game'
-import { RenderTest } from '@ui/pages/RenderTest'
 
 function App() {
   return (
@@ -22,8 +21,8 @@ function App() {
             color: 'hsl(213 31% 91%)',
             fontFamily: 'system-ui, -apple-system, sans-serif',
             fontSize: '13px',
-            letterSpacing: '0.02em'
-          }
+            letterSpacing: '0.02em',
+          },
         }}
       />
       <Routes>
@@ -31,7 +30,6 @@ function App() {
         <Route path="/auth" element={<Auth />} />
         <Route path="/lobby" element={<Lobby />} />
         <Route path="/game/:id" element={<Game />} />
-        <Route path="/render-test" element={<RenderTest />} />
         <Route path="*" element={<Navigate to="/lobby" replace />} />
       </Routes>
     </BrowserRouter>
