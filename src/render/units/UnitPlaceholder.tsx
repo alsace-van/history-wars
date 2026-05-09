@@ -1,30 +1,29 @@
+// v1.2 (09/05/2026) — L1C.3+ : remplacement cylindre par SoldierMesh (glb teinte team)
 // v1.1 (09/05/2026) — L1C.3 : selected ring (amber) + onClick + animation lerp 300ms via useFrame
 // v1.0 (09/05/2026) — Placeholder unite : cylindre colore + label Billboard
-import { useEffect, useMemo, useRef } from 'react'
+import { Suspense, useEffect, useMemo, useRef } from 'react'
 import { Billboard, Text } from '@react-three/drei'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import * as THREE from 'three'
 import { cubeToWorld } from '@engine/hex'
 import type { UnitInstance } from '../types'
 import { COLORS } from '../colors'
+import { SoldierMesh } from './SoldierMesh'
 
 interface UnitPlaceholderProps {
   unit: UnitInstance
   hexSize: number
   selected?: boolean
-  /** L1C.4 : halo rouge si cible cliquable. */
   targetable?: boolean
-  /** Reduit l'opacite si l'unite a deja agi (visuel "epuise"). */
   exhausted?: boolean
   onClick?: (unit: UnitInstance) => void
   onPointerOver?: (unit: UnitInstance) => void
   onPointerOut?: (unit: UnitInstance) => void
 }
 
-const UNIT_HEIGHT = 0.6
-const UNIT_RADIUS_RATIO = 0.45 // x hexSize
+const SOLDIER_SCALE_RATIO = 0.5 // x hexSize → hauteur ~1 unit (modele 2m centre)
+const RING_LIFT = 0.02
 const LERP_DURATION_MS = 300
-const SELECTED_RING_LIFT = 0.02
 
 function easeOutCubic(t: number): number {
   return 1 - Math.pow(1 - t, 3)
@@ -40,37 +39,32 @@ export function UnitPlaceholder({
   onPointerOver,
   onPointerOut,
 }: UnitPlaceholderProps) {
-  const { fillColor, edgeColor } = useMemo(() => {
-    return unit.team === 'red'
-      ? { fillColor: COLORS.teamRed, edgeColor: COLORS.teamRedBright }
-      : { fillColor: COLORS.teamBlue, edgeColor: COLORS.teamBlueBright }
-  }, [unit.team])
-
   const targetPos = useMemo<[number, number, number]>(() => {
     const w = cubeToWorld(unit.position, hexSize)
-    return [w.x, UNIT_HEIGHT / 2 + 0.05, w.y]
+    return [w.x, 0, w.y]
   }, [unit.position, hexSize])
 
-  const radius = hexSize * UNIT_RADIUS_RATIO
+  const ringRadius = hexSize * 0.42
+  const facingY = unit.team === 'red' ? Math.PI : 0
+  const soldierScale = hexSize * SOLDIER_SCALE_RATIO
+  // Pieds au sol : modele a min Y=-1 → translate Y de +scale (1*scale)
+  const soldierTranslateY = soldierScale
 
-  // ---- Animation lerp position (piege #34 : nouveau target avant fin → repart de la position courante) ----
+  // ---- Animation lerp position ----
   const groupRef = useRef<THREE.Group>(null)
   const startPosRef = useRef<[number, number, number]>(targetPos)
   const startTimeRef = useRef<number>(0)
   const targetRef = useRef<[number, number, number]>(targetPos)
 
-  // Init position au premier mount (sinon le mesh apparait a [0,0,0] le 1er frame)
   useEffect(() => {
     if (groupRef.current) {
       groupRef.current.position.set(targetPos[0], targetPos[1], targetPos[2])
       startPosRef.current = [targetPos[0], targetPos[1], targetPos[2]]
       targetRef.current = targetPos
     }
-    // run once at mount
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Quand la cible change : capturer la position courante comme nouveau start, demarrer lerp
   useEffect(() => {
     if (!groupRef.current) return
     const cur = groupRef.current.position
@@ -89,7 +83,6 @@ export function UnitPlaceholder({
     groupRef.current.position.set(sx + (tx - sx) * e, sy + (ty - sy) * e, sz + (tz - sz) * e)
   })
 
-  // ---- Handlers (stopPropagation pour eviter clic hex sous l'unite, piege #33) ----
   function handleClick(e: ThreeEvent<MouseEvent>) {
     e.stopPropagation()
     onClick?.(unit)
@@ -107,13 +100,10 @@ export function UnitPlaceholder({
 
   return (
     <group ref={groupRef}>
-      {/* Anneau selection (amber) au sol, plus grand que le cylindre */}
+      {/* Ring selection (amber) */}
       {selected && (
-        <mesh
-          position={[0, -UNIT_HEIGHT / 2 + SELECTED_RING_LIFT, 0]}
-          rotation={[-Math.PI / 2, 0, 0]}
-        >
-          <ringGeometry args={[radius * 1.15, radius * 1.4, 32]} />
+        <mesh position={[0, RING_LIFT, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[ringRadius * 1.0, ringRadius * 1.3, 32]} />
           <meshBasicMaterial
             color={COLORS.unitSelectedRing}
             transparent
@@ -123,13 +113,10 @@ export function UnitPlaceholder({
         </mesh>
       )}
 
-      {/* Halo cible (rouge) au sol — L1C.4 */}
+      {/* Halo cible rouge (L1C.4) */}
       {targetable && !selected && (
-        <mesh
-          position={[0, -UNIT_HEIGHT / 2 + SELECTED_RING_LIFT, 0]}
-          rotation={[-Math.PI / 2, 0, 0]}
-        >
-          <ringGeometry args={[radius * 1.1, radius * 1.35, 32]} />
+        <mesh position={[0, RING_LIFT, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[ringRadius * 0.95, ringRadius * 1.25, 32]} />
           <meshBasicMaterial
             color={COLORS.unitTargetableHalo}
             transparent
@@ -139,27 +126,31 @@ export function UnitPlaceholder({
         </mesh>
       )}
 
-      {/* Cylindre principal */}
-      <mesh onClick={handleClick} onPointerOver={handleOver} onPointerOut={handleOut}>
-        <cylinderGeometry args={[radius, radius, UNIT_HEIGHT, 16]} />
-        <meshStandardMaterial
-          color={fillColor}
-          roughness={0.55}
-          metalness={0.15}
-          emissive={fillColor}
-          emissiveIntensity={selected ? 0.35 : 0.15}
-          transparent={exhausted}
-          opacity={opacity}
-        />
+      {/* Hitbox cylindre invisible : zone click/hover stable meme si glb a des trous */}
+      <mesh
+        position={[0, soldierScale, 0]}
+        onClick={handleClick}
+        onPointerOver={handleOver}
+        onPointerOut={handleOut}
+      >
+        <cylinderGeometry args={[ringRadius, ringRadius, soldierScale * 2, 8]} />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
-      {/* Anneau bordure haut */}
-      <mesh position={[0, UNIT_HEIGHT / 2 - 0.04, 0]}>
-        <torusGeometry args={[radius, 0.025, 8, 24]} />
-        <meshStandardMaterial color={edgeColor} roughness={0.4} />
-      </mesh>
-      {/* Label Billboard, toujours face camera */}
+
+      {/* Soldat 3D teinte par team */}
+      <group
+        position={[0, soldierTranslateY, 0]}
+        rotation={[0, facingY, 0]}
+        scale={[soldierScale, soldierScale, soldierScale]}
+      >
+        <Suspense fallback={null}>
+          <SoldierMesh team={unit.team} opacity={opacity} selected={selected} />
+        </Suspense>
+      </group>
+
+      {/* Label Billboard au-dessus de la tete */}
       <Billboard
-        position={[0, UNIT_HEIGHT / 2 + 0.4, 0]}
+        position={[0, soldierScale * 2.2 + 0.2, 0]}
         follow
         lockX={false}
         lockY={false}
