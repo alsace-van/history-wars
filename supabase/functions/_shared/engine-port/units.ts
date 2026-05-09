@@ -1,8 +1,9 @@
+// v1.1 (09/05/2026) — Phase 1 L1B.4a : ajout UnitState (necessaire morale + combat)
 // v1.0 (09/05/2026) — Phase 1 L1B.2 : port engine/units pour Deno EF
-// Source de verite : src/engine/units/stats.ts. Duplication controlee (piege #12).
-// Si ce fichier diverge du client, les stats ne matcheront plus → tester la parite.
+// Source de verite : src/engine/units/{stats.ts,types.ts}. Duplication controlee (piege #12).
 
-import type { UnitKind } from '../types.ts'
+import type { UnitKind, Team } from '../types.ts'
+import type { Cube } from './hex/index.ts'
 
 export interface UnitStats {
   hpMax: number
@@ -21,4 +22,23 @@ export const UNIT_STATS_BY_KIND: Record<UnitKind, UnitStats> = Object.freeze({
 
 export function getUnitStats(kind: UnitKind): UnitStats {
   return UNIT_STATS_BY_KIND[kind]
+}
+
+/**
+ * Etat d'une unite consomme par les fonctions engine pures (morale, combat).
+ * Bati a la volee dans les EF depuis UnitRow.
+ * Source : src/engine/units/types.ts (UnitState).
+ */
+export interface UnitState {
+  readonly id: string
+  readonly kind: UnitKind
+  readonly team: Team
+  readonly position: Cube
+  readonly hp: number
+  readonly hpMax: number
+  readonly morale: number
+  readonly moraleMax: number
+  readonly hasMoved: boolean
+  readonly hasAttacked: boolean
+  readonly routed: boolean
 }
