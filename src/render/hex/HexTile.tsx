@@ -1,5 +1,6 @@
-// v1.0a (09/05/2026) — Fix : rotation hex retiree (cause trous entre hex)
-// v1.0 (09/05/2026) — Un hex : cylindre tres aplati + bordure (LineSegments)
+// v1.0b (09/05/2026) — Fix : edges custom (CylinderGeometry edges incluait diagonales internes)
+// v1.0a (09/05/2026) — Fix : rotation hex retiree
+// v1.0 (09/05/2026) — Un hex : cylindre tres aplati + bordure
 import { memo, useMemo } from 'react'
 import * as THREE from 'three'
 import type { Cube } from '@engine/hex'
@@ -22,18 +23,30 @@ const TILE_THICKNESS = 0.08
 const EDGE_LIFT = 0.005
 
 /**
- * Geometrie hex aplatie partagee. CylinderGeometry(_, _, _, 6) cree un hex
- * inscrit dans un cercle de rayon 1 avec sommets aux angles 0,60,...,300°.
- * AUCUNE rotation : c'est exactement la convention attendue par cubeToWorld
- * flat-top de Red Blob (les sommets sont a l'Est et a l'Ouest, les faces
- * plates en haut/bas perpendiculaires a l'axe Z monde).
- *
- * NE PAS faire rotateY : casserait la tangence avec les voisins.
+ * Mesh hex : CylinderGeometry 6 segments. AUCUNE rotation : sommets natifs
+ * aux angles 0,60,...,300° = exactement la convention cubeToWorld flat-top.
  */
 const HEX_GEOMETRY = new THREE.CylinderGeometry(1, 1, TILE_THICKNESS, 6, 1)
 
-// Geometrie d'edges (contour) pre-calculee
-const HEX_EDGES = new THREE.EdgesGeometry(HEX_GEOMETRY)
+/**
+ * Edges : BufferGeometry custom avec UNIQUEMENT le contour hexagonal du top.
+ * On NE peut PAS utiliser `EdgesGeometry(HEX_GEOMETRY)` qui inclurait aussi
+ * les 12 aretes diagonales des faces top/bottom (triangulees en eventail
+ * depuis le centre par CylinderGeometry) -> effet "etoile" visible sur la
+ * grille en superposition.
+ */
+const HEX_EDGES = (() => {
+  const positions: number[] = []
+  for (let i = 0; i < 6; i++) {
+    const a1 = (i * Math.PI) / 3
+    const a2 = ((i + 1) * Math.PI) / 3
+    positions.push(Math.cos(a1), 0, Math.sin(a1))
+    positions.push(Math.cos(a2), 0, Math.sin(a2))
+  }
+  const geom = new THREE.BufferGeometry()
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  return geom
+})()
 
 function HexTileBase({
   cube,
