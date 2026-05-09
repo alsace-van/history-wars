@@ -30,7 +30,7 @@ interface UnitPlaceholderProps {
 
 const SOLDIER_SCALE_RATIO = 0.5
 const RING_LIFT = 0.02
-const SECONDS_PER_HEX = 0.4
+const SECONDS_PER_HEX = 1.0
 const SEGMENT_DURATION_MS = SECONDS_PER_HEX * 1000
 
 function easeInOutQuad(t: number): number {
