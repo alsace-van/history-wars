@@ -33,3 +33,10 @@ coverage
 
 # Vite PWA
 dev-dist
+
+# TypeScript build cache
+*.tsbuildinfo
+
+# Compiled config (source is vite.config.ts)
+vite.config.js
+vite.config.d.ts
