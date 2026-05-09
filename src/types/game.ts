@@ -1,3 +1,4 @@
+// v1.0a (09/05/2026) — Ajout UnitKind pour Lot 6 (placeholders unites)
 // v1.0 (08/05/2026) — Types Lobby Lot 4 : Game, GamePlayer + literals + helpers
 // Source de verite : migration 003_lobby_columns.sql
 
@@ -16,6 +17,16 @@ export type Team = 'blue' | 'red'
 export type PlayerRole = 'general' | 'commander'
 
 export type BotDifficulty = 'easy' | 'medium' | 'hard'
+
+/**
+ * Type d'unite militaire.
+ *   I = Infanterie
+ *   C = Cavalerie
+ *   A = Artillerie
+ * Phase 0 : utilise par UnitPlaceholder (lettre affichee).
+ * Phase 1+ : sera utilise par la table BDD `units`.
+ */
+export type UnitKind = 'I' | 'C' | 'A'
 
 // ----------------------------------------------------------------------------
 // Constantes de jeu (pas de hardcode dans le reste du code)

@@ -4,80 +4,82 @@ Format : `fichier <- dependants`.
 
 ---
 
-## Lot 1
+## Lots 1-5 (rappel condensé)
 
 ```
-src/lib/env.ts <- src/lib/supabase.ts
-src/lib/supabase.ts <- src/hooks/useAuth.ts, useGames.ts, useGame.ts, useRealtime.ts
-```
-
-## Lot 2
-
-```
-src/lib/cn.ts <- Label.tsx, Input.tsx, Button.tsx, PasswordInput.tsx, GameCard.tsx, Lobby.tsx, Game.tsx, PlayerSlot.tsx
-src/ui/components/* <- Auth.tsx, GameCard.tsx
-src/hooks/useAuth.ts <- useRequireAuth.ts, Auth.tsx
-src/hooks/useRequireAuth.ts <- Lobby.tsx, Game.tsx
+src/lib/env.ts <- supabase.ts
+src/lib/supabase.ts <- useAuth, useGames, useGame, useRealtime
+src/lib/cn.ts <- composants UI
+src/types/game.ts <- hooks, ui/*, render/*, engine/scales/types.ts
+src/hooks/useAuth.ts <- useRequireAuth, Auth.tsx
+src/hooks/useRequireAuth.ts <- Lobby, Game
+src/engine/hex/* <- engine/hex/index.ts <- render/hex/HexTile, HexGrid, render/_data/mvpUnitPlacement.test
+src/engine/scales/* <- engine/scales/index.ts <- render/hex/HexGrid, render/camera/CameraController, render/scenes/TacticalScene
+src/ui/lobby/*, src/ui/game/* <- Lobby, Game
 src/App.tsx <- main.tsx
 ```
 
-## Lot 4
+## Lot 6A — render/
 
 ```
-src/types/game.ts <- useGames, useGame, GameCard, CreateGameDialog, Lobby, Game, PlayerSlot, engine/scales/types.ts
-src/hooks/useRealtime.ts <- Lobby, Game
-src/ui/layout/PageBackground.tsx <- Lobby, Game
-src/ui/lobby/* <- Lobby
-src/ui/game/PlayerSlot.tsx <- Game
-src/ui/pages/Lobby.tsx, Game.tsx <- App.tsx
-```
+src/render/colors.ts
+  <- src/render/hex/HexTile.tsx
+  <- src/render/units/UnitPlaceholder.tsx
+  <- src/render/index.ts
 
-## Lot 5 (engine pur, aucun import depuis React)
+src/render/types.ts
+  <- src/render/hex/HexTile.tsx
+  <- src/render/hex/HexGrid.tsx
+  <- src/render/units/UnitPlaceholder.tsx
+  <- src/render/scenes/TacticalScene.tsx
+  <- src/render/_data/mvpUnitPlacement.ts
+  <- src/render/index.ts
 
-```
-src/engine/hex/types.ts
-  <- src/engine/hex/coordinates.ts
-  <- src/engine/hex/distance.ts
-  <- src/engine/hex/neighbors.ts
-  <- src/engine/hex/line.ts
-  <- src/engine/hex/key.ts
+src/render/hex/HexTile.tsx
+  <- src/render/hex/HexGrid.tsx
+  <- src/render/index.ts
 
-src/engine/hex/coordinates.ts
-  <- src/engine/hex/line.ts
-  <- src/engine/hex/index.ts
+src/render/hex/HexGrid.tsx
+  <- src/render/scenes/TacticalScene.tsx
+  <- src/render/index.ts
 
-src/engine/hex/distance.ts
-  <- src/engine/hex/line.ts
-  <- src/engine/hex/index.ts
+src/render/units/UnitPlaceholder.tsx
+  <- src/render/scenes/TacticalScene.tsx
+  <- src/render/index.ts
 
-src/engine/hex/neighbors.ts
-  <- src/engine/hex/index.ts
+src/render/camera/CameraController.tsx
+  <- src/render/scenes/TacticalScene.tsx
+  <- src/render/index.ts
 
-src/engine/hex/line.ts
-  <- src/engine/hex/index.ts
+src/render/lighting/SceneLighting.tsx
+  <- src/render/scenes/TacticalScene.tsx
+  <- src/render/index.ts
 
-src/engine/hex/key.ts
-  <- src/engine/hex/index.ts
+src/render/scenes/SceneLoader.tsx
+  <- src/render/scenes/SceneShell.tsx
 
-src/engine/hex/index.ts
-  <- (sera importe par src/render/hex/HexGrid.tsx au Lot 6)
+src/render/scenes/SceneShell.tsx
+  <- src/render/scenes/TacticalScene.tsx
+  <- src/render/index.ts
 
-src/engine/scales/types.ts
-  <- src/engine/scales/config.ts
-  <- src/engine/scales/index.ts
-  (importe Scale depuis @/types/game)
+src/render/scenes/TacticalScene.tsx
+  <- src/render/index.ts
+  <- src/ui/pages/RenderTest.tsx
 
-src/engine/scales/config.ts
-  <- src/engine/scales/index.ts
+src/render/_data/mvpUnitPlacement.ts
+  <- src/render/index.ts
+  <- src/ui/pages/RenderTest.tsx
 
-src/engine/scales/index.ts
-  <- (sera importe par src/render/* au Lot 6)
+src/render/index.ts
+  <- src/ui/pages/RenderTest.tsx
+  (sera importe par src/ui/pages/Game.tsx au sous-lot 6B)
+
+src/ui/pages/RenderTest.tsx
+  <- src/App.tsx
 ```
 
 **Vérifications** :
-- `engine/` n'importe rien depuis `render/`, `ui/`, `hooks/` : OK (engine pur).
-- `engine/scales/types.ts` importe `Scale` depuis `@/types/game` : 1 import unidirectionnel, pas de cycle (`@/types/game` n'importe rien depuis engine).
+- `render/` importe depuis `engine/hex`, `engine/scales`, `@/types/game`, et drei/three. Aucun import depuis `hooks/`, `ui/components/` ou autre.
+- `engine/` n'importe toujours rien depuis `render/` ou `ui/` (engine reste pur).
 
----
-
-Aucun cycle d'import.
+Aucun cycle.

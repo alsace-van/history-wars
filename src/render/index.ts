@@ -1,0 +1,11 @@
+// v1.0 (09/05/2026) — Barrel export render
+export { TacticalScene } from './scenes/TacticalScene'
+export { SceneShell } from './scenes/SceneShell'
+export { HexGrid } from './hex/HexGrid'
+export { HexTile } from './hex/HexTile'
+export { CameraController } from './camera/CameraController'
+export { UnitPlaceholder } from './units/UnitPlaceholder'
+export { SceneLighting } from './lighting/SceneLighting'
+export { COLORS } from './colors'
+export type { UnitInstance, HexTileState, HexTileVisibility } from './types'
+export { buildMvpUnitPlacement } from './_data/mvpUnitPlacement'
