@@ -1,7 +1,7 @@
+// v3.0 (09/05/2026) — L1C.2 : bouton Engager câblé + switch lobby/in_progress + units BDD via useBattleUnits
 // v2.0a (09/05/2026) — Lot 7 : badge online/offline dans footer sidebar
 // v2.0 (09/05/2026) — Layout 3 zones : header + scene 3D centrale + sidebar equipes droite
 // v1.0a (08/05/2026) — Sous-titre header plus grand
-// v1.0 (08/05/2026) — Page Game placeholder : 2 panneaux equipes + actions
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -9,22 +9,38 @@ import { useRequireAuth } from '@hooks/useRequireAuth'
 import { useGame } from '@hooks/useGame'
 import { useRealtime } from '@hooks/useRealtime'
 import { useOnlineStatus } from '@hooks/useOnlineStatus'
+import { useBattleUnits } from '@hooks/useBattleUnits'
+import { useCombatActions } from '@hooks/useCombatActions'
 import {
   isHost,
   isPlayerInGame,
   deriveSlotAssignment,
+  type Team,
 } from '@/types/game'
 import { PageBackground } from '@ui/layout/PageBackground'
 import { TeamPanel, type SlotData } from '@ui/game/TeamPanel'
 import { TacticalScene, buildMvpUnitPlacement } from '@/render'
+import { unitRowsToInstances } from '@render/_data/unitAdapter'
 import { spiral } from '@engine/hex'
 import { cn } from '@lib/cn'
+
+const TAG = '[Game v3.0]'
 
 const PRIMARY_BTN_CLIP =
   'polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px)'
 
 // MVP-Plaine : disque hex rayon 5 (91 hex) centre origine
+// TODO L1C.5 : lire boardRadius depuis game.state.tactical
 const MVP_CUBES = spiral({ q: 0, r: 0, s: 0 }, 5)
+
+interface TacticalStateView {
+  phase?: string
+  boardRadius?: number
+  currentTurn?: number
+  activeTeam?: Team
+  scenarioId?: string
+  winner?: Team | null
+}
 
 export function Game() {
   const { id: gameId } = useParams<{ id: string }>()
@@ -93,13 +109,57 @@ export function Game() {
   const blueSlots = useMemo(() => slots.filter(s => s.team === 'blue'), [slots])
   const redSlots = useMemo(() => slots.filter(s => s.team === 'red'), [slots])
 
-  // Phase 0 : 6 unites factices (3 vs 3, 1 de chaque type par equipe)
-  const units = useMemo(() => buildMvpUnitPlacement(), [])
+  // ---- L1C.2 : units selon status ----
+  const inProgress = game?.status === 'in_progress'
+  const finished = game?.status === 'finished'
+  const showBattle = inProgress || finished
+
+  const { units: dbUnits, loading: unitsLoading } = useBattleUnits(
+    gameId,
+    showBattle
+  )
+
+  // Unites factices (preview lobby/briefing) ; remplacees par BDD en in_progress.
+  const factoryUnits = useMemo(() => buildMvpUnitPlacement(), [])
+
+  const renderUnits = useMemo(() => {
+    if (showBattle) return unitRowsToInstances(dbUnits)
+    return factoryUnits
+  }, [showBattle, dbUnits, factoryUnits])
+
+  // ---- L1C.2 : actions EF ----
+  const { busy: actionsBusy, startBattle } = useCombatActions()
 
   const online = useOnlineStatus()
 
   const iAmHost = !!game && isHost(game, user?.id ?? null)
   const iAmIn = isPlayerInGame(players, user?.id ?? null)
+
+  // Etat tactique (lu depuis game.state JSONB, robuste si vide)
+  const tactical: TacticalStateView | null = useMemo(() => {
+    if (!game) return null
+    const s = game.state as { tactical?: TacticalStateView } | null | undefined
+    return s?.tactical ?? null
+  }, [game])
+
+  // Conditions pour engager : host + lobby + au moins 1 joueur par equipe
+  const occupiedPlayers = useMemo(() => players.filter(p => p.user_id !== null), [players])
+  const blueOccupied = occupiedPlayers.some(p => p.team === 'blue')
+  const redOccupied = occupiedPlayers.some(p => p.team === 'red')
+  const canStart =
+    iAmHost &&
+    game?.status === 'lobby' &&
+    occupiedPlayers.length >= 2 &&
+    blueOccupied &&
+    redOccupied
+
+  const startTooltip = useMemo(() => {
+    if (!iAmHost) return "Seul l'hôte peut engager la bataille."
+    if (game?.status !== 'lobby') return 'Bataille déjà engagée.'
+    if (occupiedPlayers.length < 2) return 'Il faut au moins 2 officiers.'
+    if (!blueOccupied || !redOccupied) return 'Chaque camp doit avoir au moins 1 officier.'
+    return null
+  }, [iAmHost, game?.status, occupiedPlayers.length, blueOccupied, redOccupied])
 
   async function handleLeave() {
     if (!user || busy) return
@@ -142,6 +202,16 @@ export function Game() {
     toast.success('Officier renvoyé.')
   }
 
+  async function handleStartBattle() {
+    if (!gameId || !canStart || actionsBusy) return
+    // eslint-disable-next-line no-console
+    console.log(TAG, 'startBattle invoked', { gameId })
+    const res = await startBattle(gameId)
+    if (res.ok) {
+      toast.success('Bataille engagée.')
+    }
+  }
+
   if (authLoading || !user || loading || !game) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -158,6 +228,25 @@ export function Game() {
         ? 'Échelle opérationnelle'
         : 'Échelle stratégique'
 
+  // Label header dynamique selon status
+  const statusLabel =
+    game.status === 'lobby'
+      ? 'En attente'
+      : game.status === 'briefing'
+        ? 'Briefing'
+        : game.status === 'in_progress'
+          ? 'Bataille en cours'
+          : game.status === 'finished'
+            ? 'Bataille achevée'
+            : game.status
+
+  const subtitleLabel = showBattle ? 'Bataille' : 'Brief'
+
+  // Active team label (in_progress)
+  const activeTeam = tactical?.activeTeam ?? 'blue'
+  const myTeam = players.find(p => p.user_id === user.id)?.team ?? null
+  const isMyTurn = inProgress && myTeam === activeTeam
+
   return (
     <div className="h-screen relative font-sans flex flex-col overflow-hidden">
       <PageBackground />
@@ -173,7 +262,7 @@ export function Game() {
           <div className="text-[20px] font-bold tracking-[0.32em] text-foreground">
             TACTICA
             <span className="ml-3 align-middle font-serif italic font-normal text-[18px] tracking-[0.04em] text-tactica-amber">
-              — Brief
+              — {subtitleLabel}
             </span>
           </div>
         </div>
@@ -199,7 +288,7 @@ export function Game() {
 
           <div className="px-10 py-5 border-b border-[rgba(226,232,240,0.10)] shrink-0">
             <div className="text-[10px] font-semibold uppercase tracking-[0.32em] text-tactica-amber mb-[4px]">
-              Ordre de bataille — {game.status === 'lobby' ? 'En attente' : game.status}
+              Ordre de bataille — {statusLabel}
             </div>
             <h1 className="font-serif italic text-[28px] font-medium m-0 leading-[1.1] text-foreground">
               {game.name}
@@ -211,7 +300,7 @@ export function Game() {
               <span className="opacity-40">/</span>
               <span>Hôte : {players.find(p => p.user_id === hostUserId)?.username ?? '...'}</span>
               <span className="opacity-40">/</span>
-              <span>Tour {game.turn_number}</span>
+              <span>Tour {tactical?.currentTurn ?? game.turn_number}</span>
             </div>
           </div>
 
@@ -219,35 +308,55 @@ export function Game() {
             <TacticalScene
               scale={game.current_scale}
               cubes={MVP_CUBES}
-              units={units}
+              units={renderUnits}
             />
             <div className="absolute bottom-3 left-3 px-3 py-2 bg-[rgba(15,23,42,0.85)] backdrop-blur-[6px] border border-[rgba(226,232,240,0.18)] rounded-[2px] text-[10px] text-muted-foreground tracking-[0.05em] uppercase pointer-events-none">
               <div>Drag : rotation · Drag droit : pan · Molette : zoom</div>
             </div>
+            {showBattle && unitsLoading && (
+              <div className="absolute top-3 right-3 px-3 py-2 bg-[rgba(15,23,42,0.85)] backdrop-blur-[6px] border border-[rgba(226,232,240,0.18)] rounded-[2px] text-[10px] text-muted-foreground tracking-[0.05em] uppercase pointer-events-none">
+                Chargement des unités…
+              </div>
+            )}
           </div>
         </div>
 
         <aside className="w-[340px] shrink-0 border-l border-[rgba(226,232,240,0.18)] bg-[rgba(8,12,24,0.7)] backdrop-blur-[2px] flex flex-col">
 
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
-            <TeamPanel
-              team="blue"
-              slots={blueSlots}
-              hostUserId={hostUserId}
-              currentUserId={user.id}
-              canKick={iAmHost}
-              onKick={handleKick}
-              compact
-            />
-            <TeamPanel
-              team="red"
-              slots={redSlots}
-              hostUserId={hostUserId}
-              currentUserId={user.id}
-              canKick={iAmHost}
-              onKick={handleKick}
-              compact
-            />
+            {showBattle ? (
+              <BattleSidebarPlaceholder
+                turn={tactical?.currentTurn ?? game.turn_number}
+                activeTeam={activeTeam}
+                myTeam={myTeam}
+                isMyTurn={isMyTurn}
+                blueSlots={blueSlots}
+                redSlots={redSlots}
+                hostUserId={hostUserId}
+                currentUserId={user.id}
+              />
+            ) : (
+              <>
+                <TeamPanel
+                  team="blue"
+                  slots={blueSlots}
+                  hostUserId={hostUserId}
+                  currentUserId={user.id}
+                  canKick={iAmHost}
+                  onKick={handleKick}
+                  compact
+                />
+                <TeamPanel
+                  team="red"
+                  slots={redSlots}
+                  hostUserId={hostUserId}
+                  currentUserId={user.id}
+                  canKick={iAmHost}
+                  onKick={handleKick}
+                  compact
+                />
+              </>
+            )}
           </div>
 
           <div className="relative p-4 border-t border-[rgba(226,232,240,0.18)] bg-[rgba(15,23,42,0.85)]">
@@ -287,18 +396,28 @@ export function Game() {
             </div>
 
             <div className="flex flex-col gap-2">
-              <span className="relative group">
-                <button
-                  disabled
-                  className="w-full bg-tactica-amber/20 text-tactica-amber/40 cursor-not-allowed px-4 py-[10px] text-[11px] font-semibold uppercase tracking-[0.12em]"
-                  style={{ clipPath: PRIMARY_BTN_CLIP }}
-                >
-                  Engager la bataille
-                </button>
-                <span className="absolute bottom-full right-0 mb-[6px] whitespace-nowrap text-[10px] uppercase tracking-[0.12em] bg-[rgba(8,12,24,0.95)] border border-tactica-amber px-[10px] py-[6px] rounded-[2px] text-foreground opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                  Disponible Phase 1
+              {!showBattle && (
+                <span className="relative group">
+                  <button
+                    disabled={!canStart || actionsBusy}
+                    onClick={handleStartBattle}
+                    className={cn(
+                      'w-full px-4 py-[10px] text-[11px] font-semibold uppercase tracking-[0.12em] transition-colors',
+                      canStart && !actionsBusy
+                        ? 'bg-tactica-amber text-[#0f172a] hover:bg-tactica-amber/90 cursor-pointer'
+                        : 'bg-tactica-amber/20 text-tactica-amber/40 cursor-not-allowed'
+                    )}
+                    style={{ clipPath: PRIMARY_BTN_CLIP }}
+                  >
+                    {actionsBusy ? 'Lancement…' : 'Engager la bataille'}
+                  </button>
+                  {startTooltip && (
+                    <span className="absolute bottom-full right-0 mb-[6px] whitespace-nowrap text-[10px] uppercase tracking-[0.12em] bg-[rgba(8,12,24,0.95)] border border-tactica-amber px-[10px] py-[6px] rounded-[2px] text-foreground opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                      {startTooltip}
+                    </span>
+                  )}
                 </span>
-              </span>
+              )}
 
               <button
                 onClick={handleLeave}
@@ -310,6 +429,84 @@ export function Game() {
             </div>
           </div>
         </aside>
+      </div>
+    </div>
+  )
+}
+
+// ---- Sidebar placeholder en mode bataille (sera etoffee L1C.5 : TurnIndicator + UnitInspector) ----
+interface BattleSidebarPlaceholderProps {
+  turn: number
+  activeTeam: Team
+  myTeam: Team | null
+  isMyTurn: boolean
+  blueSlots: SlotData[]
+  redSlots: SlotData[]
+  hostUserId: string
+  currentUserId: string
+}
+
+function BattleSidebarPlaceholder({
+  turn,
+  activeTeam,
+  myTeam,
+  isMyTurn,
+  blueSlots,
+  redSlots,
+  hostUserId,
+  currentUserId,
+}: BattleSidebarPlaceholderProps) {
+  const activeLabel = activeTeam === 'blue' ? 'Bleus' : 'Rouges'
+  const activeColor = activeTeam === 'blue' ? '#3b82f6' : '#ef4444'
+
+  return (
+    <div className="space-y-4">
+      {/* Bandeau tour */}
+      <div
+        className="relative px-3 py-3 border rounded-[2px]"
+        style={{
+          borderColor: activeColor,
+          background: `linear-gradient(180deg, ${activeColor}22 0%, transparent 100%)`,
+        }}
+      >
+        <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground mb-1">
+          Tour {turn}
+        </div>
+        <div
+          className="text-[14px] font-semibold uppercase tracking-[0.08em]"
+          style={{ color: activeColor }}
+        >
+          {isMyTurn ? 'À toi de jouer' : `Tour des ${activeLabel}`}
+        </div>
+        {myTeam && (
+          <div className="text-[10px] text-muted-foreground mt-1 uppercase tracking-[0.08em]">
+            Ton camp : {myTeam === 'blue' ? 'Bleus' : 'Rouges'}
+          </div>
+        )}
+      </div>
+
+      {/* Liste compacte des officiers (read-only en bataille) */}
+      <TeamPanel
+        team="blue"
+        slots={blueSlots}
+        hostUserId={hostUserId}
+        currentUserId={currentUserId}
+        canKick={false}
+        onKick={() => undefined}
+        compact
+      />
+      <TeamPanel
+        team="red"
+        slots={redSlots}
+        hostUserId={hostUserId}
+        currentUserId={currentUserId}
+        canKick={false}
+        onKick={() => undefined}
+        compact
+      />
+
+      <div className="px-3 py-2 text-[10px] uppercase tracking-[0.08em] text-muted-foreground border border-[rgba(226,232,240,0.10)] rounded-[2px]">
+        Ordres et combat — disponibles aux prochaines livraisons (L1C.3 → L1C.5)
       </div>
     </div>
   )

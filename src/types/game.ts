@@ -1,6 +1,7 @@
+// v1.1 (09/05/2026) — L1C.2 : ajout Game.state JSONB + GameState/GameStateTactical (Phase 1)
 // v1.0a (09/05/2026) — Ajout UnitKind pour Lot 6 (placeholders unites)
 // v1.0 (08/05/2026) — Types Lobby Lot 4 : Game, GamePlayer + literals + helpers
-// Source de verite : migration 003_lobby_columns.sql
+// Source de verite : migration 003_lobby_columns.sql + 007_phase1_units_and_actions.sql
 
 // ----------------------------------------------------------------------------
 // Types literaux (alignes sur les CHECK constraints SQL)
@@ -44,6 +45,28 @@ export const DEFAULT_MODE: GameMode = 'casual'
 // Modeles BDD (1:1 avec les colonnes Supabase apres migration 003)
 // ----------------------------------------------------------------------------
 
+/** Sous-etat tactique stocke dans games.state (migration 007). */
+export interface GameStateTactical {
+  phase?: 'orders' | 'resolving' | 'review'
+  boardRadius?: number
+  currentTurn?: number
+  activeTeam?: Team
+  scenarioId?: string
+  /** L1B.4c : equipe gagnante quand status='finished'. null tant qu'en cours. */
+  winner?: Team | null
+}
+
+/**
+ * games.state JSONB. Initialise a {} avant start_battle, puis enrichi.
+ * version pour migrations futures (D11). Sous-etats par echelle.
+ */
+export interface GameState {
+  version?: number
+  tactical?: GameStateTactical
+  // operational?: ... (Phase 8)
+  // strategic?: ... (Phase 9)
+}
+
 export interface Game {
   id: string
   created_at: string
@@ -58,6 +81,7 @@ export interface Game {
   last_action_at: string
   max_players: number
   scenario_id: string | null
+  state: GameState
 }
 
 export interface GamePlayer {
