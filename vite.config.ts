@@ -1,5 +1,7 @@
+// v1.0b (08/05/2026) — Ajout config Vitest pour Lot 5 (engine tests)
 // v1.0a (08/05/2026) — config Vite Lot 1, alias seulement (PWA reportee Lot 5)
 // v1.0 (08/05/2026) — config Vite Lot 1, alias + PWA basique
+/// <reference types="vitest" />
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
@@ -19,5 +21,10 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: false
+  },
+  test: {
+    globals: false,
+    environment: 'node',
+    include: ['src/**/*.test.ts', 'src/**/*.test.tsx']
   }
 })

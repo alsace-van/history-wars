@@ -1,123 +1,82 @@
 # dependency-map.md
 
-Graph des imports entre fichiers du projet. Mis a jour quand de nouveaux modules sont crees ou des imports modifies.
-
-Format : `fichier <- dependants` (qui depend de moi).
+Format : `fichier <- dependants`.
 
 ---
 
 ## Lot 1
 
 ```
-src/lib/env.ts
-  <- src/lib/supabase.ts
-
-src/lib/supabase.ts
-  <- src/hooks/useAuth.ts
-  <- src/hooks/useGames.ts
-  <- src/hooks/useGame.ts
-  <- src/hooks/useRealtime.ts
+src/lib/env.ts <- src/lib/supabase.ts
+src/lib/supabase.ts <- src/hooks/useAuth.ts, useGames.ts, useGame.ts, useRealtime.ts
 ```
 
 ## Lot 2
 
 ```
-src/lib/cn.ts
-  <- src/ui/components/Label.tsx
-  <- src/ui/components/Input.tsx
-  <- src/ui/components/Button.tsx
-  <- src/ui/components/PasswordInput.tsx
-  <- src/ui/lobby/GameCard.tsx
-  <- src/ui/pages/Lobby.tsx
-  <- src/ui/pages/Game.tsx
-  <- src/ui/game/PlayerSlot.tsx
-
-src/ui/components/Label.tsx
-  <- src/ui/components/PasswordInput.tsx
-  <- src/ui/pages/Auth.tsx
-
-src/ui/components/Input.tsx
-  <- src/ui/components/PasswordInput.tsx
-  <- src/ui/pages/Auth.tsx
-
-src/ui/components/Button.tsx
-  <- src/ui/pages/Auth.tsx
-  <- src/ui/lobby/GameCard.tsx
-
-src/ui/components/PasswordInput.tsx
-  <- src/ui/pages/Auth.tsx
-
-src/ui/components/Typewriter.tsx
-  <- src/ui/auth/AuthBackground.tsx
-
-src/ui/auth/AuthBackground.tsx
-  <- src/ui/pages/Auth.tsx
-
-src/hooks/useAuth.ts
-  <- src/hooks/useRequireAuth.ts
-  <- src/ui/pages/Auth.tsx
-
-src/hooks/useRequireAuth.ts
-  <- src/ui/pages/Lobby.tsx
-  <- src/ui/pages/Game.tsx
-
-src/ui/pages/Auth.tsx
-  <- src/App.tsx
-
-src/App.tsx
-  <- src/main.tsx
+src/lib/cn.ts <- Label.tsx, Input.tsx, Button.tsx, PasswordInput.tsx, GameCard.tsx, Lobby.tsx, Game.tsx, PlayerSlot.tsx
+src/ui/components/* <- Auth.tsx, GameCard.tsx
+src/hooks/useAuth.ts <- useRequireAuth.ts, Auth.tsx
+src/hooks/useRequireAuth.ts <- Lobby.tsx, Game.tsx
+src/App.tsx <- main.tsx
 ```
 
-## Lot 4 (sous-lots 4A + 4B + 4C)
+## Lot 4
 
 ```
-src/types/game.ts
-  <- src/hooks/useGames.ts
-  <- src/hooks/useGame.ts
-  <- src/ui/lobby/GameCard.tsx
-  <- src/ui/lobby/CreateGameDialog.tsx
-  <- src/ui/pages/Lobby.tsx
-  <- src/ui/pages/Game.tsx
-  <- src/ui/game/PlayerSlot.tsx
-
-src/hooks/useGames.ts
-  <- src/ui/pages/Lobby.tsx
-
-src/hooks/useGame.ts
-  <- src/ui/pages/Game.tsx
-
-src/hooks/useRealtime.ts
-  <- src/ui/pages/Lobby.tsx
-  <- src/ui/pages/Game.tsx
-
-src/ui/layout/PageBackground.tsx
-  <- src/ui/pages/Lobby.tsx
-  <- src/ui/pages/Game.tsx
-
-src/ui/lobby/GameCard.tsx
-  <- src/ui/pages/Lobby.tsx
-
-src/ui/lobby/CreateGameDialog.tsx
-  <- src/ui/pages/Lobby.tsx
-
-src/ui/game/PlayerSlot.tsx
-  <- src/ui/pages/Game.tsx
-
-src/ui/pages/Lobby.tsx
-  <- src/App.tsx
-
-src/ui/pages/Game.tsx
-  <- src/App.tsx
+src/types/game.ts <- useGames, useGame, GameCard, CreateGameDialog, Lobby, Game, PlayerSlot, engine/scales/types.ts
+src/hooks/useRealtime.ts <- Lobby, Game
+src/ui/layout/PageBackground.tsx <- Lobby, Game
+src/ui/lobby/* <- Lobby
+src/ui/game/PlayerSlot.tsx <- Game
+src/ui/pages/Lobby.tsx, Game.tsx <- App.tsx
 ```
 
-**Fichiers supprimes** (Lot 4) :
+## Lot 5 (engine pur, aucun import depuis React)
+
 ```
-src/ui/pages/Home.tsx                          [remplace par redirection / -> /lobby]
-src/ui/auth/scenes/SceneInfantryMarch.tsx      [non importe depuis Lot 2 Session 4]
-src/ui/auth/scenes/SceneCavalryCharge.tsx
-src/ui/auth/scenes/SceneBattleFormation.tsx
-src/ui/auth/scenes/SceneTopoMap.tsx
+src/engine/hex/types.ts
+  <- src/engine/hex/coordinates.ts
+  <- src/engine/hex/distance.ts
+  <- src/engine/hex/neighbors.ts
+  <- src/engine/hex/line.ts
+  <- src/engine/hex/key.ts
+
+src/engine/hex/coordinates.ts
+  <- src/engine/hex/line.ts
+  <- src/engine/hex/index.ts
+
+src/engine/hex/distance.ts
+  <- src/engine/hex/line.ts
+  <- src/engine/hex/index.ts
+
+src/engine/hex/neighbors.ts
+  <- src/engine/hex/index.ts
+
+src/engine/hex/line.ts
+  <- src/engine/hex/index.ts
+
+src/engine/hex/key.ts
+  <- src/engine/hex/index.ts
+
+src/engine/hex/index.ts
+  <- (sera importe par src/render/hex/HexGrid.tsx au Lot 6)
+
+src/engine/scales/types.ts
+  <- src/engine/scales/config.ts
+  <- src/engine/scales/index.ts
+  (importe Scale depuis @/types/game)
+
+src/engine/scales/config.ts
+  <- src/engine/scales/index.ts
+
+src/engine/scales/index.ts
+  <- (sera importe par src/render/* au Lot 6)
 ```
+
+**Vérifications** :
+- `engine/` n'importe rien depuis `render/`, `ui/`, `hooks/` : OK (engine pur).
+- `engine/scales/types.ts` importe `Scale` depuis `@/types/game` : 1 import unidirectionnel, pas de cycle (`@/types/game` n'importe rien depuis engine).
 
 ---
 

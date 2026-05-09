@@ -1,118 +1,106 @@
 # WIP.md
 
-Journal des sessions de developpement, plus recente en haut. Maximum 10 entrees, on tronque en bas.
+Journal des sessions de developpement, plus recente en haut. Maximum 10 entrees.
+
+---
+
+## Session 8 &mdash; 08/05/2026 &mdash; Phase 0 Lot 5 : hex foundation + SCALE_CONFIG
+
+**Fait** :
+- `src/engine/hex/types.ts` : `Cube` et `Axial`, readonly.
+- `src/engine/hex/coordinates.ts` : `cube`, `axialToCube`, `cubeToAxial`, `cubesEqual`, `cubeToWorld`, `worldToCube`, `cubeRound`. Orientation flat-top, formules Red Blob Games.
+- `src/engine/hex/distance.ts` : `cubeDistance`.
+- `src/engine/hex/neighbors.ts` : `HEX_DIRECTIONS` (E/NE/NW/W/SW/SE), `neighbor`, `neighbors`, `ring`, `spiral`. Modulo positif strict sur les directions.
+- `src/engine/hex/line.ts` : `cubeLerp`, `cubeLineDraw` avec epsilon-shift anti-tie. Pre-cable Phase 3 (ligne de vue).
+- `src/engine/hex/key.ts` : `cubeKey` ("q,r"), `parseCubeKey`.
+- `src/engine/hex/index.ts` : barrel export complet.
+- `src/engine/scales/types.ts` : `CameraConstraints`, `ScaleProfile`, `ScaleConfigMap`. Importe `Scale` depuis `@/types/game` (source unique).
+- `src/engine/scales/config.ts` : `SCALE_CONFIG` avec 3 profils (tactical/operational/strategic). `hexSize` constant a 1.0 a toutes les echelles, c'est `metersPerHex` qui change.
+- `src/engine/scales/index.ts` : barrel export.
+- 5 fichiers de tests Vitest : `coordinates.test.ts` (19 tests), `distance.test.ts` (5), `neighbors.test.ts` (15), `line.test.ts` (8), `key.test.ts` (5). **57 tests verts**.
+- `vite.config.ts` v1.0b : ajout config Vitest (environment node, include src/**/*.test.ts).
+
+**Decisions** :
+- Flat-top valide.
+- Ordre voisins fige : 0=E, 1=NE, 2=NW, 3=W, 4=SW, 5=SE.
+- `SCALE_CONFIG` en TS const Phase 0 (BDD plus tard Phase 13 moddabilite).
+- `line.ts` integre des Lot 5 (pre-cable Phase 3).
+- Helper interne `nz(x)` partout pour normaliser `-0` en `+0` (sinon `q+r=0` produit `s=-0` et casse `toBe`/`toEqual` strict).
+- Aucun import depuis React/render/ui dans engine/. Engine totalement pur.
+
+**A faire cote utilisateur** :
+1. **`npm run tsc`** doit passer 0 erreur.
+2. **`npm run test`** doit passer 57/57 verts.
+3. **`npm run dev`** : aucun changement visuel (engine pur, pas de React).
+4. Le contenu sera consomme au Lot 6 par `HexGrid.tsx` et `CameraController.tsx`.
+
+**Sous-taches Phase 0 validees** :
+- 0.6 (coordonnees hex cubiques) : ✅
+- 0.7 (SCALE_CONFIG) : ✅
+
+**Prochain Lot** :
+- Lot 6 : R3F render (sous-taches 0.8 + 0.9 + 0.10) — premiere vue 3D. Audit + plan livres au prochain message.
 
 ---
 
 ## Session 7 &mdash; 08/05/2026 &mdash; Phase 0 Lot 4 sous-lot 4C : page Game + fix RLS recursion
 
 **Fait** :
-- Migration `004_fix_rls_recursion.sql` ecrite et appliquee sur Supabase.
-  - Cause : la policy `game_players_select_visible` faisait un `EXISTS (SELECT FROM game_players gp2)` qui re-declenche la meme policy → recursion infinie.
-  - Fix : 3 fonctions `SECURITY DEFINER` qui contournent la RLS pour le check booleen :
-    - `is_player_in_game(_game_id uuid)` → bool
-    - `is_game_host(_game_id uuid)` → bool
-    - `is_game_public_lobby(_game_id uuid)` → bool
-  - Permissions : `revoke execute from public, anon` + `grant execute to authenticated` sur les 3 fonctions.
-  - 3 policies recrites : `games_select_member`, `game_players_select_visible`, `game_players_delete_host`.
-- Migration `005_drop_legacy_policies.sql` ecrite et appliquee.
-  - Cause : la migration 001 avait laisse 6 policies en francais ("Voir les joueurs des parties accessibles", "Rejoindre une partie", etc.) qui faisaient des `EXISTS` croises sans `SECURITY DEFINER`. Postgres combine toutes les policies PERMISSIVE en OR, donc les anciennes faisaient toujours la recursion meme avec mes nouvelles policies propres.
-  - Fix : drop des 6 policies par leur nom exact.
-- `src/hooks/useGame.ts` v1.0 : single game CRUD pour la page Game.
-  - 3 requetes : game (single), players (par game_id), profiles.
-  - Expose `game`, `players`, `loading`, `notFound`, `error`, `refresh`, `leaveGame`, `kickPlayer`, `deleteGame`.
-- `src/ui/game/PlayerSlot.tsx` v1.0 : composant slot pour la page Game.
-  - Variante `PlayerSlot` (slot rempli) avec avatar carré, pseudo, badges Toi/Hote, role en uppercase, bouton kick (si autorise).
-  - Variante `EmptyPlayerSlot` (slot vacant) en dashed border.
-- `src/ui/pages/Game.tsx` v1.0 : page route `/game/:id`.
-  - Header back-to-lobby + logo TACTICA + pseudo.
-  - Game header : eyebrow ambre + titre serif italique + meta uppercase (scenario / scale / hote / tour / cree).
-  - 2 colonnes equipes (`TeamPanel`) avec border-top color blue/red, slots blue (pair) et red (impair) selon `deriveSlotAssignment`.
-  - Footer actions : compteur effectif + bouton "Quitter la bataille" / "Dissoudre la partie" (selon role) + bouton "Engager la bataille" disabled avec tooltip "Disponible Phase 1".
-  - Brackets ambre dans les 4 coins du footer.
-  - Realtime sur channel `game:{gameId}` : UPDATE games + DELETE games (notifie + redirige) + tout sur game_players → refresh.
-  - Securite : redirect vers /lobby si la partie n'existe pas OU si je n'y suis pas (membre OU hote).
+- Migrations 004 + 005 : fix RLS recursion `games` <-> `game_players` via fonctions SECURITY DEFINER. Drop des policies legacy 001 en francais.
+- `src/hooks/useGame.ts` v1.0 : single game CRUD.
+- `src/ui/game/PlayerSlot.tsx` v1.0 : variants rempli + vide.
+- `src/ui/pages/Game.tsx` v1.0 : route `/game/:id`, 2 panneaux equipes, kick par hote, dissolution, leave, redirect securisee.
 - `src/App.tsx` v1.0c : route `/game/:id` ajoutee.
-- `docs/CLAUDE.md` : ajout sonner dans le stack, ajout pieges 8 (RLS recursive) et 9 (policies legacy non supprimees).
-
-**A faire cote utilisateur** :
-1. **`npm install`** non necessaire, sonner deja installe au sous-lot 4B.
-2. Pas de migration a appliquer cote BDD : les migrations 004 et 005 ont deja ete appliquees via les tools Supabase. Les fichiers `.sql` sont livres dans `supabase/migrations/` pour la tracabilite git uniquement.
-3. **`npm run dev`**, recharger la page.
-4. **Tester en 2 navigateurs** :
-   - A cree une partie (du Lobby) → A est redirige sur `/game/:id` (apres clic Voir).
-   - B rejoint depuis le Lobby → B est redirige sur `/game/:id`. A voit B arriver dans son slot **sans refresh**.
-   - A (hote) clique sur la croix du slot de B → B est kicke, son slot redevient libre. **B est redirige vers /lobby** (Realtime DELETE + check "tu n'es pas dans cette partie").
-   - A (hote) clique "Dissoudre la partie" → confirm → la partie est supprimee. A et B (s'il etait connecte sur la page) sont rediriges vers /lobby avec toast "L'hote a dissous la partie".
-   - B (non-hote) clique "Quitter la bataille" → leave + redirect vers /lobby.
-5. `npm run tsc` doit passer 0 erreur.
-
-**Sous-taches Phase 0 validees** :
-- 0.5 (Lobby) : ✅
-- 0.11 (Realtime sync lobby) : ✅
-
-**Prochain Lot** :
-- Lot 5 : hex foundation pure (sous-taches 0.6 + 0.7) — code engine, testable Vitest, zero React.
-  Audit + plan detaille livres au prochain message.
+- `docs/CLAUDE.md` : pieges 8 (RLS recursive) et 9 (policies legacy).
+- Hotfix : sous-titre "Salle de commandement" / "Brief" agrandi de 12 a 18px.
 
 ---
 
 ## Session 6 &mdash; 08/05/2026 &mdash; Phase 0 Lot 4 sous-lot 4B : hooks + page Lobby React
 
-**Fait** :
-- `package.json` v0.0.3 : ajout `sonner@^1.7.1`.
-- `index.html` : ajout link Google Fonts pour `Cormorant Garamond` (italique 400-600).
-- `src/hooks/useRealtime.ts` v1.0 : hook generique Supabase Realtime (postgres_changes + presence).
-- `src/hooks/useGames.ts` v1.0 : CRUD parties pour le Lobby.
-- `src/ui/layout/PageBackground.tsx` v1.0 : composant fond global (Austerlitz + overlay).
-- `src/ui/lobby/GameCard.tsx` v1.0 : carte d'une partie dans la liste.
-- `src/ui/lobby/CreateGameDialog.tsx` v1.0 : modale "Ordre de bataille".
-- `src/ui/pages/Lobby.tsx` v1.0 : page principale `/lobby`.
-- `src/App.tsx` v1.0b : routes `/lobby` + redirection `/` → `/lobby`. Toaster sonner monte au top.
+- `package.json` v0.0.3 : `sonner@^1.7.1`.
+- `index.html` : Cormorant Garamond.
+- `useRealtime.ts` v1.0 : postgres_changes + presence.
+- `useGames.ts` v1.0 : CRUD parties.
+- `PageBackground.tsx` v1.0, `GameCard.tsx` v1.0, `CreateGameDialog.tsx` v1.0, `Lobby.tsx` v1.0.
+- `App.tsx` v1.0b : routes `/lobby` + Toaster.
 
 ---
 
 ## Session 5 &mdash; 08/05/2026 &mdash; Phase 0 Lot 4 sous-lot 4A : migration BDD + types + maquettes
 
-**Fait** :
-- Migration `003_lobby_columns.sql` ecrite (idempotente).
-- `src/types/game.ts` cree.
-- 2 maquettes HTML statiques validees par utilisateur (BG Austerlitz, typo serif Cormorant, accent ambre, modale "Ordre de bataille" avec coin coupe).
+- Migration `003_lobby_columns.sql`.
+- `src/types/game.ts`.
+- 2 maquettes HTML statiques.
 
 ---
 
 ## Session 4 &mdash; 08/05/2026 &mdash; Lot 2 carrousel images reelles
 
-**Fait** :
-- 3 images uploadees dans `public/scenes/` : `bouvines.png`, `austerlitz.png`, `verdun.png`.
-- `AuthBackground.tsx` v1.0b : bascule des SVG composants vers `<img>`.
-- Citations adaptees aux epoques.
+- 3 images `public/scenes/` : bouvines, austerlitz, verdun.
+- `AuthBackground.tsx` v1.0b : bascule SVG -> img.
 
 ---
 
 ## Session 3 &mdash; 08/05/2026 &mdash; Lot 2 addendum carrousel
 
-**Fait** :
-- Refonte de `AuthBackground.tsx` en carrousel automatique : 4 slides, Ken Burns.
-- Citations defilent en sync avec les images.
+- Refonte `AuthBackground.tsx` en carrousel automatique 4 slides + Ken Burns.
 
 ---
 
 ## Session 2 &mdash; 08/05/2026 &mdash; Phase 0 Lot 2
 
-**Fait** :
-- Migration BDD `001_foundations` appliquee : tables `profiles`, `games`, `game_players` avec RLS active.
-- Trigger `handle_new_user`. Migration `002_secure_handle_new_user`.
+- Migration BDD `001_foundations`.
+- Migration `002_secure_handle_new_user`.
 - Composants atomes : `Label`, `Input`, `Button`, `PasswordInput`, `Typewriter`.
-- `Auth.tsx` : page split-screen 4 modes.
-- Hooks : `useAuth`, `useRequireAuth`.
+- `Auth.tsx` splitscreen 4 modes.
+- Hooks `useAuth`, `useRequireAuth`.
 
 ---
 
 ## Session 1 &mdash; 08/05/2026 &mdash; Phase 0 Lot 1
 
-**Fait** :
-- Initialisation Vite + React 18 + TypeScript strict.
-- Configuration Tailwind, Radix, alias d'imports.
-- Validation Zod des env vars.
+- Init Vite + React 18 + TS strict.
+- Tailwind, Radix, alias.
+- Validation Zod env vars.
 - Client Supabase singleton.
