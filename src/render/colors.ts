@@ -1,3 +1,4 @@
+// v1.1 (09/05/2026) — L1C.3 : ajout tileReachable/Edge (cyan) + tileTargetable/Edge (rouge) + unitSelectedRing (amber)
 // v1.0 (09/05/2026) — Constantes couleur Three.js, synchro tokens Tailwind
 // Tous les hex en notation 0xRRGGBB pour Three.js
 
@@ -18,6 +19,16 @@ export const COLORS = {
   tileHoverEdge: 0xef9f27, // amber sur hover
   tileSelected: 0x3a4a6e,
   tileSelectedEdge: 0xef9f27,
+  // L1C.3 : reachable = cyan amorti
+  tileReachable: 0x1f4a5a,
+  tileReachableEdge: 0x4ec0e8,
+  // L1C.4 : targetable = rouge amorti (preparation, utilise au prochain lot)
+  tileTargetable: 0x5a1f1f,
+  tileTargetableEdge: 0xff6b6b,
+
+  // Unit highlights
+  unitSelectedRing: 0xef9f27, // amber autour cylindre selectionne
+  unitTargetableHalo: 0xff6b6b, // halo rouge si cible (L1C.4)
 
   // Background scene
   sceneBg: 0x0f172a,

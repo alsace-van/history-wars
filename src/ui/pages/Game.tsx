@@ -1,8 +1,8 @@
-// v3.0 (09/05/2026) — L1C.2 : bouton Engager câblé + switch lobby/in_progress + units BDD via useBattleUnits
+// v3.1 (09/05/2026) — L1C.3 : selection unite + reachable BFS + click move + UnitInspector
+// v3.0 (09/05/2026) — L1C.2 : bouton Engager câblé + switch lobby/in_progress + units BDD
 // v2.0a (09/05/2026) — Lot 7 : badge online/offline dans footer sidebar
 // v2.0 (09/05/2026) — Layout 3 zones : header + scene 3D centrale + sidebar equipes droite
-// v1.0a (08/05/2026) — Sous-titre header plus grand
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useRequireAuth } from '@hooks/useRequireAuth'
@@ -19,19 +19,23 @@ import {
 } from '@/types/game'
 import { PageBackground } from '@ui/layout/PageBackground'
 import { TeamPanel, type SlotData } from '@ui/game/TeamPanel'
+import { UnitInspector } from '@ui/game/UnitInspector'
 import { TacticalScene, buildMvpUnitPlacement } from '@/render'
-import { unitRowsToInstances } from '@render/_data/unitAdapter'
-import { spiral } from '@engine/hex'
+import { unitRowsToInstances, unitRowsToStates } from '@render/_data/unitAdapter'
+import type { HexTileState } from '@render/types'
+import { spiral, cubeKey, type Cube } from '@engine/hex'
+import { getUnitStats, type UnitState } from '@engine/units'
+import { bfsReachable } from '@engine/movement'
+import { computeEnemyZoc } from '@engine/zoc'
 import { cn } from '@lib/cn'
 
-const TAG = '[Game v3.0]'
+const TAG = '[Game v3.1]'
 
 const PRIMARY_BTN_CLIP =
   'polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px)'
 
-// MVP-Plaine : disque hex rayon 5 (91 hex) centre origine
-// TODO L1C.5 : lire boardRadius depuis game.state.tactical
-const MVP_CUBES = spiral({ q: 0, r: 0, s: 0 }, 5)
+const MVP_CUBES: Cube[] = spiral({ q: 0, r: 0, s: 0 }, 5)
+const MVP_BOARD_KEYS = new Set(MVP_CUBES.map(cubeKey))
 
 interface TacticalStateView {
   phase?: string
@@ -109,17 +113,12 @@ export function Game() {
   const blueSlots = useMemo(() => slots.filter(s => s.team === 'blue'), [slots])
   const redSlots = useMemo(() => slots.filter(s => s.team === 'red'), [slots])
 
-  // ---- L1C.2 : units selon status ----
   const inProgress = game?.status === 'in_progress'
   const finished = game?.status === 'finished'
   const showBattle = inProgress || finished
 
-  const { units: dbUnits, loading: unitsLoading } = useBattleUnits(
-    gameId,
-    showBattle
-  )
+  const { units: dbUnits, loading: unitsLoading } = useBattleUnits(gameId, showBattle)
 
-  // Unites factices (preview lobby/briefing) ; remplacees par BDD en in_progress.
   const factoryUnits = useMemo(() => buildMvpUnitPlacement(), [])
 
   const renderUnits = useMemo(() => {
@@ -127,22 +126,25 @@ export function Game() {
     return factoryUnits
   }, [showBattle, dbUnits, factoryUnits])
 
-  // ---- L1C.2 : actions EF ----
-  const { busy: actionsBusy, startBattle } = useCombatActions()
+  // Etats engine pour BFS / inspector
+  const unitStates = useMemo<UnitState[]>(
+    () => (showBattle ? unitRowsToStates(dbUnits) : []),
+    [showBattle, dbUnits]
+  )
+
+  const { busy: actionsBusy, startBattle, submitAction } = useCombatActions()
 
   const online = useOnlineStatus()
 
   const iAmHost = !!game && isHost(game, user?.id ?? null)
   const iAmIn = isPlayerInGame(players, user?.id ?? null)
 
-  // Etat tactique (lu depuis game.state JSONB, robuste si vide)
   const tactical: TacticalStateView | null = useMemo(() => {
     if (!game) return null
     const s = game.state as { tactical?: TacticalStateView } | null | undefined
     return s?.tactical ?? null
   }, [game])
 
-  // Conditions pour engager : host + lobby + au moins 1 joueur par equipe
   const occupiedPlayers = useMemo(() => players.filter(p => p.user_id !== null), [players])
   const blueOccupied = occupiedPlayers.some(p => p.team === 'blue')
   const redOccupied = occupiedPlayers.some(p => p.team === 'red')
@@ -160,6 +162,128 @@ export function Game() {
     if (!blueOccupied || !redOccupied) return 'Chaque camp doit avoir au moins 1 officier.'
     return null
   }, [iAmHost, game?.status, occupiedPlayers.length, blueOccupied, redOccupied])
+
+  const activeTeam: Team = tactical?.activeTeam ?? 'blue'
+  const myTeam = useMemo(
+    () => players.find(p => p.user_id === user?.id)?.team ?? null,
+    [players, user?.id]
+  )
+  const isMyTurn = inProgress && myTeam === activeTeam
+
+  // ---- L1C.3 : selection + reachable ----
+  const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null)
+
+  // Reset selection sur changement de tour ou si l'unite n'existe plus
+  useEffect(() => {
+    if (!inProgress) {
+      setSelectedUnitId(null)
+      return
+    }
+    if (selectedUnitId && !unitStates.some(u => u.id === selectedUnitId)) {
+      setSelectedUnitId(null)
+    }
+  }, [inProgress, activeTeam, unitStates, selectedUnitId])
+
+  const selectedUnit = useMemo<UnitState | null>(
+    () => unitStates.find(u => u.id === selectedUnitId) ?? null,
+    [unitStates, selectedUnitId]
+  )
+
+  const isSelectedMine = !!selectedUnit && selectedUnit.team === myTeam
+
+  // BFS reachable : uniquement si selection mienne, mon tour, pas bouge, pas routed
+  const reachableMap = useMemo<Map<string, number>>(() => {
+    if (!selectedUnit || !isSelectedMine || !isMyTurn) return new Map()
+    if (selectedUnit.hasMoved || selectedUnit.routed) return new Map()
+    const stats = getUnitStats(selectedUnit.kind)
+    const others = unitStates.filter(u => u.id !== selectedUnit.id)
+    const blockers = new Set(others.map(u => cubeKey(u.position)))
+    const enemyZoc = computeEnemyZoc(unitStates, selectedUnit.team)
+    const raw = bfsReachable({
+      start: selectedUnit.position,
+      movementPoints: stats.movement,
+      blockers,
+      enemyZocCubes: enemyZoc,
+    })
+    // Filtrer hors-board + retirer le start (on ne se "deplace" pas sur soi-meme)
+    const startKey = cubeKey(selectedUnit.position)
+    const out = new Map<string, number>()
+    for (const [k, c] of raw) {
+      if (k === startKey) continue
+      if (!MVP_BOARD_KEYS.has(k)) continue
+      out.set(k, c)
+    }
+    return out
+  }, [selectedUnit, isSelectedMine, isMyTurn, unitStates])
+
+  // Map d'etats hex pour HexGrid
+  const tileStates = useMemo<Map<string, HexTileState>>(() => {
+    const map = new Map<string, HexTileState>()
+    if (selectedUnit) {
+      map.set(cubeKey(selectedUnit.position), 'selected')
+    }
+    for (const k of reachableMap.keys()) {
+      map.set(k, 'reachable')
+    }
+    return map
+  }, [selectedUnit, reachableMap])
+
+  // Unites epuisees (visuel attenue)
+  const exhaustedUnitIds = useMemo<Set<string>>(() => {
+    const set = new Set<string>()
+    for (const u of unitStates) {
+      if (u.hasMoved && u.hasAttacked) set.add(u.id)
+      if (u.routed) set.add(u.id)
+    }
+    return set
+  }, [unitStates])
+
+  // ---- Handlers ----
+  const handleUnitClick = useCallback(
+    (unit: { id: string; team: Team }) => {
+      if (!inProgress) return
+      // Click meme unite → desselect
+      if (selectedUnitId === unit.id) {
+        setSelectedUnitId(null)
+        return
+      }
+      // Click unite ennemie : ignore en L1C.3 (sera attaque en L1C.4)
+      if (unit.team !== myTeam) return
+      // Click figurine pas mon tour : on selectionne quand meme pour inspecter (read-only)
+      setSelectedUnitId(unit.id)
+    },
+    [inProgress, selectedUnitId, myTeam]
+  )
+
+  const handleTileClick = useCallback(
+    async (cube: Cube) => {
+      if (!gameId || !inProgress) return
+      if (!selectedUnit) return
+      const key = cubeKey(cube)
+      // Click hex non-reachable → desselect (cancel)
+      if (!reachableMap.has(key)) {
+        setSelectedUnitId(null)
+        return
+      }
+      // Submit move
+      if (actionsBusy) return
+      // eslint-disable-next-line no-console
+      console.log(TAG, 'submitAction move', { unit: selectedUnit.id, dest: cube })
+      const res = await submitAction(gameId, {
+        type: 'move',
+        payload: {
+          unit_id: selectedUnit.id,
+          dest_q: cube.q,
+          dest_r: cube.r,
+        },
+      })
+      if (res.ok) {
+        // Garde la selection pour montrer l'unite a sa nouvelle position dans l'inspector.
+        // Realtime UPDATE units met a jour position + has_moved.
+      }
+    },
+    [gameId, inProgress, selectedUnit, reachableMap, actionsBusy, submitAction]
+  )
 
   async function handleLeave() {
     if (!user || busy) return
@@ -204,12 +328,8 @@ export function Game() {
 
   async function handleStartBattle() {
     if (!gameId || !canStart || actionsBusy) return
-    // eslint-disable-next-line no-console
-    console.log(TAG, 'startBattle invoked', { gameId })
     const res = await startBattle(gameId)
-    if (res.ok) {
-      toast.success('Bataille engagée.')
-    }
+    if (res.ok) toast.success('Bataille engagée.')
   }
 
   if (authLoading || !user || loading || !game) {
@@ -228,7 +348,6 @@ export function Game() {
         ? 'Échelle opérationnelle'
         : 'Échelle stratégique'
 
-  // Label header dynamique selon status
   const statusLabel =
     game.status === 'lobby'
       ? 'En attente'
@@ -241,11 +360,6 @@ export function Game() {
             : game.status
 
   const subtitleLabel = showBattle ? 'Bataille' : 'Brief'
-
-  // Active team label (in_progress)
-  const activeTeam = tactical?.activeTeam ?? 'blue'
-  const myTeam = players.find(p => p.user_id === user.id)?.team ?? null
-  const isMyTurn = inProgress && myTeam === activeTeam
 
   return (
     <div className="h-screen relative font-sans flex flex-col overflow-hidden">
@@ -283,9 +397,7 @@ export function Game() {
       </header>
 
       <div className="flex flex-1 min-h-0">
-
         <div className="flex-1 flex flex-col min-w-0">
-
           <div className="px-10 py-5 border-b border-[rgba(226,232,240,0.10)] shrink-0">
             <div className="text-[10px] font-semibold uppercase tracking-[0.32em] text-tactica-amber mb-[4px]">
               Ordre de bataille — {statusLabel}
@@ -309,6 +421,11 @@ export function Game() {
               scale={game.current_scale}
               cubes={MVP_CUBES}
               units={renderUnits}
+              tileStates={showBattle ? tileStates : undefined}
+              selectedUnitId={selectedUnitId}
+              exhaustedUnitIds={showBattle ? exhaustedUnitIds : undefined}
+              onTileClick={showBattle ? handleTileClick : undefined}
+              onUnitClick={showBattle ? handleUnitClick : undefined}
             />
             <div className="absolute bottom-3 left-3 px-3 py-2 bg-[rgba(15,23,42,0.85)] backdrop-blur-[6px] border border-[rgba(226,232,240,0.18)] rounded-[2px] text-[10px] text-muted-foreground tracking-[0.05em] uppercase pointer-events-none">
               <div>Drag : rotation · Drag droit : pan · Molette : zoom</div>
@@ -322,14 +439,14 @@ export function Game() {
         </div>
 
         <aside className="w-[340px] shrink-0 border-l border-[rgba(226,232,240,0.18)] bg-[rgba(8,12,24,0.7)] backdrop-blur-[2px] flex flex-col">
-
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
             {showBattle ? (
-              <BattleSidebarPlaceholder
+              <BattleSidebar
                 turn={tactical?.currentTurn ?? game.turn_number}
                 activeTeam={activeTeam}
                 myTeam={myTeam}
                 isMyTurn={isMyTurn}
+                selectedUnit={selectedUnit}
                 blueSlots={blueSlots}
                 redSlots={redSlots}
                 hostUserId={hostUserId}
@@ -434,34 +551,37 @@ export function Game() {
   )
 }
 
-// ---- Sidebar placeholder en mode bataille (sera etoffee L1C.5 : TurnIndicator + UnitInspector) ----
-interface BattleSidebarPlaceholderProps {
+// ----------------------------------------------------------------------------
+// Sidebar mode bataille : turn banner + UnitInspector si selection + officiers RO
+// ----------------------------------------------------------------------------
+interface BattleSidebarProps {
   turn: number
   activeTeam: Team
   myTeam: Team | null
   isMyTurn: boolean
+  selectedUnit: UnitState | null
   blueSlots: SlotData[]
   redSlots: SlotData[]
   hostUserId: string
   currentUserId: string
 }
 
-function BattleSidebarPlaceholder({
+function BattleSidebar({
   turn,
   activeTeam,
   myTeam,
   isMyTurn,
+  selectedUnit,
   blueSlots,
   redSlots,
   hostUserId,
   currentUserId,
-}: BattleSidebarPlaceholderProps) {
+}: BattleSidebarProps) {
   const activeLabel = activeTeam === 'blue' ? 'Bleus' : 'Rouges'
   const activeColor = activeTeam === 'blue' ? '#3b82f6' : '#ef4444'
 
   return (
     <div className="space-y-4">
-      {/* Bandeau tour */}
       <div
         className="relative px-3 py-3 border rounded-[2px]"
         style={{
@@ -485,7 +605,20 @@ function BattleSidebarPlaceholder({
         )}
       </div>
 
-      {/* Liste compacte des officiers (read-only en bataille) */}
+      {selectedUnit ? (
+        <UnitInspector
+          unit={selectedUnit}
+          isMyUnit={selectedUnit.team === myTeam}
+          isMyTurn={isMyTurn}
+        />
+      ) : (
+        <div className="px-3 py-3 text-[10px] uppercase tracking-[0.08em] text-muted-foreground border border-[rgba(226,232,240,0.10)] rounded-[2px]">
+          {isMyTurn
+            ? 'Clique sur une de tes unités pour voir ses ordres.'
+            : 'En attente du camp adverse. Tu peux inspecter une unité en la cliquant.'}
+        </div>
+      )}
+
       <TeamPanel
         team="blue"
         slots={blueSlots}
@@ -504,10 +637,6 @@ function BattleSidebarPlaceholder({
         onKick={() => undefined}
         compact
       />
-
-      <div className="px-3 py-2 text-[10px] uppercase tracking-[0.08em] text-muted-foreground border border-[rgba(226,232,240,0.10)] rounded-[2px]">
-        Ordres et combat — disponibles aux prochaines livraisons (L1C.3 → L1C.5)
-      </div>
     </div>
   )
 }

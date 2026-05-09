@@ -1,7 +1,7 @@
+// v1.1 (09/05/2026) — L1C.3 : support states 'reachable' (cyan) + 'targetable' (rouge, prepare L1C.4)
 // v1.0c (09/05/2026) — Fix : Shape + ExtrudeGeometry, sommets explicitement aux angles 0,60,...,300
 // v1.0b (09/05/2026) — Fix : edges custom (CylinderGeometry edges incluait diagonales internes)
 // v1.0a (09/05/2026) — Fix : rotation hex retiree
-// v1.0 (09/05/2026) — Un hex
 import { memo, useMemo } from 'react'
 import * as THREE from 'three'
 import type { Cube } from '@engine/hex'
@@ -25,22 +25,13 @@ const EDGE_LIFT = 0.005
 
 /**
  * Geometrie hex : Shape construit explicitement avec sommets aux angles
- * 0,60,...,300° puis ExtrudeGeometry. Trois.js CylinderGeometry utilise
- * (sin θ, cos θ) ce qui désaligne avec la convention cubeToWorld (cos, sin).
- *
- * On crée le shape dans le plan XY avec sin négatif, puis rotateX(-π/2)
- * pour mettre dans le plan XZ avec extrusion verticale (Y).
- *
- * Sommets résultants en monde :
- *   (1,0,0), (0.5,0,0.866), (-0.5,0,0.866), (-1,0,0), (-0.5,0,-0.866), (0.5,0,-0.866)
- * = exactement les sommets attendus pour cubeToWorld flat-top.
+ * 0,60,...,300° puis ExtrudeGeometry.
  */
 function buildHexGeometry(): THREE.ExtrudeGeometry {
   const shape = new THREE.Shape()
   for (let i = 0; i < 6; i++) {
     const angle = (i * Math.PI) / 3
     const x = Math.cos(angle)
-    // sin negatif : compense le retournement Z apres rotateX(-π/2) plus bas
     const y = -Math.sin(angle)
     if (i === 0) shape.moveTo(x, y)
     else shape.lineTo(x, y)
@@ -53,21 +44,13 @@ function buildHexGeometry(): THREE.ExtrudeGeometry {
     curveSegments: 1,
     steps: 1,
   })
-  // Plan XY -> plan XZ : (x, y, z) -> (x, z, -y)
-  // L'extrusion Z initiale (0..TILE_THICKNESS) va en +Y monde.
-  // Le shape Y devient -Z monde, ce qui combine avec sin negatif
-  // pour donner +Z = +sin(angle).
   geom.rotateX(-Math.PI / 2)
-  // L'extrusion va de Y=0 a Y=TILE_THICKNESS. Centrer sur Y=0.
   geom.translate(0, -TILE_THICKNESS / 2, 0)
   return geom
 }
 
 const HEX_GEOMETRY = buildHexGeometry()
 
-/**
- * Edges : 6 segments du contour top, mêmes angles que la geometry mesh.
- */
 const HEX_EDGES = (() => {
   const positions: number[] = []
   for (let i = 0; i < 6; i++) {
@@ -95,6 +78,8 @@ function HexTileBase({
     if (visibility === 'hidden') return { fillColor: 0x000000, edgeColor: 0x000000 }
     if (state === 'hover') return { fillColor: COLORS.tileHover, edgeColor: COLORS.tileHoverEdge }
     if (state === 'selected') return { fillColor: COLORS.tileSelected, edgeColor: COLORS.tileSelectedEdge }
+    if (state === 'reachable') return { fillColor: COLORS.tileReachable, edgeColor: COLORS.tileReachableEdge }
+    if (state === 'targetable') return { fillColor: COLORS.tileTargetable, edgeColor: COLORS.tileTargetableEdge }
     return { fillColor: COLORS.tileIdle, edgeColor: COLORS.tileIdleEdge }
   }, [state, visibility])
 
