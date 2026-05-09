@@ -1,7 +1,7 @@
+// v1.0d (09/05/2026) — Lot 7 fix : devOptions.enabled=true pour exposer virtual:pwa-register/react en dev
 // v1.0c (09/05/2026) — Lot 7 : ajout VitePWA (manifest + workbox + runtimeCaching)
 // v1.0b (08/05/2026) — Ajout config Vitest pour Lot 5 (engine tests)
 // v1.0a (08/05/2026) — config Vite Lot 1, alias seulement (PWA reportee Lot 5)
-// v1.0 (08/05/2026) — config Vite Lot 1, alias + PWA basique
 /// <reference types="vitest" />
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
@@ -61,7 +61,9 @@ export default defineConfig({
         ]
       },
       devOptions: {
-        enabled: false
+        enabled: true,
+        type: 'module',
+        navigateFallback: 'index.html'
       }
     })
   ],
