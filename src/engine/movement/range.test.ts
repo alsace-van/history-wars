@@ -2,7 +2,7 @@
 // Cible : 6 tests
 
 import { describe, it, expect } from 'vitest'
-import { cube, cubeKey, neighbors, ring } from '../hex'
+import { cube, cubeKey, neighbors } from '../hex'
 import { bfsReachable } from './range'
 
 const NO_BLOCK = new Set<string>()
