@@ -1,3 +1,4 @@
+// v2.0a (09/05/2026) — Lot 7 : badge online/offline dans footer sidebar
 // v2.0 (09/05/2026) — Layout 3 zones : header + scene 3D centrale + sidebar equipes droite
 // v1.0a (08/05/2026) — Sous-titre header plus grand
 // v1.0 (08/05/2026) — Page Game placeholder : 2 panneaux equipes + actions
@@ -7,6 +8,7 @@ import { toast } from 'sonner'
 import { useRequireAuth } from '@hooks/useRequireAuth'
 import { useGame } from '@hooks/useGame'
 import { useRealtime } from '@hooks/useRealtime'
+import { useOnlineStatus } from '@hooks/useOnlineStatus'
 import {
   isHost,
   isPlayerInGame,
@@ -93,6 +95,8 @@ export function Game() {
 
   // Phase 0 : 6 unites factices (3 vs 3, 1 de chaque type par equipe)
   const units = useMemo(() => buildMvpUnitPlacement(), [])
+
+  const online = useOnlineStatus()
 
   const iAmHost = !!game && isHost(game, user?.id ?? null)
   const iAmIn = isPlayerInGame(players, user?.id ?? null)
@@ -257,12 +261,29 @@ export function Game() {
             <Bracket position="bl" />
             <Bracket position="br" />
 
-            <div className="text-muted-foreground text-[10px] uppercase tracking-[0.12em] mb-3">
-              <strong className="text-foreground font-semibold">
-                {players.length} / {game.max_players} officiers
-              </strong>
-              {' · '}
-              {players.length < game.max_players ? 'en attente' : 'effectif complet'}
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-muted-foreground text-[10px] uppercase tracking-[0.12em]">
+                <strong className="text-foreground font-semibold">
+                  {players.length} / {game.max_players} officiers
+                </strong>
+                {' · '}
+                {players.length < game.max_players ? 'en attente' : 'effectif complet'}
+              </div>
+              <span
+                className="flex items-center gap-[6px] text-[10px] uppercase tracking-[0.12em]"
+                title={online ? 'Connecté au serveur' : 'Hors ligne — Realtime indisponible'}
+              >
+                <span
+                  aria-hidden
+                  className={cn(
+                    'w-[7px] h-[7px] rounded-full shrink-0',
+                    online ? 'bg-emerald-400' : 'bg-red-500 animate-pulse'
+                  )}
+                />
+                <span className={online ? 'text-muted-foreground' : 'text-red-400'}>
+                  {online ? 'En ligne' : 'Hors ligne'}
+                </span>
+              </span>
             </div>
 
             <div className="flex flex-col gap-2">

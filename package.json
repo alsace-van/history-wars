@@ -1,7 +1,7 @@
 {
   "name": "tactica",
   "private": true,
-  "version": "0.0.3",
+  "version": "0.0.4",
   "type": "module",
   "description": "Wargame hex tactique sur les batailles de France, du Moyen Age a la Premiere Guerre mondiale.",
   "scripts": {
@@ -30,6 +30,7 @@
     "sonner": "^1.7.1",
     "tailwind-merge": "^2.5.4",
     "three": "^0.169.0",
+    "workbox-window": "^7.1.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {
@@ -43,6 +44,7 @@
     "tailwindcss-animate": "^1.0.7",
     "typescript": "^5.6.2",
     "vite": "^5.4.8",
+    "vite-plugin-pwa": "^0.20.5",
     "vitest": "^2.1.2"
   }
 }
