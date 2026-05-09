@@ -33,9 +33,7 @@ const RING_LIFT = 0.02
 const SECONDS_PER_HEX = 1.0
 const SEGMENT_DURATION_MS = SECONDS_PER_HEX * 1000
 
-function easeInOutQuad(t: number): number {
-  return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2
-}
+// Linear : vitesse constante a travers le path, pas de pause a chaque case
 
 function cubeWorld(c: Cube, hexSize: number): [number, number, number] {
   const w = cubeToWorld(c, hexSize)
@@ -123,7 +121,7 @@ export function UnitPlaceholder({
     if (!animatingRef.current || !groupRef.current) return
     const elapsed = performance.now() - segStartTimeRef.current
     const t = Math.min(1, elapsed / segDurationRef.current)
-    const e = easeInOutQuad(t)
+    const e = t // linear, pas de freinage par segment
     const [sx, sy, sz] = segStartRef.current
     const [ex, ey, ez] = segEndRef.current
     groupRef.current.position.set(sx + (ex - sx) * e, sy + (ey - sy) * e, sz + (ez - sz) * e)
@@ -165,15 +163,15 @@ export function UnitPlaceholder({
   return (
     <group ref={groupRef}>
       {selected && (
-        <mesh position={[0, RING_LIFT, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <mesh position={[0, RING_LIFT, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={1}>
           <ringGeometry args={[ringRadius * 1.0, ringRadius * 1.3, 32]} />
-          <meshBasicMaterial color={COLORS.unitSelectedRing} transparent opacity={0.85} side={THREE.DoubleSide} />
+          <meshBasicMaterial color={COLORS.unitSelectedRing} transparent opacity={0.9} side={THREE.DoubleSide} depthTest={false} />
         </mesh>
       )}
       {targetable && !selected && (
-        <mesh position={[0, RING_LIFT, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <mesh position={[0, RING_LIFT, 0]} rotation={[-Math.PI / 2, 0, 0]} renderOrder={1}>
           <ringGeometry args={[ringRadius * 0.95, ringRadius * 1.25, 32]} />
-          <meshBasicMaterial color={COLORS.unitTargetableHalo} transparent opacity={0.7} side={THREE.DoubleSide} />
+          <meshBasicMaterial color={COLORS.unitTargetableHalo} transparent opacity={0.75} side={THREE.DoubleSide} depthTest={false} />
         </mesh>
       )}
 
