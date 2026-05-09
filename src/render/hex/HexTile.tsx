@@ -1,3 +1,4 @@
+// v1.0a (09/05/2026) — Fix : rotation hex retiree (cause trous entre hex)
 // v1.0 (09/05/2026) — Un hex : cylindre tres aplati + bordure (LineSegments)
 import { memo, useMemo } from 'react'
 import * as THREE from 'three'
@@ -21,14 +22,15 @@ const TILE_THICKNESS = 0.08
 const EDGE_LIFT = 0.005
 
 /**
- * Geometrie hex aplatie partagee. Flat-top : rayon dans le plan XZ,
- * convention Three.js Y vertical → CylinderGeometry orientee Y.
- * radialSegments=6 (hexagone), heightSegments=1.
+ * Geometrie hex aplatie partagee. CylinderGeometry(_, _, _, 6) cree un hex
+ * inscrit dans un cercle de rayon 1 avec sommets aux angles 0,60,...,300°.
+ * AUCUNE rotation : c'est exactement la convention attendue par cubeToWorld
+ * flat-top de Red Blob (les sommets sont a l'Est et a l'Ouest, les faces
+ * plates en haut/bas perpendiculaires a l'axe Z monde).
+ *
+ * NE PAS faire rotateY : casserait la tangence avec les voisins.
  */
 const HEX_GEOMETRY = new THREE.CylinderGeometry(1, 1, TILE_THICKNESS, 6, 1)
-// Rotation pour orientation flat-top : par defaut CylinderGeometry a une face en haut a 30°.
-// Avec 6 segments la rotation Y de 30° aligne le flat-top correctement.
-HEX_GEOMETRY.rotateY(Math.PI / 2)
 
 // Geometrie d'edges (contour) pre-calculee
 const HEX_EDGES = new THREE.EdgesGeometry(HEX_GEOMETRY)
