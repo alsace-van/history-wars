@@ -64,22 +64,33 @@ src/render/scenes/SceneShell.tsx
 
 src/render/scenes/TacticalScene.tsx
   <- src/render/index.ts
-  <- src/ui/pages/RenderTest.tsx
+  <- src/ui/pages/Game.tsx
 
 src/render/_data/mvpUnitPlacement.ts
   <- src/render/index.ts
-  <- src/ui/pages/RenderTest.tsx
+  <- src/ui/pages/Game.tsx
 
 src/render/index.ts
-  <- src/ui/pages/RenderTest.tsx
-  (sera importe par src/ui/pages/Game.tsx au sous-lot 6B)
+  <- src/ui/pages/Game.tsx
+```
 
-src/ui/pages/RenderTest.tsx
+## Lot 7 — PWA + hooks
+
+```
+src/hooks/useOnlineStatus.ts
+  <- src/ui/pages/Game.tsx
+
+src/ui/components/UpdatePrompt.tsx
   <- src/App.tsx
+
+virtual:pwa-register/react (généré par vite-plugin-pwa)
+  <- src/ui/components/UpdatePrompt.tsx
 ```
 
 **Vérifications** :
-- `render/` importe depuis `engine/hex`, `engine/scales`, `@/types/game`, et drei/three. Aucun import depuis `hooks/`, `ui/components/` ou autre.
-- `engine/` n'importe toujours rien depuis `render/` ou `ui/` (engine reste pur).
+- `render/` importe depuis `engine/hex`, `engine/scales`, `@/types/game`, drei/three. Aucun import depuis `hooks/`, `ui/components/`.
+- `engine/` n'importe rien depuis `render/` ou `ui/` (engine reste pur).
+- `hooks/useOnlineStatus.ts` : zéro dépendance externe (juste React).
+- `ui/components/UpdatePrompt.tsx` : importe `virtual:pwa-register/react` + `sonner`. Zéro Three.js.
 
 Aucun cycle.

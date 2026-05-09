@@ -2,6 +2,47 @@
 
 ---
 
+## Session 11 &mdash; 09/05/2026 &mdash; Phase 0 Lot 7 : PWA + Skill `tactica`
+
+**Fait** :
+- `package.json` v0.0.4 : ajout `vite-plugin-pwa@^0.20.5` + `workbox-window@^7.1.0`.
+- `vite.config.ts` v1.0d : config VitePWA complète (manifest TACTICA + workbox runtimeCaching Google Fonts SWR/CacheFirst + Supabase NetworkOnly + denylist navigateFallback). `devOptions.enabled: true, type: 'module'` pour exposer `virtual:pwa-register/react` en dev (sinon erreur d'import).
+- `src/vite-env.d.ts` : ajout `/// <reference types="vite-plugin-pwa/react" />` + `vite-plugin-pwa/client`.
+- `index.html` v1.0a : favicon SVG `T` ambre `#EF9F27`, `apple-touch-icon`, metas `apple-mobile-web-app-capable`, `apple-mobile-web-app-status-bar-style`, `apple-mobile-web-app-title`, `mobile-web-app-capable`, `viewport-fit=cover`.
+- `public/icons/icon-192.png`, `icon-512.png`, `icon-512-maskable.png` : générés via PIL, `T` ambre `#EF9F27` sur fond `#0f172a`, padding 18 % maskable.
+- `src/hooks/useOnlineStatus.ts` v1.0 : hook `online`/`offline` window events.
+- `src/ui/components/UpdatePrompt.tsx` v1.0 : `useRegisterSW` + toast sonner "Recharger" `duration: Infinity` + check périodique 1h + check sur `visibilitychange`.
+- `src/App.tsx` v1.0f : mount `<UpdatePrompt />` après `<Toaster />`.
+- `src/ui/pages/Game.tsx` v2.0a : badge online/offline en bas de la sidebar (pastille verte / rouge clignotante), `useOnlineStatus` ajouté EN QUEUE des hooks (avant les helpers `iAmHost`/`iAmIn`).
+- Skill `/mnt/skills/user/tactica/SKILL.md` créé (13 sections, 11 pièges connus).
+
+**Manifest PWA — décisions** :
+- `orientation: 'any'` (Phase 0 — durcir Phase 7 tablette si besoin).
+- `display_override: ['window-controls-overlay', 'standalone']`.
+- `categories: ['games', 'strategy']`.
+- `start_url: '/lobby'` (le `useRequireAuth` redirige vers `/auth` si non loggué).
+- `theme_color` + `background_color` `#0f172a` (cohérence index.html).
+
+**Pièges ajoutés** (CLAUDE.md + skill) :
+- Piège 10 : `registerType: 'prompt'` sans `<UpdatePrompt />` monté → SW silencieux.
+- Piège 11 : `virtual:pwa-register/react` introuvable en dev avec `devOptions.enabled: false` → activer en dev avec `type: 'module'`.
+
+**Sous-tâches Phase 0 validées** :
+- 0.12 (PWA manifest + SW) : ✅
+- 0.13 (Skill `tactica`) : ✅
+
+**Phase 0 — état** : ✅ **13/13 complète**.
+
+**À faire côté utilisateur** :
+1. Copier `skill-tactica/SKILL.md` dans `/mnt/skills/user/tactica/SKILL.md` (création du dossier si absent).
+2. Pousser le tag git `phase-0-complete` sur le repo.
+3. Lancer Lighthouse PWA en preview pour valider le score ≥ 90.
+
+**Prochain Lot** :
+- Phase 1 (Combat MVP tactique) — audit + plan master à lancer en nouvelle session.
+
+---
+
 ## Session 10 &mdash; 09/05/2026 &mdash; Phase 0 Lot 6 sous-lot 6B : intégration TacticalScene dans Game.tsx
 
 **Fait** :
@@ -19,21 +60,6 @@
 - 0.8 (Grille hex R3F) : ✅
 - 0.9 (Caméra contrainte) : ✅
 - 0.10 (Placeholders unités) : ✅
-
-**À faire côté utilisateur** :
-1. **Supprimer `src/ui/pages/RenderTest.tsx`** (n'est plus référencé).
-2. `npm run tsc` 0 erreur, `npm run test` 63 verts.
-3. `npm run dev`, login, `/lobby`, créer une partie → `/game/:id` :
-   - Header en haut, scène 3D au centre prenant l'espace, sidebar 340px à droite avec les 2 équipes + boutons.
-   - 91 hex jointifs + 6 unités factices visibles.
-   - Drag/zoom/pan fonctionnent.
-   - Realtime : 2e navigateur rejoint → tu vois le slot rouge se remplir dans la sidebar sans refresh.
-   - Kick / leave / dissoudre fonctionnent comme avant.
-
-**Phase 0 — état** : 11/13 sous-tâches. Reste 0.12 (PWA) + 0.13 (Skill).
-
-**Prochain Lot** :
-- Lot 7 : finitions (PWA + skill `tactica`).
 
 ---
 
@@ -85,9 +111,3 @@ AuthBackground.tsx Ken Burns 4 slides.
 ## Session 2 &mdash; 08/05/2026 &mdash; Lot 2
 
 Migrations 001 + 002, composants atomes, Auth.tsx, hooks auth.
-
----
-
-## Session 1 &mdash; 08/05/2026 &mdash; Lot 1
-
-Init Vite + React 18 + TS strict + Tailwind + Supabase.

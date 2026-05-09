@@ -19,6 +19,7 @@ A lire en debut de chaque session si la tache touche du code TACTICA.
 - sonner (toasts)
 - Zod pour la validation
 - Vitest pour les tests
+- vite-plugin-pwa + workbox-window (PWA, Lot 7)
 
 ## Architecture 3 niveaux (CRITIQUE)
 
@@ -66,6 +67,14 @@ Regles non negociables :
 - `service_role` jamais cote client. Uniquement dans Edge Functions.
 - Resolution de combat 100% serveur, jamais cote client.
 
+### PWA (Lot 7)
+- Plugin `vite-plugin-pwa` mode `generateSW` + `registerType: 'prompt'`.
+- `<UpdatePrompt />` monte dans `App.tsx` apres `<Toaster />` (toast sonner "Recharger" sur nouvelle version).
+- `devOptions.enabled: true, type: 'module'` (sinon `virtual:pwa-register/react` introuvable en dev).
+- Supabase exclu du cache : `urlPattern: /\.supabase\.co\//, handler: 'NetworkOnly'` + `navigateFallbackDenylist: [/\.supabase\.co/]`.
+- Icones `public/icons/icon-{192,512,512-maskable}.png`. Maskable padding 18% mini.
+- Types : `/// <reference types="vite-plugin-pwa/react" />` dans `vite-env.d.ts`.
+
 ## Avant de coder
 
 - Confiance < 95% : poser des questions, ne pas coder.
@@ -96,3 +105,5 @@ A enrichir au fil des phases.
 7. Creer une Edge Function `resolve_tactical_turn` au lieu de `resolve_turn(scale)`.
 8. **RLS recursive entre 2 tables qui se referencent**. Cause : policy A fait `EXISTS (SELECT FROM B)`, policy B fait `EXISTS (SELECT FROM A)` -> Postgres detecte une recursion infinie. Vu sur `games` <-> `game_players` au Lot 4 (migration 003 puis 004). Fix : creer des fonctions `SECURITY DEFINER` qui contournent la RLS pour le check booleen, puis utiliser ces fonctions dans les policies. Pattern : `is_player_in_game(_game_id uuid)`, `is_game_host(_game_id uuid)`, etc. Toujours `revoke execute from public, anon` + `grant execute to authenticated`. Detection : erreur Postgres "infinite recursion detected in policy for relation".
 9. **Policies legacy non supprimees lors d'une migration de fix RLS**. Postgres combine TOUTES les policies PERMISSIVE en OR : si on ecrit une nouvelle policy "propre" sans dropper les anciennes, les anciennes restent actives et peuvent re-introduire la recursion. Vu au Lot 4 (migration 005). Fix : toujours `DROP POLICY IF EXISTS` les anciennes par leur nom exact (verifier via `select policyname from pg_policies where tablename = '...'`).
+10. **`registerType: 'prompt'` sans `<UpdatePrompt />` monte**. Cause : le SW est genere et installe, mais le composant qui ecoute `useRegisterSW` n'existe pas, donc l'utilisateur ne voit jamais le toast de mise a jour. Fix : monter `<UpdatePrompt />` dans `App.tsx` (apres `<Toaster />`). Detection : nouvelle version pushee, build, preview, aucun toast n'apparait. Vu Lot 7.
+11. **`virtual:pwa-register/react` introuvable en dev** avec `devOptions.enabled: false`. Cause : le module virtuel n'est genere que si le plugin tourne en dev. Fix : `devOptions: { enabled: true, type: 'module', navigateFallback: 'index.html' }`. Le SW dev reste minimal, HMR fonctionne. Detection : erreur Vite "Failed to resolve import virtual:pwa-register/react". Vu Lot 7.
