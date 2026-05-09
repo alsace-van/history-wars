@@ -1,7 +1,7 @@
+// v3.2 (09/05/2026) — Animation case par case : aStar avant submit + unitPaths state
 // v3.1 (09/05/2026) — L1C.3 : selection unite + reachable BFS + click move + UnitInspector
 // v3.0 (09/05/2026) — L1C.2 : bouton Engager câblé + switch lobby/in_progress + units BDD
 // v2.0a (09/05/2026) — Lot 7 : badge online/offline dans footer sidebar
-// v2.0 (09/05/2026) — Layout 3 zones : header + scene 3D centrale + sidebar equipes droite
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -25,11 +25,11 @@ import { unitRowsToInstances, unitRowsToStates } from '@render/_data/unitAdapter
 import type { HexTileState } from '@render/types'
 import { spiral, cubeKey, type Cube } from '@engine/hex'
 import { getUnitStats, type UnitState } from '@engine/units'
-import { bfsReachable } from '@engine/movement'
+import { bfsReachable, aStar } from '@engine/movement'
 import { computeEnemyZoc } from '@engine/zoc'
 import { cn } from '@lib/cn'
 
-const TAG = '[Game v3.1]'
+const TAG = '[Game v3.2]'
 
 const PRIMARY_BTN_CLIP =
   'polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px)'
@@ -61,12 +61,7 @@ export function Game() {
     enabled: !!gameId && !!user,
     postgresChanges: gameId
       ? [
-          {
-            table: 'games',
-            event: 'UPDATE',
-            filter: `id=eq.${gameId}`,
-            onChange: () => void refresh(),
-          },
+          { table: 'games', event: 'UPDATE', filter: `id=eq.${gameId}`, onChange: () => void refresh() },
           {
             table: 'games',
             event: 'DELETE',
@@ -76,12 +71,7 @@ export function Game() {
               navigate('/lobby')
             },
           },
-          {
-            table: 'game_players',
-            event: '*',
-            filter: `game_id=eq.${gameId}`,
-            onChange: () => void refresh(),
-          },
+          { table: 'game_players', event: '*', filter: `game_id=eq.${gameId}`, onChange: () => void refresh() },
         ]
       : undefined,
   })
@@ -126,7 +116,6 @@ export function Game() {
     return factoryUnits
   }, [showBattle, dbUnits, factoryUnits])
 
-  // Etats engine pour BFS / inspector
   const unitStates = useMemo<UnitState[]>(
     () => (showBattle ? unitRowsToStates(dbUnits) : []),
     [showBattle, dbUnits]
@@ -170,10 +159,21 @@ export function Game() {
   )
   const isMyTurn = inProgress && myTeam === activeTeam
 
-  // ---- L1C.3 : selection + reachable ----
+  // ---- Selection + reachable ----
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null)
 
-  // Reset selection sur changement de tour ou si l'unite n'existe plus
+  // ---- Animation paths : Map<unitId, path[]> consommee par UnitPlaceholder ----
+  const [unitPaths, setUnitPaths] = useState<Map<string, ReadonlyArray<Cube>>>(new Map())
+
+  const onUnitPathDone = useCallback((unitId: string) => {
+    setUnitPaths(prev => {
+      if (!prev.has(unitId)) return prev
+      const next = new Map(prev)
+      next.delete(unitId)
+      return next
+    })
+  }, [])
+
   useEffect(() => {
     if (!inProgress) {
       setSelectedUnitId(null)
@@ -191,7 +191,6 @@ export function Game() {
 
   const isSelectedMine = !!selectedUnit && selectedUnit.team === myTeam
 
-  // BFS reachable : uniquement si selection mienne, mon tour, pas bouge, pas routed
   const reachableMap = useMemo<Map<string, number>>(() => {
     if (!selectedUnit || !isSelectedMine || !isMyTurn) return new Map()
     if (selectedUnit.hasMoved || selectedUnit.routed) return new Map()
@@ -205,7 +204,6 @@ export function Game() {
       blockers,
       enemyZocCubes: enemyZoc,
     })
-    // Filtrer hors-board + retirer le start (on ne se "deplace" pas sur soi-meme)
     const startKey = cubeKey(selectedUnit.position)
     const out = new Map<string, number>()
     for (const [k, c] of raw) {
@@ -216,19 +214,13 @@ export function Game() {
     return out
   }, [selectedUnit, isSelectedMine, isMyTurn, unitStates])
 
-  // Map d'etats hex pour HexGrid
   const tileStates = useMemo<Map<string, HexTileState>>(() => {
     const map = new Map<string, HexTileState>()
-    if (selectedUnit) {
-      map.set(cubeKey(selectedUnit.position), 'selected')
-    }
-    for (const k of reachableMap.keys()) {
-      map.set(k, 'reachable')
-    }
+    if (selectedUnit) map.set(cubeKey(selectedUnit.position), 'selected')
+    for (const k of reachableMap.keys()) map.set(k, 'reachable')
     return map
   }, [selectedUnit, reachableMap])
 
-  // Unites epuisees (visuel attenue)
   const exhaustedUnitIds = useMemo<Set<string>>(() => {
     const set = new Set<string>()
     for (const u of unitStates) {
@@ -242,14 +234,11 @@ export function Game() {
   const handleUnitClick = useCallback(
     (unit: { id: string; team: Team }) => {
       if (!inProgress) return
-      // Click meme unite → desselect
       if (selectedUnitId === unit.id) {
         setSelectedUnitId(null)
         return
       }
-      // Click unite ennemie : ignore en L1C.3 (sera attaque en L1C.4)
       if (unit.team !== myTeam) return
-      // Click figurine pas mon tour : on selectionne quand meme pour inspecter (read-only)
       setSelectedUnitId(unit.id)
     },
     [inProgress, selectedUnitId, myTeam]
@@ -260,37 +249,47 @@ export function Game() {
       if (!gameId || !inProgress) return
       if (!selectedUnit) return
       const key = cubeKey(cube)
-      // Click hex non-reachable → desselect (cancel)
       if (!reachableMap.has(key)) {
         setSelectedUnitId(null)
         return
       }
-      // Submit move
       if (actionsBusy) return
+
+      // Calculer le path A* avant submit pour animation case par case (piege #34)
+      const others = unitStates.filter(u => u.id !== selectedUnit.id)
+      const blockers = new Set(others.map(u => cubeKey(u.position)))
+      const enemyZoc = computeEnemyZoc(unitStates, selectedUnit.team)
+      const path = aStar({
+        start: selectedUnit.position,
+        goal: cube,
+        blockers,
+        enemyZocCubes: enemyZoc,
+      })
+
       // eslint-disable-next-line no-console
-      console.log(TAG, 'submitAction move', { unit: selectedUnit.id, dest: cube })
+      console.log(TAG, 'submitAction move', { unit: selectedUnit.id, dest: cube, pathLen: path?.length })
+
       const res = await submitAction(gameId, {
         type: 'move',
-        payload: {
-          unit_id: selectedUnit.id,
-          dest_q: cube.q,
-          dest_r: cube.r,
-        },
+        payload: { unit_id: selectedUnit.id, dest_q: cube.q, dest_r: cube.r },
       })
-      if (res.ok) {
-        // Garde la selection pour montrer l'unite a sa nouvelle position dans l'inspector.
-        // Realtime UPDATE units met a jour position + has_moved.
+
+      if (res.ok && path && path.length >= 2) {
+        // Stocker le path → UnitPlaceholder anime case par case
+        setUnitPaths(prev => {
+          const next = new Map(prev)
+          next.set(selectedUnit.id, path)
+          return next
+        })
       }
     },
-    [gameId, inProgress, selectedUnit, reachableMap, actionsBusy, submitAction]
+    [gameId, inProgress, selectedUnit, reachableMap, actionsBusy, submitAction, unitStates]
   )
 
   async function handleLeave() {
     if (!user || busy) return
     if (iAmHost) {
-      const ok = window.confirm(
-        "Tu es l'hôte. Quitter va dissoudre la partie pour tous les joueurs. Continuer ?"
-      )
+      const ok = window.confirm("Tu es l'hôte. Quitter va dissoudre la partie pour tous les joueurs. Continuer ?")
       if (!ok) return
       setBusy(true)
       const { error } = await deleteGame()
@@ -389,10 +388,7 @@ export function Game() {
         <div
           aria-hidden
           className="absolute left-10 right-10 -bottom-px h-px opacity-40"
-          style={{
-            background:
-              'linear-gradient(90deg, transparent 0%, #EF9F27 25%, #EF9F27 75%, transparent 100%)',
-          }}
+          style={{ background: 'linear-gradient(90deg, transparent 0%, #EF9F27 25%, #EF9F27 75%, transparent 100%)' }}
         />
       </header>
 
@@ -424,6 +420,8 @@ export function Game() {
               tileStates={showBattle ? tileStates : undefined}
               selectedUnitId={selectedUnitId}
               exhaustedUnitIds={showBattle ? exhaustedUnitIds : undefined}
+              unitPaths={showBattle ? unitPaths : undefined}
+              onUnitPathDone={onUnitPathDone}
               onTileClick={showBattle ? handleTileClick : undefined}
               onUnitClick={showBattle ? handleUnitClick : undefined}
             />
@@ -454,61 +452,25 @@ export function Game() {
               />
             ) : (
               <>
-                <TeamPanel
-                  team="blue"
-                  slots={blueSlots}
-                  hostUserId={hostUserId}
-                  currentUserId={user.id}
-                  canKick={iAmHost}
-                  onKick={handleKick}
-                  compact
-                />
-                <TeamPanel
-                  team="red"
-                  slots={redSlots}
-                  hostUserId={hostUserId}
-                  currentUserId={user.id}
-                  canKick={iAmHost}
-                  onKick={handleKick}
-                  compact
-                />
+                <TeamPanel team="blue" slots={blueSlots} hostUserId={hostUserId} currentUserId={user.id} canKick={iAmHost} onKick={handleKick} compact />
+                <TeamPanel team="red" slots={redSlots} hostUserId={hostUserId} currentUserId={user.id} canKick={iAmHost} onKick={handleKick} compact />
               </>
             )}
           </div>
 
           <div className="relative p-4 border-t border-[rgba(226,232,240,0.18)] bg-[rgba(15,23,42,0.85)]">
-            <div
-              aria-hidden
-              className="absolute top-[-1px] left-3 right-3 h-px opacity-40"
-              style={{ background: 'linear-gradient(90deg, transparent, #EF9F27, transparent)' }}
-            />
-            <Bracket position="tl" />
-            <Bracket position="tr" />
-            <Bracket position="bl" />
-            <Bracket position="br" />
+            <div aria-hidden className="absolute top-[-1px] left-3 right-3 h-px opacity-40" style={{ background: 'linear-gradient(90deg, transparent, #EF9F27, transparent)' }} />
+            <Bracket position="tl" /><Bracket position="tr" /><Bracket position="bl" /><Bracket position="br" />
 
             <div className="flex items-center justify-between mb-3">
               <div className="text-muted-foreground text-[10px] uppercase tracking-[0.12em]">
-                <strong className="text-foreground font-semibold">
-                  {players.length} / {game.max_players} officiers
-                </strong>
+                <strong className="text-foreground font-semibold">{players.length} / {game.max_players} officiers</strong>
                 {' · '}
                 {players.length < game.max_players ? 'en attente' : 'effectif complet'}
               </div>
-              <span
-                className="flex items-center gap-[6px] text-[10px] uppercase tracking-[0.12em]"
-                title={online ? 'Connecté au serveur' : 'Hors ligne — Realtime indisponible'}
-              >
-                <span
-                  aria-hidden
-                  className={cn(
-                    'w-[7px] h-[7px] rounded-full shrink-0',
-                    online ? 'bg-emerald-400' : 'bg-red-500 animate-pulse'
-                  )}
-                />
-                <span className={online ? 'text-muted-foreground' : 'text-red-400'}>
-                  {online ? 'En ligne' : 'Hors ligne'}
-                </span>
+              <span className="flex items-center gap-[6px] text-[10px] uppercase tracking-[0.12em]" title={online ? 'Connecté au serveur' : 'Hors ligne — Realtime indisponible'}>
+                <span aria-hidden className={cn('w-[7px] h-[7px] rounded-full shrink-0', online ? 'bg-emerald-400' : 'bg-red-500 animate-pulse')} />
+                <span className={online ? 'text-muted-foreground' : 'text-red-400'}>{online ? 'En ligne' : 'Hors ligne'}</span>
               </span>
             </div>
 
@@ -551,9 +513,6 @@ export function Game() {
   )
 }
 
-// ----------------------------------------------------------------------------
-// Sidebar mode bataille : turn banner + UnitInspector si selection + officiers RO
-// ----------------------------------------------------------------------------
 interface BattleSidebarProps {
   turn: number
   activeTeam: Team
@@ -566,36 +525,15 @@ interface BattleSidebarProps {
   currentUserId: string
 }
 
-function BattleSidebar({
-  turn,
-  activeTeam,
-  myTeam,
-  isMyTurn,
-  selectedUnit,
-  blueSlots,
-  redSlots,
-  hostUserId,
-  currentUserId,
-}: BattleSidebarProps) {
+function BattleSidebar({ turn, activeTeam, myTeam, isMyTurn, selectedUnit, blueSlots, redSlots, hostUserId, currentUserId }: BattleSidebarProps) {
   const activeLabel = activeTeam === 'blue' ? 'Bleus' : 'Rouges'
   const activeColor = activeTeam === 'blue' ? '#3b82f6' : '#ef4444'
 
   return (
     <div className="space-y-4">
-      <div
-        className="relative px-3 py-3 border rounded-[2px]"
-        style={{
-          borderColor: activeColor,
-          background: `linear-gradient(180deg, ${activeColor}22 0%, transparent 100%)`,
-        }}
-      >
-        <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground mb-1">
-          Tour {turn}
-        </div>
-        <div
-          className="text-[14px] font-semibold uppercase tracking-[0.08em]"
-          style={{ color: activeColor }}
-        >
+      <div className="relative px-3 py-3 border rounded-[2px]" style={{ borderColor: activeColor, background: `linear-gradient(180deg, ${activeColor}22 0%, transparent 100%)` }}>
+        <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground mb-1">Tour {turn}</div>
+        <div className="text-[14px] font-semibold uppercase tracking-[0.08em]" style={{ color: activeColor }}>
           {isMyTurn ? 'À toi de jouer' : `Tour des ${activeLabel}`}
         </div>
         {myTeam && (
@@ -606,37 +544,15 @@ function BattleSidebar({
       </div>
 
       {selectedUnit ? (
-        <UnitInspector
-          unit={selectedUnit}
-          isMyUnit={selectedUnit.team === myTeam}
-          isMyTurn={isMyTurn}
-        />
+        <UnitInspector unit={selectedUnit} isMyUnit={selectedUnit.team === myTeam} isMyTurn={isMyTurn} />
       ) : (
         <div className="px-3 py-3 text-[10px] uppercase tracking-[0.08em] text-muted-foreground border border-[rgba(226,232,240,0.10)] rounded-[2px]">
-          {isMyTurn
-            ? 'Clique sur une de tes unités pour voir ses ordres.'
-            : 'En attente du camp adverse. Tu peux inspecter une unité en la cliquant.'}
+          {isMyTurn ? 'Clique sur une de tes unités pour voir ses ordres.' : 'En attente du camp adverse. Tu peux inspecter une unité en la cliquant.'}
         </div>
       )}
 
-      <TeamPanel
-        team="blue"
-        slots={blueSlots}
-        hostUserId={hostUserId}
-        currentUserId={currentUserId}
-        canKick={false}
-        onKick={() => undefined}
-        compact
-      />
-      <TeamPanel
-        team="red"
-        slots={redSlots}
-        hostUserId={hostUserId}
-        currentUserId={currentUserId}
-        canKick={false}
-        onKick={() => undefined}
-        compact
-      />
+      <TeamPanel team="blue" slots={blueSlots} hostUserId={hostUserId} currentUserId={currentUserId} canKick={false} onKick={() => undefined} compact />
+      <TeamPanel team="red" slots={redSlots} hostUserId={hostUserId} currentUserId={currentUserId} canKick={false} onKick={() => undefined} compact />
     </div>
   )
 }
@@ -648,10 +564,5 @@ function Bracket({ position }: { position: 'tl' | 'tr' | 'bl' | 'br' }) {
     bl: 'bottom-1 left-1 border-r-0 border-t-0',
     br: 'bottom-1 right-1 border-l-0 border-t-0',
   }[position]
-  return (
-    <span
-      aria-hidden
-      className={cn('absolute w-[10px] h-[10px] border border-tactica-amber opacity-50', cls)}
-    />
-  )
+  return <span aria-hidden className={cn('absolute w-[10px] h-[10px] border border-tactica-amber opacity-50', cls)} />
 }

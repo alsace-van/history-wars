@@ -1,3 +1,4 @@
+// v1.2 (09/05/2026) — Animation case par case : prop unitPaths + onUnitPathDone
 // v1.1 (09/05/2026) — L1C.3 : props tileStates + selectedUnitId + onUnitClick + onUnitHover + targetableUnitIds + exhaustedUnitIds
 // v1.0 (09/05/2026) — Scene tactique complete : grid + units + camera + lighting
 import { useMemo } from 'react'
@@ -16,14 +17,12 @@ interface TacticalSceneProps {
   cubes: Cube[]
   units: UnitInstance[]
   onTileClick?: (c: Cube) => void
-  /** Etats explicites par hex (cubeKey → state). L1C.3 : reachable/selected. */
   tileStates?: Map<string, HexTileState>
-  /** Id de l'unite selectionnee → anneau amber. */
   selectedUnitId?: string | null
-  /** Set d'ids cibles cliquables → halo rouge. L1C.4. */
   targetableUnitIds?: ReadonlySet<string>
-  /** Set d'ids unites ayant deja agi → opacite reduite. */
   exhaustedUnitIds?: ReadonlySet<string>
+  unitPaths?: Map<string, ReadonlyArray<Cube>>
+  onUnitPathDone?: (unitId: string) => void
   onUnitClick?: (unit: UnitInstance) => void
   onUnitPointerOver?: (unit: UnitInstance) => void
   onUnitPointerOut?: (unit: UnitInstance) => void
@@ -39,6 +38,8 @@ export function TacticalScene({
   selectedUnitId,
   targetableUnitIds,
   exhaustedUnitIds,
+  unitPaths,
+  onUnitPathDone,
   onUnitClick,
   onUnitPointerOver,
   onUnitPointerOut,
@@ -56,6 +57,8 @@ export function TacticalScene({
           selected={u.id === selectedUnitId}
           targetable={targetableUnitIds?.has(u.id) ?? false}
           exhausted={exhaustedUnitIds?.has(u.id) ?? false}
+          path={unitPaths?.get(u.id)}
+          onPathDone={onUnitPathDone}
           onClick={onUnitClick}
           onPointerOver={onUnitPointerOver}
           onPointerOut={onUnitPointerOut}
@@ -67,6 +70,8 @@ export function TacticalScene({
       selectedUnitId,
       targetableUnitIds,
       exhaustedUnitIds,
+      unitPaths,
+      onUnitPathDone,
       onUnitClick,
       onUnitPointerOver,
       onUnitPointerOut,
@@ -77,12 +82,7 @@ export function TacticalScene({
     <SceneShell className={className}>
       <CameraController scale={scale} />
       <SceneLighting />
-      <HexGrid
-        scale={scale}
-        cubes={cubes}
-        onTileClick={onTileClick}
-        tileStates={tileStates}
-      />
+      <HexGrid scale={scale} cubes={cubes} onTileClick={onTileClick} tileStates={tileStates} />
       {renderedUnits}
     </SceneShell>
   )
