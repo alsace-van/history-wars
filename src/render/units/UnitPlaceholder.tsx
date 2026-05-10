@@ -1,7 +1,7 @@
+// v1.8 (10/05/2026) — Phase 1.5 fix : effectif chiffre (count) cache aux equipes adverses
 // v1.7 (10/05/2026) — Phase 1.5 : scale soldat par (hp+wounded)/hpMax + UnitHealthBar own-only
 // v1.6 (10/05/2026) — Glow naturel : 3 halos additifs + ring net + breathing pulse
 // v1.5 (10/05/2026) — Fix ring #2 : halo/net séparés en Y + depthWrite=false (rayures coplanaires)
-// v1.4 (10/05/2026) — Fix ring sélection : RING_LIFT 0.06 → 0.1 anti z-fighting (cf piege #47)
 import { Suspense, useEffect, useMemo, useRef } from 'react'
 import { Billboard, Text } from '@react-three/drei'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
@@ -290,7 +290,8 @@ export function UnitPlaceholder({
         <Text fontSize={0.32} color="#ffffff" anchorX="center" anchorY="middle" outlineWidth={0.025} outlineColor="#000000">
           {unit.kind}
         </Text>
-        {unit.count !== undefined && (
+        {/* Phase 1.5 : effectif chiffre visible uniquement pour mes propres unites (fog of war partiel) */}
+        {showHealthBar && unit.count !== undefined && (
           <Text position={[0, -0.32, 0]} fontSize={0.18} color="#e2e8f0" anchorX="center" anchorY="middle" outlineWidth={0.018} outlineColor="#000000">
             {unit.count}
           </Text>
