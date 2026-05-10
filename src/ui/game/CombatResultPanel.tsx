@@ -1,6 +1,6 @@
+// v3.0 (10/05/2026) — Phase 2 2D.3 : badge phase melee/ranged/charge + label tab "Charge" si applicable
 // v2.1 (10/05/2026) — Phase 1.5 : bouton "Centrer la vue" sur l'onglet actif (focus camera mon unité)
 // v2.0 (10/05/2026) — Phase 1.5 : refactor en onglets + clic sélectionne combat actif (highlight unités plateau)
-// v1.1 (10/05/2026) — Phase 1.5 : agrandi chiffres pertes (20px gras) pour lisibilité
 // v1.0 (10/05/2026) — Phase 1.5 fix UX : panneau resultat combat persistant (X close), libelles equipes explicites
 import { useEffect, useMemo, useState } from 'react'
 import type { Team } from '@/types/game'
@@ -105,8 +105,10 @@ function Tab({
   onRemove: () => void
 }) {
   const teamColor = notif.isMyAttack ? TEAM_COLOR[notif.attackerTeam] : TEAM_COLOR[notif.defenderTeam]
-  const icon = notif.kind === 'melee' ? '⚔' : '🏹'
-  const tabLabel = `T${notif.turn} · ${notif.kind === 'melee' ? 'Charge' : 'Tir'}`
+  // Phase 2 : 3 phases d'attaque distinctes
+  const icon = notif.kind === 'charge' ? '🐎' : notif.kind === 'melee' ? '⚔' : '🏹'
+  const phaseLabel = notif.kind === 'charge' ? 'Charge cav' : notif.kind === 'melee' ? 'Mêlée' : 'Tir'
+  const tabLabel = `T${notif.turn} · ${phaseLabel}`
 
   return (
     <div
@@ -142,7 +144,8 @@ function Tab({
 }
 
 function ReportContent({ notif, onFocusUnit }: { notif: CombatNotification; onFocusUnit?: (unitId: string) => void }) {
-  const actionLabel = notif.kind === 'melee' ? 'Charge' : 'Tir'
+  // Phase 2 : 3 phases distinctes
+  const actionLabel = notif.kind === 'charge' ? 'Charge cavalerie' : notif.kind === 'melee' ? 'Mêlée' : 'Tir'
   const titleColor = notif.isMyAttack ? TEAM_COLOR[notif.attackerTeam] : TEAM_COLOR[notif.defenderTeam]
 
   const titleSummary = notif.isMyAttack

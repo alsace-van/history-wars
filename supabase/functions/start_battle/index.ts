@@ -1,6 +1,6 @@
+// v2.0 (10/05/2026) — Phase 2 2B.5 : seed effective + terrain_tiles plaine_standard sur tout le board
 // v1.0 (09/05/2026) — Phase 1 L1B.2 : EF start_battle
-// Source : PLAN-PHASE-1.md § 3.3
-// Logique : host valide → spawn 6 units selon scenario → games.status='in_progress' + state.tactical.
+// Logique : host valide → spawn 6 units (effective Phase 2) + seed terrain → games.status='in_progress' + state.tactical.
 
 import { corsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
 import { extractUserFromJWT } from '../_shared/auth.ts'
@@ -12,9 +12,35 @@ import {
   DEFAULT_BOARD_RADIUS,
 } from '../_shared/scenarios.ts'
 import { UNIT_STATS_BY_KIND } from '../_shared/engine-port/units.ts'
+import type { UnitKind } from '../_shared/types.ts'
 
 interface StartBattleBody {
   game_id?: string
+}
+
+// Phase 2 : mapping effectif elastique par UnitKind (mirror UNIT_STATS_V2 src/engine/units/stats.ts).
+// Source de verite : src/engine/units/stats.ts. Toute modif → 2 fichiers a maintenir (piege #12).
+const EFFECTIVE_BY_KIND: Record<UnitKind, { max: number; min: number }> = {
+  I: { max: 800, min: 100 },
+  C: { max: 180, min:  25 },
+  A: { max: 120, min:  30 },
+}
+
+/**
+ * Genere tous les hex d'un board de rayon `radius` (cube coords).
+ * Convention identique a engine/hex/neighbors.ts spiral().
+ */
+function generateBoardHexes(radius: number): Array<{ q: number; r: number }> {
+  const cells: Array<{ q: number; r: number }> = []
+  for (let q = -radius; q <= radius; q++) {
+    for (let r = -radius; r <= radius; r++) {
+      const s = -q - r
+      if (Math.abs(q) <= radius && Math.abs(r) <= radius && Math.abs(s) <= radius) {
+        cells.push({ q, r })
+      }
+    }
+  }
+  return cells
 }
 
 Deno.serve(async (req: Request) => {
@@ -78,10 +104,11 @@ Deno.serve(async (req: Request) => {
       return errorResponse(ERROR_CODES.NOT_ENOUGH_PLAYERS, 'each team needs at least 1 player', 400)
     }
 
-    // 5. Placement deterministe
+    // 5. Placement deterministe + champs Phase 2 (effective elastique)
     const placements = getScenarioPlacement(game.scenario_id)
     const unitsToInsert = placements.map(p => {
       const stats = UNIT_STATS_BY_KIND[p.kind]
+      const eff = EFFECTIVE_BY_KIND[p.kind]
       return {
         game_id: gameId,
         team: p.team,
@@ -92,6 +119,12 @@ Deno.serve(async (req: Request) => {
         hp_max: stats.hpMax,
         morale: stats.moraleMax,
         morale_max: stats.moraleMax,
+        // Phase 2 : effectif elastique
+        effective: eff.max,
+        effective_max: eff.max,
+        effective_min: eff.min,
+        killed: 0,
+        // sub_kind / regiment_id / formation : null par defaut (placeholders Phase 5/6)
       }
     })
 
@@ -99,6 +132,22 @@ Deno.serve(async (req: Request) => {
     const { error: insertErr } = await admin.from('units').insert(unitsToInsert)
     if (insertErr) {
       return errorResponse(ERROR_CODES.INTERNAL, `units insert failed: ${insertErr.message}`, 500)
+    }
+
+    // 6a-bis. Phase 2 : seed terrain_tiles (defaut plaine_standard pour tout le board)
+    // MVP Phase 2 : terrain monotone. Diversification via scenario JSONB Phase 7.
+    const boardHexes = generateBoardHexes(DEFAULT_BOARD_RADIUS)
+    const terrainToInsert = boardHexes.map(h => ({
+      game_id: gameId,
+      q: h.q,
+      r: h.r,
+      type: 'plaine_standard' as const,
+    }))
+    const { error: terrainErr } = await admin.from('terrain_tiles').insert(terrainToInsert)
+    if (terrainErr) {
+      // rollback units si terrain echoue
+      await admin.from('units').delete().eq('game_id', gameId)
+      return errorResponse(ERROR_CODES.INTERNAL, `terrain insert failed: ${terrainErr.message}`, 500)
     }
 
     // 6b. Update games.status + state
@@ -123,8 +172,9 @@ Deno.serve(async (req: Request) => {
       .eq('id', gameId)
 
     if (updateErr) {
-      // rollback units
+      // rollback units + terrain
       await admin.from('units').delete().eq('game_id', gameId)
+      await admin.from('terrain_tiles').delete().eq('game_id', gameId)
       return errorResponse(ERROR_CODES.INTERNAL, `game update failed: ${updateErr.message}`, 500)
     }
 
@@ -135,18 +185,27 @@ Deno.serve(async (req: Request) => {
       actor_user_id: user.userId,
       action_type: 'start_battle',
       payload: { scenarioId: game.scenario_id },
-      result: { units_count: unitsToInsert.length, board_radius: DEFAULT_BOARD_RADIUS },
+      result: {
+        units_count: unitsToInsert.length,
+        board_radius: DEFAULT_BOARD_RADIUS,
+        terrain_count: terrainToInsert.length,
+      },
       seed: Date.now(),
     })
     if (actionErr) {
-      console.warn('[start_battle v1.0] game_actions log failed:', actionErr.message)
+      console.warn('[start_battle v2.0] game_actions log failed:', actionErr.message)
       // non-bloquant : la partie est lancee, le log est best-effort
     }
 
-    return jsonResponse({ ok: true, units_count: unitsToInsert.length, state: newState })
+    return jsonResponse({
+      ok: true,
+      units_count: unitsToInsert.length,
+      terrain_count: terrainToInsert.length,
+      state: newState,
+    })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'unknown error'
-    console.error('[start_battle v1.0] uncaught:', message)
+    console.error('[start_battle v2.0] uncaught:', message)
     return errorResponse(ERROR_CODES.INTERNAL, message, 500)
   }
 })

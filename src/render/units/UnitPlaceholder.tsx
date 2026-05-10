@@ -1,6 +1,6 @@
+// v2.0 (10/05/2026) — Phase 2 2E.1 : scale par effective/effectiveMax (Phase 2) + plage 0.35-1.0 amplifiee
 // v1.9 (10/05/2026) — Phase 1.5 : prop highlighted (halo jaune pulsant) pour unités du rapport combat actif
 // v1.8 (10/05/2026) — Phase 1.5 fix : effectif chiffre (count) cache aux equipes adverses
-// v1.7 (10/05/2026) — Phase 1.5 : scale soldat par (hp+wounded)/hpMax + UnitHealthBar own-only
 // v1.6 (10/05/2026) — Glow naturel : 3 halos additifs + ring net + breathing pulse
 import { Suspense, useEffect, useMemo, useRef } from 'react'
 import { Billboard, Text } from '@react-three/drei'
@@ -43,9 +43,9 @@ const RING_NET_LIFT = RING_LIFT + 0.004 // net : 4mm au-dessus du halo — anti 
 const SECONDS_PER_HEX = 1.0
 const SEGMENT_DURATION_MS = SECONDS_PER_HEX * 1000
 
-// Scale visuel selon (hp + wounded) / hpMax. Min 0.65 pour rester cliquable
-// et reconnaissable, max 1.0 pour les unites a effectif plein.
-const MIN_SOLDIER_SCALE_FACTOR = 0.65
+// Scale visuel selon effective / effectiveMax. Plage 0.35-1.0 amplifiee Phase 2
+// pour mieux differencier visuellement un pion de 100 vs 800 hommes.
+const MIN_SOLDIER_SCALE_FACTOR = 0.35
 const MAX_SOLDIER_SCALE_FACTOR = 1.0
 
 // Linear : vitesse constante a travers le path, pas de pause a chaque case
@@ -74,11 +74,11 @@ export function UnitPlaceholder({
   const ringRadius = hexSize * 0.42
   const facingY = unit.team === 'red' ? Math.PI : 0
 
-  // Scale soldat : ratio (hp + wounded) / hpMax — visible par les 2 equipes (observation
-  // de la masse de troupes : les morts retirent du volume). Default 1.0 si data absente.
-  const effectiveRatio = unit.hpMax && unit.hpMax > 0
-    ? Math.max(0, Math.min(1, ((unit.hp ?? unit.hpMax) + (unit.wounded ?? 0)) / unit.hpMax))
-    : 1
+  // Scale soldat Phase 2 : ratio effective/effectiveMax (effectif elastique).
+  // Visible par les 2 equipes (observation de la masse). Fallback hp/hpMax v1 si effective absent.
+  const eff = unit.effective ?? unit.hp ?? 1
+  const effMax = unit.effectiveMax ?? unit.hpMax ?? 1
+  const effectiveRatio = effMax > 0 ? Math.max(0, Math.min(1, eff / effMax)) : 1
   const scaleFactor = MIN_SOLDIER_SCALE_FACTOR + (MAX_SOLDIER_SCALE_FACTOR - MIN_SOLDIER_SCALE_FACTOR) * effectiveRatio
   const soldierScale = hexSize * SOLDIER_SCALE_RATIO * scaleFactor
   const soldierTranslateY = soldierScale
@@ -87,7 +87,7 @@ export function UnitPlaceholder({
   const baseScale = hexSize * SOLDIER_SCALE_RATIO
 
   // Barre PV detaillee : seulement pour mes propres unites (fog of war partiel)
-  const showHealthBar = !!viewerTeam && unit.team === viewerTeam && !!unit.hpMax && unit.hpMax > 0
+  const showHealthBar = !!viewerTeam && unit.team === viewerTeam && effMax > 0
 
   // ---- Refs animation (path step par step OU lerp direct) ----
   const groupRef = useRef<THREE.Group>(null)
@@ -306,11 +306,11 @@ export function UnitPlaceholder({
         </Suspense>
       </group>
 
-      {/* Phase 1.5 : barre PV multi-segment (vert hp / orange wounded / morts) — own only */}
+      {/* Phase 2 : barre effectif multi-segment (vert effective / orange wounded / sombre tues) — own only */}
       {showHealthBar && (
         <UnitHealthBar
-          hp={unit.hp ?? 0}
-          hpMax={unit.hpMax ?? 1}
+          effective={eff}
+          effectiveMax={effMax}
           wounded={unit.wounded ?? 0}
           yOffset={baseScale * 2.2 + 0.55}
           width={baseScale * 1.6}

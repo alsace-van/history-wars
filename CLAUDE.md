@@ -91,18 +91,20 @@ Ne jamais demander un re-upload si le fichier est accessible via une de ces sour
 - Phase 0 ✅ 13/13
 - **Phase 1 ✅ 13/13** — combat MVP tactique complet
 - **Phase 1.5 ✅** polish wounded + visuels asymétriques + toasts combat
-  - Migration 011 appliquée prod (`units.wounded`)
-  - Engine + EF v1.2 split killed/wounded ratio 60/40
-  - UnitHealthBar Billboard 3-segments own-only
-  - Scale soldat selon `(hp+wounded)/hpMax`
-  - useCombatNotifications Realtime → toasts asymétriques
-  - CombatPreviewTooltip enrichi split + UnitInspector segment wounded
-  - 110/110 tests verts
-- Phases 2-13 ⬜
+- **Phase 2 🟡 MVP code livré (session 15)** — refonte combat (effectif élastique, 3 phases, saturation terrain, charge, sizing, breakdown UI)
+  - Engine pur v2 + 93 tests Vitest (203 total)
+  - Migrations 012/013/014 livrées (à appliquer prod)
+  - Engine-port Deno miroir complet
+  - resolve_action refacturé en handlers (move v2, attack v2, split, merge)
+  - UI : UnitInspector v2, Tooltip v2 breakdown, ResultPanel v3 charge, Sidebar v1.1 effectifs
+  - Render : UnitPlaceholder v2 + HealthBar v2 (effective)
+  - Doc : `docs/COMBAT-V2.md` (référence règles complètes)
+  - **Reportés Session 2.5 polish** : CombatAnimator (2s skippable), DamageFloater, animationSpeed setting, application migrations prod, test humain, build PWA, tag git
+- **Phase 3** (refonte moteur de tour : brouillard, détection, pré-postures) → audit + plan à produire
+- Phases 4-15 ⬜
 
-Prochaine action : démarrer **Phase 2 IA solo** — produire `AUDIT-PHASE-2.md` + `PLAN-PHASE-2.md` en début de session.
-
-À faire côté utilisateur avant tag `phase-1-complete` :
-1. Tester manuellement une partie complète 2 navigateurs (lobby → bataille → combat → fin tour → victoire).
-2. `npm run build` PWA + Lighthouse score ≥ 90.
-3. Pousser le tag git `phase-1-complete`.
+Prochaine action :
+1. Appliquer migrations 012/013/014 en prod via `mcp_supabase__apply_migration`.
+2. `Supabase:get_advisors` → 0 warning critique.
+3. Test humain 2 navigateurs (split + merge + charge cav + saturation terrain).
+4. Polish Session 2.5 (animations) puis `npm run build` PWA + tag `phase-2-complete`.

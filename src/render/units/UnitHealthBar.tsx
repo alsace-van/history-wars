@@ -1,10 +1,14 @@
+// v2.0 (10/05/2026) — Phase 2 2E.2 : segments effective/wounded/killed (au lieu de hp legacy)
 // v1.0 (10/05/2026) — Phase 1.5 : barre PV Billboard multi-segment (vert hp / orange wounded / vide killed)
 import { Billboard } from '@react-three/drei'
 import * as THREE from 'three'
 
 interface UnitHealthBarProps {
-  hp: number
-  hpMax: number
+  /** Hommes vivants combattants (Phase 2 v2). */
+  effective: number
+  /** Capacite plein regiment (Phase 2 v2). */
+  effectiveMax: number
+  /** Hommes blesses (Phase 2 v2). */
   wounded: number
   /** Position Y au-dessus du soldat (deja calcule dans le parent). */
   yOffset: number
@@ -20,27 +24,25 @@ const COLOR_KILLED = 0x1f2937
 const COLOR_BORDER = 0x0f172a
 
 export function UnitHealthBar({
-  hp,
-  hpMax,
+  effective,
+  effectiveMax,
   wounded,
   yOffset,
   width,
   thickness = 0.09,
 }: UnitHealthBarProps) {
-  // Clamp ratios pour eviter les bugs si hp + wounded > hpMax (race / migration)
-  const hpRatio = Math.max(0, Math.min(1, hp / hpMax))
-  const woundedRatio = Math.max(0, Math.min(1 - hpRatio, wounded / hpMax))
-  const killedRatio = 1 - hpRatio - woundedRatio
+  // Clamp ratios pour eviter les bugs si effective + wounded > effectiveMax (race)
+  const effectiveRatio = Math.max(0, Math.min(1, effective / Math.max(1, effectiveMax)))
+  const woundedRatio = Math.max(0, Math.min(1 - effectiveRatio, wounded / Math.max(1, effectiveMax)))
+  const killedRatio = 1 - effectiveRatio - woundedRatio
 
-  const hpW = hpRatio * width
+  const effW = effectiveRatio * width
   const woundedW = woundedRatio * width
   const killedW = killedRatio * width
 
-  // Positions : alignement depuis gauche (x = -width/2)
-  // Centre de chaque segment = -width/2 + cumul + segmentW/2
-  const xHp = -width / 2 + hpW / 2
-  const xWounded = -width / 2 + hpW + woundedW / 2
-  const xKilled = -width / 2 + hpW + woundedW + killedW / 2
+  const xEff = -width / 2 + effW / 2
+  const xWounded = -width / 2 + effW + woundedW / 2
+  const xKilled = -width / 2 + effW + woundedW + killedW / 2
 
   return (
     <Billboard position={[0, yOffset, 0]} follow lockX={false} lockY={false} lockZ={false}>
@@ -50,9 +52,9 @@ export function UnitHealthBar({
         <meshBasicMaterial color={COLOR_BORDER} side={THREE.DoubleSide} />
       </mesh>
 
-      {hpW > 0 && (
-        <mesh position={[xHp, 0, 0]}>
-          <planeGeometry args={[hpW, thickness]} />
+      {effW > 0 && (
+        <mesh position={[xEff, 0, 0]}>
+          <planeGeometry args={[effW, thickness]} />
           <meshBasicMaterial color={COLOR_HEALTHY} side={THREE.DoubleSide} />
         </mesh>
       )}

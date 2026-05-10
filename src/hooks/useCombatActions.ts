@@ -1,3 +1,4 @@
+// v2.0 (10/05/2026) — Phase 2 2D.5 : ajout SplitAction + MergeAction + nouveaux error codes humanises
 // v1.0 (09/05/2026) — L1C.1 : wrappers EF start_battle / resolve_action / resolve_turn
 import { useCallback, useRef, useState } from 'react'
 import { toast } from 'sonner'
@@ -21,7 +22,24 @@ export interface AttackAction {
   payload: { unit_id: string; target_unit_id: string }
 }
 
-export type GameAction = MoveAction | AttackAction
+/** Phase 2 2C.4 : split d'un pion en 2 selon ratio preset. */
+export interface SplitAction {
+  type: 'split_unit'
+  payload: {
+    unit_id: string
+    target_q: number
+    target_r: number
+    ratio: 'half' | 'three_quarter' | 'nine_one'
+  }
+}
+
+/** Phase 2 2C.5 : fusion de 2 pions adjacents same kind/team. */
+export interface MergeAction {
+  type: 'merge_unit'
+  payload: { target_unit_id: string; source_unit_id: string }
+}
+
+export type GameAction = MoveAction | AttackAction | SplitAction | MergeAction
 
 /** Reponse normalisee : ok=true + data, OU ok=false + message UI (toast deja affiche). */
 export interface ActionResponse<T = unknown> {
@@ -117,6 +135,16 @@ function humanizeError(code: string | undefined, fallback: string | undefined): 
     NO_LINE_OF_SIGHT: 'Pas de ligne de vue.',
     INVALID_TARGET: 'Cible invalide.',
     GAME_FINISHED: 'Partie terminee.',
+    // Phase 2 — sizing
+    EFFECTIVE_TOO_LOW: 'Effectif trop faible pour cette operation.',
+    TARGET_NOT_ADJACENT: 'La cible doit etre adjacente.',
+    TARGET_OCCUPIED: 'Case cible deja occupee.',
+    HAS_ATTACKED_ALREADY: 'Cette unite a deja attaque ce tour.',
+    KIND_MISMATCH: 'Types d\'unites incompatibles pour fusion.',
+    TEAM_MISMATCH: 'Camps differents, fusion impossible.',
+    UNITS_NOT_ADJACENT: 'Les 2 unites doivent etre adjacentes.',
+    EFFECTIVE_OVERFLOW: 'Effectif total depasse la capacite max.',
+    CHARGE_NOT_ALLOWED: 'Terrain n\'autorise pas la charge.',
     INTERNAL: 'Erreur serveur, reessaie.',
     NETWORK: 'Probleme reseau.',
   }

@@ -1,3 +1,4 @@
+// v1.1 (10/05/2026) — Phase 2 2C.6 : reset last_move_path en debut de tour (detection charge cav)
 // v1.0 (09/05/2026) — Phase 1 L1B.4c : EF resolve_turn (bascule activeTeam, recup morale, end-condition)
 // Source : PLAN-PHASE-1.md § 3.5
 //
@@ -159,10 +160,12 @@ Deno.serve(async (req: Request) => {
     // Increment turn quand on revient sur blue (1 round = blue + red joues)
     const turnAfter = fromTeam === 'red' ? turnBefore + 1 : turnBefore
 
-    // 9. Reset has_moved / has_attacked pour units de toTeam
+    // 9. Reset has_moved / has_attacked / last_move_path pour units de toTeam
+    // Phase 2 : last_move_path est la trajectoire de ce tour. La reseter en debut
+    // de tour evite que la detection charge cav se base sur des deplacements anciens.
     const { error: resetErr } = await admin
       .from('units')
-      .update({ has_moved: false, has_attacked: false })
+      .update({ has_moved: false, has_attacked: false, last_move_path: null })
       .eq('game_id', gameId)
       .eq('team', toTeam)
     if (resetErr) {

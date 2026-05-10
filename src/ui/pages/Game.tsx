@@ -529,6 +529,8 @@ export function Game() {
                 myTeam={myTeam}
                 isMyTurn={isMyTurn}
                 selectedUnit={selectedUnit}
+                allUnits={unitStates}
+                gameId={game.id}
                 blueSlots={blueSlots}
                 redSlots={redSlots}
                 hostUserId={hostUserId}
