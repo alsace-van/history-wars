@@ -1,9 +1,10 @@
+// v1.3 (10/05/2026) — Phase 1.5 : prop viewerTeam pour barre PV asymetrique (own only)
 // v1.2 (09/05/2026) — Animation case par case : prop unitPaths + onUnitPathDone
 // v1.1 (09/05/2026) — L1C.3 : props tileStates + selectedUnitId + onUnitClick + onUnitHover + targetableUnitIds + exhaustedUnitIds
 // v1.0 (09/05/2026) — Scene tactique complete : grid + units + camera + lighting
 import { useMemo } from 'react'
 import type { Cube } from '@engine/hex'
-import type { Scale } from '@/types/game'
+import type { Scale, Team } from '@/types/game'
 import { SCALE_CONFIG } from '@engine/scales'
 import { HexGrid } from '../hex/HexGrid'
 import { UnitPlaceholder } from '../units/UnitPlaceholder'
@@ -16,6 +17,8 @@ interface TacticalSceneProps {
   scale: Scale
   cubes: Cube[]
   units: UnitInstance[]
+  /** Equipe du joueur courant (Phase 1.5 : determine quelles unites montrent la barre PV detaillee). */
+  viewerTeam?: Team | null
   onTileClick?: (c: Cube) => void
   tileStates?: Map<string, HexTileState>
   selectedUnitId?: string | null
@@ -33,6 +36,7 @@ export function TacticalScene({
   scale,
   cubes,
   units,
+  viewerTeam,
   onTileClick,
   tileStates,
   selectedUnitId,
@@ -57,6 +61,7 @@ export function TacticalScene({
           selected={u.id === selectedUnitId}
           targetable={targetableUnitIds?.has(u.id) ?? false}
           exhausted={exhaustedUnitIds?.has(u.id) ?? false}
+          viewerTeam={viewerTeam}
           path={unitPaths?.get(u.id)}
           onPathDone={onUnitPathDone}
           onClick={onUnitClick}
@@ -70,6 +75,7 @@ export function TacticalScene({
       selectedUnitId,
       targetableUnitIds,
       exhaustedUnitIds,
+      viewerTeam,
       unitPaths,
       onUnitPathDone,
       onUnitClick,
