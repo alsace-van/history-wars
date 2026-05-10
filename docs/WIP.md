@@ -2,6 +2,35 @@
 
 ---
 
+## Session 14 &mdash; 10/05/2026 &mdash; Audit fin de Phase 1.5 + corrections de dette
+
+**Contexte** : audit rigoureux post-Phase 1.5 demandé (3 écarts identifiés vs CLAUDE.md/plan master).
+
+**Écarts détectés** :
+1. `src/ui/pages/Game.tsx` à **618 lignes** (> 600 max). Violation règle architecture CLAUDE.md.
+2. `src/hooks/useGameRealtime.ts` créé en L1C.1 (session 5) **jamais câblé** — 0 dépendant. Dette tech.
+3. Suspicion de divergence count tests (grep ≠ vitest). **Faux positif** : vitest reporte 110 ✓.
+
+**Corrections livrées** :
+- **Game.tsx v3.14** : remplace le `useRealtime` inline (19 lignes, lignes 63-81) par `useGameRealtime({ gameId, onGameUpdate, onGameDelete, onPlayersChange })` (8 lignes). Channel `game-meta:${gameId}` désormais utilisé.
+- **GameTopBar.tsx (NEW, 39 lignes)** : extraction du header global de Game.tsx (logo TACTICA + bouton Salle de commandement + Officier). Game.tsx perd 27 lignes JSX, gagne 5 lignes (import + appel).
+- **Game.tsx total : 618 → 588 lignes** (sous le seuil 600).
+- **`useGameRealtime` câblé** : la dette tech `BACKLOG.md → useGameRealtime` est résolue.
+
+**Vérifs** :
+- `npx tsc --noEmit` : 0 erreur.
+- `npx vitest run` : **110/110 tests verts** (1.10 s).
+- `wc -l src/ui/pages/Game.tsx` : 588.
+
+**Fichiers touchés** :
+- `src/ui/pages/Game.tsx` v3.14
+- `src/ui/game/GameTopBar.tsx` v1.0 (NEW)
+- `docs/WIP.md`, `docs/BACKLOG.md`, `docs/dependency-map.md` (MAJ)
+
+**Prochain Lot** : Phase 2 — IA solo (audit + plan à produire en début de session).
+
+---
+
 ## Session 13 &mdash; 10/05/2026 &mdash; Phase 1.5 polish : wounded + visuels asymétriques + toasts combat
 
 **Objectif** : combler 2 trous UX signalés post-Phase 1 (pas de retour visuel des combats sans cliquer ; pas de notion de blessés distinguable de tués). Préparation Phase 3 unité Infirmier.

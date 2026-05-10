@@ -1,8 +1,13 @@
 # dependency-map.md — TACTICA
 
-> Mise à jour : 10/05/2026 (Phase 1.5 polish — wounded + visuels asymétriques + toasts combat, migrations 007-011).
-> Source : analyse statique automatique de `src/` (~88 fichiers, ~185 imports internes).
+> Mise à jour : 10/05/2026 (session 14 corrections : useGameRealtime câblé + GameTopBar extrait).
+> Source : analyse statique automatique de `src/` (~89 fichiers, ~187 imports internes).
 > Format : `cible <- dépendant`. Indique l'impact d'une modif sur la cible.
+
+## ⚠ Corrections session 14 (10/05/2026)
+
+- `src/hooks/useGameRealtime.ts` v1.0 — **désormais câblé** dans Game.tsx v3.14 (remplace `useRealtime` inline, channel `game-meta:${gameId}`). 1 dépendant.
+- `src/ui/game/GameTopBar.tsx` v1.0 (NEW, 39 lignes) — extraction du header global de Game.tsx (back button, logo TACTICA, badge Officier). Game.tsx 618 → 588 lignes (< 600 ✓).
 
 ## ⚠ Nouveaux composants Phase 1.5 (session 13)
 
@@ -134,11 +139,11 @@ Le type `HexTileState` est utilisé partout. Ajout d'un membre = OK (tous switch
 <- src/ui/pages/Game.tsx
 ```
 
-### `src/hooks/useGameRealtime.ts` ⚠️
+### `src/hooks/useGameRealtime.ts`
 ```
-(aucun dépendant interne)
+<- src/ui/pages/Game.tsx
 ```
-Hook créé en L1C.1 mais **non câblé** dans Game.tsx (qui utilise `useRealtime` direct). Dette technique — décision Phase 2 : brancher proprement OU supprimer (cf BACKLOG).
+Câblé en session 14 (10/05/2026). Centralise les souscriptions Realtime du cycle de vie d'une game (games UPDATE/DELETE + game_players * + game_actions INSERT optionnel). Channel `game-meta:${gameId}`, distinct du channel `useBattleUnits` sur la table `units`.
 
 ### `src/hooks/useTacticalSelection.ts` (NEW Phase 1 fin)
 ```
@@ -254,7 +259,7 @@ Toutes vérifiées sur le code actuel (10/05/2026) :
 - ✅ `hooks/` importe depuis `lib/`, `types/`. Pas de Three direct.
 - ✅ `ui/` importe librement (couche du dessus).
 - ✅ Aucun cycle détecté.
-- ⚠️ `src/hooks/useGameRealtime.ts` : 0 dépendant — à brancher ou supprimer (REFACTOR-02 décidera).
+- ✅ `src/hooks/useGameRealtime.ts` : câblé dans Game.tsx (session 14).
 
 ### Frontières inter-couches en chiffres
 
