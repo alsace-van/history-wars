@@ -40,3 +40,5 @@ dev-dist
 # Compiled config (source is vite.config.ts)
 vite.config.js
 vite.config.d.ts
+*.tsbuildinfo
+vite.config.js
