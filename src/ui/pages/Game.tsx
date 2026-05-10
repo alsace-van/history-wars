@@ -1,7 +1,7 @@
+// v3.4 (10/05/2026) — P1-REFACTOR-01 : extraction BattleSidebar vers src/ui/game/BattleSidebar.tsx
 // v3.3 (10/05/2026) — Fix ring sélection (option A) : retire state 'selected' du tileStates
 // v3.2 (09/05/2026) — Animation case par case : aStar avant submit + unitPaths state
 // v3.1 (09/05/2026) — L1C.3 : selection unite + reachable BFS + click move + UnitInspector
-// v3.0 (09/05/2026) — L1C.2 : bouton Engager câblé + switch lobby/in_progress + units BDD
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -19,7 +19,7 @@ import {
 } from '@/types/game'
 import { PageBackground } from '@ui/layout/PageBackground'
 import { TeamPanel, type SlotData } from '@ui/game/TeamPanel'
-import { UnitInspector } from '@ui/game/UnitInspector'
+import { BattleSidebar } from '@ui/game/BattleSidebar'
 import { TacticalScene, buildMvpUnitPlacement } from '@/render'
 import { unitRowsToInstances, unitRowsToStates } from '@render/_data/unitAdapter'
 import type { HexTileState } from '@render/types'
@@ -29,7 +29,7 @@ import { bfsReachable, aStar } from '@engine/movement'
 import { computeEnemyZoc } from '@engine/zoc'
 import { cn } from '@lib/cn'
 
-const TAG = '[Game v3.3]'
+const TAG = '[Game v3.4]'
 
 const PRIMARY_BTN_CLIP =
   'polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px)'
@@ -510,50 +510,6 @@ export function Game() {
           </div>
         </aside>
       </div>
-    </div>
-  )
-}
-
-interface BattleSidebarProps {
-  turn: number
-  activeTeam: Team
-  myTeam: Team | null
-  isMyTurn: boolean
-  selectedUnit: UnitState | null
-  blueSlots: SlotData[]
-  redSlots: SlotData[]
-  hostUserId: string
-  currentUserId: string
-}
-
-function BattleSidebar({ turn, activeTeam, myTeam, isMyTurn, selectedUnit, blueSlots, redSlots, hostUserId, currentUserId }: BattleSidebarProps) {
-  const activeLabel = activeTeam === 'blue' ? 'Bleus' : 'Rouges'
-  const activeColor = activeTeam === 'blue' ? '#3b82f6' : '#ef4444'
-
-  return (
-    <div className="space-y-4">
-      <div className="relative px-3 py-3 border rounded-[2px]" style={{ borderColor: activeColor, background: `linear-gradient(180deg, ${activeColor}22 0%, transparent 100%)` }}>
-        <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground mb-1">Tour {turn}</div>
-        <div className="text-[14px] font-semibold uppercase tracking-[0.08em]" style={{ color: activeColor }}>
-          {isMyTurn ? 'À toi de jouer' : `Tour des ${activeLabel}`}
-        </div>
-        {myTeam && (
-          <div className="text-[10px] text-muted-foreground mt-1 uppercase tracking-[0.08em]">
-            Ton camp : {myTeam === 'blue' ? 'Bleus' : 'Rouges'}
-          </div>
-        )}
-      </div>
-
-      {selectedUnit ? (
-        <UnitInspector unit={selectedUnit} isMyUnit={selectedUnit.team === myTeam} isMyTurn={isMyTurn} />
-      ) : (
-        <div className="px-3 py-3 text-[10px] uppercase tracking-[0.08em] text-muted-foreground border border-[rgba(226,232,240,0.10)] rounded-[2px]">
-          {isMyTurn ? 'Clique sur une de tes unités pour voir ses ordres.' : 'En attente du camp adverse. Tu peux inspecter une unité en la cliquant.'}
-        </div>
-      )}
-
-      <TeamPanel team="blue" slots={blueSlots} hostUserId={hostUserId} currentUserId={currentUserId} canKick={false} onKick={() => undefined} compact />
-      <TeamPanel team="red" slots={redSlots} hostUserId={hostUserId} currentUserId={currentUserId} canKick={false} onKick={() => undefined} compact />
     </div>
   )
 }
