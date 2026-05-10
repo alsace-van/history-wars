@@ -141,7 +141,9 @@ Ensuite `splitCasualties(menLost, defender.effective)` decompose en `killed` (60
 
 Le moral baisse cote defenseur de `round(damage / 4)` en melee/charge, `/ 6` en ranged. Cote attaquant : +2 melee/charge, +1 ranged.
 
-**Plancher 1** : si l'attaque est theoriquement valide (attackPossible) mais que `power - resistance <= 0` (defenseur tres superieur), le damage est plancher a 1. Realisme : un engagement valide cause toujours au moins 1 perte.
+**Plancher d'attrition (Phase 2.5)** : si l'attaque est theoriquement valide (attackPossible), le damage minimum n'est plus 1 mais `max(1, round(menEngagedAttacker * baseAttritionRate))`. `baseAttritionRate` est dans `CombatConfig` (default 0.08 = 8 %). Exemple : 200 hommes engages sur plaine_standard → 16 pertes minimum/tour, meme a forces parfaitement egales (power = resistance). Realisme : un combat 200 vs 200 en melee tue significativement plus qu'1 soldat. La variance ±15 % s'applique ensuite mais le plancher reste enforce.
+
+Avant Phase 2.5 : `power - resistance <= 0` donnait 1 degat, ce qui creait un equilibre figé peu lisible (bug reproduit le 10/05/2026 sur 800I vs 800I plaine_standard).
 
 ---
 

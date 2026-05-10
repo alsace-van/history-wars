@@ -305,4 +305,36 @@ describe('engine/combat/v2/contact — invariants', () => {
     expect(r.bonusBreakdown.some(b => b.label === 'TIR base')).toBe(true)
     expect(r.bonusBreakdown.some(b => b.label === 'ATK base')).toBe(false)
   })
+
+  // Phase 2.5 balance : plancher d'attrition proportionnel
+  it('regression: 800I vs 800I plaine_standard inflige >= baseAttrition (pas 1)', () => {
+    // Bug user 10/05/2026 : a forces parfaitement egales (power = resistance), l'ancien
+    // plancher fixe 1 donnait 1 degat. Nouveau plancher = round(menEngaged * 0.08) = 16.
+    // Variance ±15 % s'applique mais le plancher reste enforce.
+    const r = runContact({
+      attacker: { effective: 800, morale: 75 },
+      defender: { effective: 800, morale: 75 },
+      attackerTerrain: 'plaine_standard',
+      defenderTerrain: 'plaine_standard',
+      phase: 'melee',
+      seed: 7,
+    })
+    // contactCap plaine_standard = 200, attrition 8 % = 16 pertes minimum
+    expect(r.menEngagedAttacker).toBe(200)
+    expect(r.damageDealt).toBeGreaterThanOrEqual(16)
+  })
+
+  it('plancher attrition scale avec contactCap (breche cap 50 → ~4 pertes min)', () => {
+    const r = runContact({
+      attacker: { effective: 800, morale: 75 },
+      defender: { effective: 800, morale: 75 },
+      attackerTerrain: 'breche',
+      defenderTerrain: 'breche',
+      phase: 'melee',
+      seed: 11,
+    })
+    // contactCap breche = 50, attrition 8 % = max(1, round(50 * 0.08)) = 4
+    expect(r.menEngagedAttacker).toBe(50)
+    expect(r.damageDealt).toBeGreaterThanOrEqual(4)
+  })
 })

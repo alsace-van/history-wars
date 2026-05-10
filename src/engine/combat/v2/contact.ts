@@ -1,3 +1,4 @@
+// v1.1 (10/05/2026) — Phase 2 2.5 balance : plancher attrition proportionnel aux hommes engagés (au lieu de 1)
 // v1.0 (10/05/2026) — Phase 2 2A.6 : pipeline central calcul de degats par contact
 // Source : PLAN-PHASE-2-COMBAT-V2.md § 2A.6 + AUDIT § 3.6
 
@@ -10,7 +11,7 @@ import { splitCasualties } from '../types'
 import { distancePrecision } from './distance'
 import { describeMatchup, getMatchupCoef } from './matchup'
 import type { AttackPhase, BonusBreakdownEntry, CombatConfig, CombatResultV2 } from './types'
-import { DEFAULT_COMBAT_CONFIG } from './types'
+import { DEFAULT_BASE_ATTRITION_RATE, DEFAULT_COMBAT_CONFIG } from './types'
 
 export interface ContactInput {
   readonly attacker: UnitState
@@ -99,19 +100,25 @@ export function resolveContact(input: ContactInput): CombatResultV2 {
     * defTerrainMult
     * defenderMoraleMult
 
-  // Degats bruts. Plancher 1 si l'attaque est theoriquement capable de toucher
-  // (cf. v1 melee MIN_DAMAGE_MELEE — un engagement valide tue toujours >= 1 soldat).
-  // Pour ranged : seulement si precision > 0 (pas de plancher si distance impossible).
+  // Degats bruts. Plancher d'attrition naturelle proportionnel aux hommes engages
+  // (Phase 2.5 balance) : a forces egales (power = resistance), on n'aurait que 1 degat
+  // avec l'ancien plancher fixe — irrealiste pour 200 hommes en melee. Le nouveau plancher
+  // = round(menEngagedAttacker * baseAttritionRate), default 8 % (16 pertes/tour a egalite
+  // sur plaine_standard contactCap=200). Variance ±15 % s'applique ensuite.
+  // Ranged : seulement si precision > 0 (pas de plancher si distance impossible).
   const attackPossible =
     baseAttackFactor > 0 && matchupCoef > 0 && (phase !== 'ranged' || precisionMult > 0)
+  const attritionRate = config.baseAttritionRate ?? DEFAULT_BASE_ATTRITION_RATE
+  const baseAttrition = Math.max(1, Math.round(menEngagedAttacker * attritionRate))
   const damageRawNoFloor = Math.max(0, power - resistance)
-  const damageRaw = attackPossible ? Math.max(1, damageRawNoFloor) : damageRawNoFloor
+  const damageRaw = attackPossible ? Math.max(baseAttrition, damageRawNoFloor) : damageRawNoFloor
 
-  // Variance (rng() ∈ [0,1) → multi ∈ [low, low+range))
+  // Variance (rng() ∈ [0,1) → multi ∈ [low, low+range)). Phase 2.5 : on borne le résultat
+  // par `baseAttrition` (pas de variance qui descend en-dessous du plancher d'attrition).
   const rollRaw = rng()
   const variance = config.diceVariance.low + rollRaw * config.diceVariance.range
   const damageFinal = attackPossible
-    ? Math.max(1, Math.round(damageRaw * variance))
+    ? Math.max(baseAttrition, Math.round(damageRaw * variance))
     : Math.max(0, Math.round(damageRaw * variance))
 
   // Pertes hommes (resistance humaine = 1)

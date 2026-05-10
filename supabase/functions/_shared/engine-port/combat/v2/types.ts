@@ -45,12 +45,17 @@ export interface CombatConfig {
   chargeMultipliers: { two: number; three: number; fourPlus: number }
   moraleThresholds: { rout: number; test: number }
   matchupMatrix: Record<AttackPhase, Record<UnitKind, Record<UnitKind, number>>>
+  /** Phase 2.5 : plancher d'attrition naturelle (fraction des hommes engagés). Default 0.08. */
+  baseAttritionRate?: number
 }
+
+export const DEFAULT_BASE_ATTRITION_RATE = 0.08
 
 export const DEFAULT_COMBAT_CONFIG: CombatConfig = Object.freeze({
   diceVariance: Object.freeze({ low: 0.85, range: 0.30 }),
   chargeMultipliers: Object.freeze({ two: 1.3, three: 1.4, fourPlus: 1.5 }),
   moraleThresholds: Object.freeze({ rout: 25, test: 30 }),
+  baseAttritionRate: DEFAULT_BASE_ATTRITION_RATE,
   matchupMatrix: Object.freeze({
     melee: Object.freeze({
       I: Object.freeze({ I: 1.0, C: 1.1, A: 1.5 }),
