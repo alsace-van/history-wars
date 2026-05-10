@@ -1,3 +1,4 @@
+// v1.2 (10/05/2026) — Phase 1.5 : MIN_DAMAGE_MELEE = 1 (realisme combat, toujours ≥ 1 mort)
 // v1.1 (10/05/2026) — Phase 1.5 : split casualties killed/woundedAdd via splitCasualties()
 // v1.0 (09/05/2026) — Phase 1 L1A.3 : combat melee
 // Source : PLAN-PHASE-1.md § 2.2 (engine/combat/melee.ts)
@@ -10,6 +11,8 @@ import { splitCasualties, type CombatModifiers, type CombatResult } from './type
 const ROLL_RANGE_MELEE = 20  // roll = rng()*20 - 10 → [-10, +10)
 const FLANK_BONUS = 10
 const ATTACKER_MORALE_DELTA_MELEE = 2
+/** Plancher de degats : meme un combat tres defavorable cause au moins 1 perte (realisme). */
+const MIN_DAMAGE_MELEE = 1
 
 /**
  * Resolution melee : ATK/DEF effectifs avec modifiers + bonus morale,
@@ -31,7 +34,8 @@ export function resolveMelee(
 
   const rollRaw = rng()
   const roll = rollRaw * ROLL_RANGE_MELEE - ROLL_RANGE_MELEE / 2  // [-10, +10)
-  const damage = Math.max(0, Math.round(atkEff - defEff + roll))
+  // Plancher 1 : un engagement melee cause toujours au moins 1 mort cote defenseur
+  const damage = Math.max(MIN_DAMAGE_MELEE, Math.round(atkEff - defEff + roll))
 
   const split = splitCasualties(damage, defender.hp)
   const defenderKilled = split.defenderHpAfter === 0

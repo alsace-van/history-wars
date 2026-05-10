@@ -38,20 +38,20 @@ describe('engine/combat/melee', () => {
     expect(total).toBeGreaterThan(0)
   })
 
-  it('DEF clairement > ATK → damage = 0 (clampe)', () => {
-    // attacker tres faible vs defender tres fort : meme avec roll max +10, ATK_eff - DEF_eff < 0
-    const atk = makeUnit({ id: 'a', kind: 'A', team: 'blue', morale: 30 }) // atk 40, malus -15 → 25
-    const def = makeUnit({ id: 'd', kind: 'I', team: 'red', morale: 80, position: cube(1, 0, -1) }) // def 30 + bonus 5 = 35
-    // 25 - 35 + roll(<10) = max -20, max -1 → damage clampe a 0 dans tous les cas
+  it('DEF >> ATK → damage clampe au plancher MIN_DAMAGE_MELEE = 1 (realisme)', () => {
+    // attacker tres faible vs defender tres fort : ATK_eff - DEF_eff < 0
+    // v1.2 : plancher 1 au lieu de 0 (un engagement melee tue toujours ≥ 1 soldat)
+    const atk = makeUnit({ id: 'a', kind: 'A', team: 'blue', morale: 30 })
+    const def = makeUnit({ id: 'd', kind: 'I', team: 'red', morale: 80, position: cube(1, 0, -1) })
     const rng = seededRng(2)
     for (let i = 0; i < 50; i++) {
       const r = resolveMelee(atk, def, { flanked: false }, rng)
-      expect(r.damageDealt).toBeGreaterThanOrEqual(0)
+      expect(r.damageDealt).toBeGreaterThanOrEqual(1)
     }
-    // au moins une iteration a damage = 0
+    // au moins une iteration tape le plancher 1 (cas defavorable)
     const rng2 = seededRng(2)
     const damages = Array.from({ length: 50 }, () => resolveMelee(atk, def, { flanked: false }, rng2).damageDealt)
-    expect(damages.some(d => d === 0)).toBe(true)
+    expect(damages.some(d => d === 1)).toBe(true)
   })
 
   it('flanc augmente le damage moyen (meme seed comparaison)', () => {
