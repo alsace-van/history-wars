@@ -1,3 +1,4 @@
+// v1.1 (10/05/2026) — Phase 1.5 : retire la ligne PV ennemi exacte (fog of war)
 // v1.0 (10/05/2026) — P1-L1C4-01 : tooltip DOM ancré écran, preview combat (mêlée/tir)
 import { previewMelee, previewRanged, type CombatModifiers } from '@engine/combat'
 import { getUnitStats, type UnitState } from '@engine/units'
@@ -68,13 +69,10 @@ export function CombatPreviewTooltip({
           {actionLabel}
         </div>
         <div
-          className="text-[13px] font-semibold uppercase tracking-[0.06em] leading-tight"
+          className="text-[13px] font-semibold uppercase tracking-[0.06em] leading-tight mb-[6px]"
           style={{ color: teamColor }}
         >
           {defenderLabel}
-        </div>
-        <div className="text-[10px] text-muted-foreground mt-[2px]">
-          PV ennemi : <span className="text-foreground tabular-nums">{defender.hp} / {defender.hpMax}</span>
         </div>
 
         <div className="mt-2 flex items-center justify-between gap-3">
