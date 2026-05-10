@@ -1,8 +1,9 @@
+// v1.1 (10/05/2026) — P1-L1C4-04 : ajout state 'dangerous' (ZoC ennemie)
 // v1.0 (09/05/2026) — Types render partages
 import type { Cube } from '@engine/hex'
 import type { Team, UnitKind } from '@/types/game'
 
-export type HexTileState = 'idle' | 'hover' | 'selected' | 'reachable' | 'targetable'
+export type HexTileState = 'idle' | 'hover' | 'selected' | 'reachable' | 'targetable' | 'dangerous'
 export type HexTileVisibility = 'visible' | 'fog' | 'hidden'
 
 export interface UnitInstance {

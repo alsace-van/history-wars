@@ -1,7 +1,7 @@
+// v1.2 (10/05/2026) — P1-L1C4-04 : support state 'dangerous' (ZoC ennemie, orange amorti)
 // v1.1 (09/05/2026) — L1C.3 : support states 'reachable' (cyan) + 'targetable' (rouge, prepare L1C.4)
 // v1.0c (09/05/2026) — Fix : Shape + ExtrudeGeometry, sommets explicitement aux angles 0,60,...,300
 // v1.0b (09/05/2026) — Fix : edges custom (CylinderGeometry edges incluait diagonales internes)
-// v1.0a (09/05/2026) — Fix : rotation hex retiree
 import { memo, useMemo } from 'react'
 import * as THREE from 'three'
 import type { Cube } from '@engine/hex'
@@ -80,6 +80,7 @@ function HexTileBase({
     if (state === 'selected') return { fillColor: COLORS.tileSelected, edgeColor: COLORS.tileSelectedEdge }
     if (state === 'reachable') return { fillColor: COLORS.tileReachable, edgeColor: COLORS.tileReachableEdge }
     if (state === 'targetable') return { fillColor: COLORS.tileTargetable, edgeColor: COLORS.tileTargetableEdge }
+    if (state === 'dangerous') return { fillColor: COLORS.tileDangerous, edgeColor: COLORS.tileDangerousEdge }
     return { fillColor: COLORS.tileIdle, edgeColor: COLORS.tileIdleEdge }
   }, [state, visibility])
 
