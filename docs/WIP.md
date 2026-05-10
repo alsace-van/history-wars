@@ -36,7 +36,7 @@ Refonte combat MVP → modele riche : effectif elastique, 3 phases (melee/ranged
 - **Migration 013** `terrain_tiles.sql` : table `terrain_tiles {game_id, q, r, type}` + RLS SELECT membre + Realtime + REPLICA IDENTITY FULL.
 - **Migration 014** `combat_config.sql` : table + seed initial JSONB qui mirror `DEFAULT_COMBAT_CONFIG` (stats, terrainCaps, matchupMatrix, diceVariance, chargeMultipliers, moraleThresholds).
 - `start_battle` EF v2.0 : seed `effective/effective_max/effective_min/killed` + seed `terrain_tiles` (defaut plaine_standard sur tout le board, 91 hex pour radius=5). Rollback if terrain insert echoue.
-- **Migrations a appliquer cote prod** : `mcp_supabase__apply_migration` non execute en local. A faire avant test humain.
+- **Migrations appliquees en prod** (verifie 10/05/2026) : 012/013/014 presentes via `list_migrations`. `terrain_tiles` + `combat_config` tables OK (RLS active, 1 row seed combat_config). Backfill `units` 10/10 OK (0 NULL, effective range 48-800). `get_advisors` : 0 ERROR, warnings restants sont anterieurs Phase 2 (piege #8 + dette tech Phase 1).
 
 ### 2C — Engine-port miroir Deno (Session 4)
 - `_shared/engine-port/units.ts` v2.0 : ajoute `UnitStatsV2`, `UnitSubKind`, `UNIT_STATS_V2`, `resolveUnitStatsV2`, sizing `splitUnit/mergeUnits/isSizingError`.
@@ -80,8 +80,8 @@ Refonte combat MVP → modele riche : effectif elastique, 3 phases (melee/ranged
 - `CombatAnimator` (anim 2s skippable, projectile, courbe charge, deroute).
 - `DamageFloater` (chiffre rouge flottant).
 - `SettingsContext.animationSpeed` persistant + raccourci `Espace` skip.
-- Application des migrations 012/013/014 en prod via `mcp_supabase__apply_migration`.
-- `Supabase:get_advisors` apres migrations : verifier 0 warning critique.
+- ~~Application des migrations 012/013/014 en prod~~ — DEJA FAIT (verif 10/05/2026).
+- ~~`Supabase:get_advisors` apres migrations~~ — DEJA FAIT (0 ERROR, warnings preexistants Phase 1).
 - Test humain 2 navigateurs avec une partie complete.
 - `npm run build` PWA + Lighthouse >= 90.
 - Tag git `phase-2-complete` apres validation humaine.
