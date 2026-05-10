@@ -1,8 +1,20 @@
 # dependency-map.md — TACTICA
 
-> Mise à jour : 10/05/2026 (post Phase 1 L1A + L1B + L1C.1-3 + migrations 008/010).
-> Source : analyse statique automatique de `src/` (81 fichiers, 167 imports internes).
+> Mise à jour : 10/05/2026 (clôture Phase 1 — L1A + L1B + L1C complets, migrations 007-010).
+> Source : analyse statique automatique de `src/` (~85 fichiers, ~180 imports internes).
 > Format : `cible <- dépendant`. Indique l'impact d'une modif sur la cible.
+
+## ⚠ Nouveaux composants Phase 1 fin (session 12)
+
+- `src/hooks/useTacticalSelection.ts` v1.1 — hook clé : selection + reachable + targetable + dangerousZocKeys + tileStates. Consommé par Game.tsx.
+- `src/ui/game/BattleSidebar.tsx` v1.0 — panneau latéral en bataille (extrait de Game.tsx).
+- `src/ui/game/GameHUD.tsx` v1.0 — bandeau bas Engager / Fin de tour / Quitter.
+- `src/ui/game/EndGameModal.tsx` v1.0 — Radix Dialog victoire + stats `game_actions`.
+- `src/ui/game/CombatPreviewTooltip.tsx` v1.0 — tooltip DOM ancré souris, `previewMelee/previewRanged`.
+- `src/render/types.ts` v1.1 — `HexTileState` étendu avec `'dangerous'`.
+- `src/render/colors.ts` v1.2 — clés `tileDangerous` + `tileDangerousEdge`.
+- `src/render/hex/HexTile.tsx` v1.2 — case `'dangerous'` dans le switch.
+- `src/render/units/UnitPlaceholder.tsx` v1.6 — glow naturel 3 halos additifs + breathing pulse.
 
 ---
 
@@ -120,7 +132,13 @@ Le type `HexTileState` est utilisé partout. Ajout d'un membre = OK (tous switch
 ```
 (aucun dépendant interne)
 ```
-Hook créé en L1C.1 mais **non câblé** dans Game.tsx (qui utilise `useRealtime` direct). Dette technique — à brancher dans P1-REFACTOR-02 si pertinent, ou supprimer.
+Hook créé en L1C.1 mais **non câblé** dans Game.tsx (qui utilise `useRealtime` direct). Dette technique — décision Phase 2 : brancher proprement OU supprimer (cf BACKLOG).
+
+### `src/hooks/useTacticalSelection.ts` (NEW Phase 1 fin)
+```
+<- src/ui/pages/Game.tsx
+```
+Hook pivot tactique : centralise selection/reachable/targetable/dangerousZocKeys/tileStates/exhaustedUnitIds/handleUnitClick. Consommé uniquement par Game.tsx. Toute évolution (Phase 3 fatigue, Phase 4 fog of war) passera par ce hook plutôt que de remettre la logique inline.
 
 ### `src/engine/combat/preview.ts` (utilisé par L1C4-01)
 ```

@@ -2,6 +2,42 @@
 
 ---
 
+## Session 12 &mdash; 10/05/2026 &mdash; Phase 1 fin : clôture L1C (combat MVP tactique complet)
+
+**Contexte** : reprise après session 5 (WIP-PHASE-1-SESSION-5.md), bug ring sélection ouvert, L1C.4 + L1C.5 à démarrer.
+
+**Fait** :
+- **Fix ring sélection** (PR #1, #2, #3) :
+  - Option A retenue : retire le state `'selected'` du `tileStates` (l'anneau autour du soldat suffit, cf piège #47).
+  - `RING_LIFT` 0.06 → 0.1, halo et net séparés en Y (anti z-fight coplanaire).
+  - Glow naturel : 3 halos `AdditiveBlending` + breathing pulse (`useFrame` + `clock.elapsedTime`), segments 48 → 64.
+- **P1-REFACTOR-01** (PR #4) : extraction `BattleSidebar` depuis Game.tsx → `src/ui/game/BattleSidebar.tsx` (92 lignes). Game.tsx 569 → 525.
+- **P1-L1C4-04** (PR #5) : 4e state `HexTileState = 'dangerous'` (orange `0x5a3514` / `0xfb923c`) pour les hex en ZoC ennemie reachable.
+- **P1-REFACTOR-02 + P1-L1C4-02 + L1C5-01/02/03 + L1C4-01/03** (PR #7, bundle) :
+  - `useTacticalSelection` (168 lignes) : extrait selection + reachable + `targetableUnitIds` (`cubeDistance` ≤ range + `hasLineOfSight` si range > 1) + `dangerousZocKeys` (`computeEnemyZoc` mémoïsé partagé) + `tileStates` (cyan reachable, orange si en ZoC).
+  - `GameHUD` (102 lignes) : bandeau bas overlay, boutons Engager / Fin de tour / Quitter selon contexte.
+  - `EndGameModal` (160 lignes) : Radix Dialog auto sur `status='finished'`, vainqueur + tours + stats agrégées (moves, mêlée, tirs, fins de tour) depuis `game_actions`.
+  - `CombatPreviewTooltip` (110 lignes) : HTML overlay anchor souris, `previewMelee/previewRanged` (dégâts min-max + issue Tue à coup sûr / Tue possible / Affaiblit).
+  - Game.tsx v3.7 (560 lignes < 600) : intégration HUD + modal + tooltip, `handleEndTurn`, `handleUnitClick` composite (click ennemi targetable → `submitAction attack_*`), retire boutons inline.
+
+**Pièges ajoutés** :
+- **#47** state `'selected'` sur la tile + ring au-dessus = z-fight visible (rayures radiales). Fix : ring autour du soldat seul.
+- **#48** halo + net rings transparents au même Y = z-fight coplanaire (rayures radiales). Fix : `depthWrite=false` + `renderOrder` + Y séparés (4 mm).
+- **#49** R3F `onPointerOver/Out` sur figurine ne donne pas l'event → tracker souris via `onMouseMove` sur le conteneur scène pour positionner le tooltip.
+
+**Tests** : 107/107 verts. `tsc 0`. PWA build à valider en preview.
+
+**Phase 1 — état** : ✅ **13/13 complète**.
+
+**À faire côté utilisateur** :
+1. Tester manuellement la partie complète (lobby → bataille → combat → fin de tour → victoire).
+2. Pousser le tag git `phase-1-complete`.
+3. Lancer Lighthouse PWA en preview pour valider le score ≥ 90.
+
+**Prochain Lot** : Phase 2 — IA solo (audit + plan master à lancer en nouvelle session).
+
+---
+
 ## Session 11 &mdash; 09/05/2026 &mdash; Phase 0 Lot 7 : PWA + Skill `tactica`
 
 **Fait** :
