@@ -1,7 +1,7 @@
+// v1.4 (10/05/2026) — Fix ring sélection : RING_LIFT 0.06 → 0.1 anti z-fighting (cf piege #47)
 // v1.3 (09/05/2026) — Animation case par case via prop path[] (au lieu de lerp direct A→D)
 // v1.2 (09/05/2026) — L1C.3+ : remplacement cylindre par SoldierMesh (glb teinte team)
 // v1.1 (09/05/2026) — L1C.3 : selected ring (amber) + onClick + animation lerp 300ms via useFrame
-// v1.0 (09/05/2026) — Placeholder unite : cylindre colore + label Billboard
 import { Suspense, useEffect, useMemo, useRef } from 'react'
 import { Billboard, Text } from '@react-three/drei'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
@@ -29,7 +29,7 @@ interface UnitPlaceholderProps {
 }
 
 const SOLDIER_SCALE_RATIO = 0.5
-const RING_LIFT = 0.06 // au-dessus de TILE_THICKNESS/2 + EDGE_LIFT (0.045) pour eviter z-fighting
+const RING_LIFT = 0.1 // bien au-dessus de TILE_THICKNESS/2 + EDGE_LIFT (0.045) — anti z-fighting (piege #47)
 const SECONDS_PER_HEX = 1.0
 const SEGMENT_DURATION_MS = SECONDS_PER_HEX * 1000
 
