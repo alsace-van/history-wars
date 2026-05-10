@@ -1,7 +1,7 @@
+// v3.5 (10/05/2026) — P1-REFACTOR-02 : extraction useTacticalSelection (selection + reachable + tileStates)
 // v3.4 (10/05/2026) — P1-REFACTOR-01 : extraction BattleSidebar vers src/ui/game/BattleSidebar.tsx
 // v3.3 (10/05/2026) — Fix ring sélection (option A) : retire state 'selected' du tileStates
 // v3.2 (09/05/2026) — Animation case par case : aStar avant submit + unitPaths state
-// v3.1 (09/05/2026) — L1C.3 : selection unite + reachable BFS + click move + UnitInspector
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -11,6 +11,7 @@ import { useRealtime } from '@hooks/useRealtime'
 import { useOnlineStatus } from '@hooks/useOnlineStatus'
 import { useBattleUnits } from '@hooks/useBattleUnits'
 import { useCombatActions } from '@hooks/useCombatActions'
+import { useTacticalSelection } from '@hooks/useTacticalSelection'
 import {
   isHost,
   isPlayerInGame,
@@ -22,14 +23,13 @@ import { TeamPanel, type SlotData } from '@ui/game/TeamPanel'
 import { BattleSidebar } from '@ui/game/BattleSidebar'
 import { TacticalScene, buildMvpUnitPlacement } from '@/render'
 import { unitRowsToInstances, unitRowsToStates } from '@render/_data/unitAdapter'
-import type { HexTileState } from '@render/types'
 import { spiral, cubeKey, type Cube } from '@engine/hex'
-import { getUnitStats, type UnitState } from '@engine/units'
-import { bfsReachable, aStar } from '@engine/movement'
+import { type UnitState } from '@engine/units'
+import { aStar } from '@engine/movement'
 import { computeEnemyZoc } from '@engine/zoc'
 import { cn } from '@lib/cn'
 
-const TAG = '[Game v3.4]'
+const TAG = '[Game v3.5]'
 
 const PRIMARY_BTN_CLIP =
   'polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px)'
@@ -159,8 +159,23 @@ export function Game() {
   )
   const isMyTurn = inProgress && myTeam === activeTeam
 
-  // ---- Selection + reachable ----
-  const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null)
+  // ---- Selection + reachable + tileStates (extrait via hook) ----
+  const {
+    selectedUnitId,
+    selectedUnit,
+    reachableMap,
+    tileStates,
+    exhaustedUnitIds,
+    handleUnitClick,
+    clearSelection,
+  } = useTacticalSelection({
+    inProgress,
+    isMyTurn,
+    myTeam,
+    activeTeam,
+    unitStates,
+    boardKeys: MVP_BOARD_KEYS,
+  })
 
   // ---- Animation paths : Map<unitId, path[]> consommee par UnitPlaceholder ----
   const [unitPaths, setUnitPaths] = useState<Map<string, ReadonlyArray<Cube>>>(new Map())
@@ -174,84 +189,14 @@ export function Game() {
     })
   }, [])
 
-  useEffect(() => {
-    if (!inProgress) {
-      setSelectedUnitId(null)
-      return
-    }
-    if (selectedUnitId && !unitStates.some(u => u.id === selectedUnitId)) {
-      setSelectedUnitId(null)
-    }
-  }, [inProgress, activeTeam, unitStates, selectedUnitId])
-
-  const selectedUnit = useMemo<UnitState | null>(
-    () => unitStates.find(u => u.id === selectedUnitId) ?? null,
-    [unitStates, selectedUnitId]
-  )
-
-  const isSelectedMine = !!selectedUnit && selectedUnit.team === myTeam
-
-  const reachableMap = useMemo<Map<string, number>>(() => {
-    if (!selectedUnit || !isSelectedMine || !isMyTurn) return new Map()
-    if (selectedUnit.hasMoved || selectedUnit.routed) return new Map()
-    const stats = getUnitStats(selectedUnit.kind)
-    const others = unitStates.filter(u => u.id !== selectedUnit.id)
-    const blockers = new Set(others.map(u => cubeKey(u.position)))
-    const enemyZoc = computeEnemyZoc(unitStates, selectedUnit.team)
-    const raw = bfsReachable({
-      start: selectedUnit.position,
-      movementPoints: stats.movement,
-      blockers,
-      enemyZocCubes: enemyZoc,
-    })
-    const startKey = cubeKey(selectedUnit.position)
-    const out = new Map<string, number>()
-    for (const [k, c] of raw) {
-      if (k === startKey) continue
-      if (!MVP_BOARD_KEYS.has(k)) continue
-      out.set(k, c)
-    }
-    return out
-  }, [selectedUnit, isSelectedMine, isMyTurn, unitStates])
-
-  const tileStates = useMemo<Map<string, HexTileState>>(() => {
-    // Fix ring v3.3 : on ne marque PAS la tile sous l'unite selectionnee en 'selected'.
-    // L'anneau autour du soldat suffit visuellement (cf piege #47).
-    const map = new Map<string, HexTileState>()
-    for (const k of reachableMap.keys()) map.set(k, 'reachable')
-    return map
-  }, [reachableMap])
-
-  const exhaustedUnitIds = useMemo<Set<string>>(() => {
-    const set = new Set<string>()
-    for (const u of unitStates) {
-      if (u.hasMoved && u.hasAttacked) set.add(u.id)
-      if (u.routed) set.add(u.id)
-    }
-    return set
-  }, [unitStates])
-
-  // ---- Handlers ----
-  const handleUnitClick = useCallback(
-    (unit: { id: string; team: Team }) => {
-      if (!inProgress) return
-      if (selectedUnitId === unit.id) {
-        setSelectedUnitId(null)
-        return
-      }
-      if (unit.team !== myTeam) return
-      setSelectedUnitId(unit.id)
-    },
-    [inProgress, selectedUnitId, myTeam]
-  )
-
+  // ---- Handler tile click (move) — reste ici car couple a submitAction + unitPaths ----
   const handleTileClick = useCallback(
     async (cube: Cube) => {
       if (!gameId || !inProgress) return
       if (!selectedUnit) return
       const key = cubeKey(cube)
       if (!reachableMap.has(key)) {
-        setSelectedUnitId(null)
+        clearSelection()
         return
       }
       if (actionsBusy) return
@@ -284,7 +229,7 @@ export function Game() {
         })
       }
     },
-    [gameId, inProgress, selectedUnit, reachableMap, actionsBusy, submitAction, unitStates]
+    [gameId, inProgress, selectedUnit, reachableMap, actionsBusy, submitAction, unitStates, clearSelection]
   )
 
   async function handleLeave() {
