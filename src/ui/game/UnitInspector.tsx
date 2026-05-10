@@ -1,3 +1,4 @@
+// v2.0a (10/05/2026) — split/merge UX : direction (flèches + N/S/E/O) au lieu de q/r bruts
 // v2.0 (10/05/2026) — Phase 2 2D.1 : effectif elastique + boutons split/merge + selection ratio/case adjacente
 // v1.1 (10/05/2026) — Phase 1.5 P1.5-INSP-01 : barre HP multi-segment vert/orange + ligne blessés
 // v1.0 (09/05/2026) — L1C.3 : panel inspector unite selectionnee (nom, hp, morale, actions dispo)
@@ -235,18 +236,24 @@ export function UnitInspector({ unit, isMyUnit, isMyTurn, gameId, allUnits }: Un
                 Case cible
               </div>
               <div className="grid grid-cols-2 gap-1">
-                {sizing.splitTargets.map((t, i) => (
-                  <button
-                    key={`${t.q}_${t.r}`}
-                    type="button"
-                    disabled={!t.free || sizing.busy}
-                    onClick={() => handleSplitClick(selectedRatio, { q: t.q, r: t.r })}
-                    className="text-[10px] px-2 py-1 border rounded-[2px] tabular-nums disabled:opacity-30 disabled:cursor-not-allowed enabled:hover:bg-tactica-amber/20 transition"
-                    style={{ borderColor: t.free ? '#eab308' : '#475569', color: t.free ? '#eab308' : '#64748b' }}
-                  >
-                    #{i} q={t.q} r={t.r} {t.free ? '✓' : '×'}
-                  </button>
-                ))}
+                {sizing.splitTargets.map(t => {
+                  const dir = hexDirection(t.q - unit.position.q, t.r - unit.position.r)
+                  return (
+                    <button
+                      key={`${t.q}_${t.r}`}
+                      type="button"
+                      disabled={!t.free || sizing.busy}
+                      onClick={() => handleSplitClick(selectedRatio, { q: t.q, r: t.r })}
+                      title={t.free ? `Vers ${dir.label}` : `${dir.label} — case occupée`}
+                      className="flex items-center justify-center gap-1.5 text-[10px] px-2 py-1 border rounded-[2px] disabled:opacity-30 disabled:cursor-not-allowed enabled:hover:bg-tactica-amber/20 transition"
+                      style={{ borderColor: t.free ? '#eab308' : '#475569', color: t.free ? '#eab308' : '#64748b' }}
+                    >
+                      <span className="text-[14px] leading-none">{dir.arrow}</span>
+                      <span>{dir.label}</span>
+                      <span className="opacity-70">{t.free ? '✓' : '×'}</span>
+                    </button>
+                  )
+                })}
               </div>
             </div>
           )}
@@ -257,18 +264,26 @@ export function UnitInspector({ unit, isMyUnit, isMyTurn, gameId, allUnits }: Un
                 Pion adjacent à fusionner
               </div>
               <div className="space-y-1">
-                {sizing.mergeTargets.map(t => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    disabled={sizing.busy}
-                    onClick={() => handleMergeClick(t.id)}
-                    className="w-full text-[10px] px-2 py-1 border rounded-[2px] text-left tabular-nums disabled:opacity-30 disabled:cursor-not-allowed enabled:hover:bg-blue-400/20 transition"
-                    style={{ borderColor: '#60a5fa', color: '#60a5fa' }}
-                  >
-                    {KIND_LABEL[t.kind]} q={t.position.q} r={t.position.r} · {t.effective}/{t.effectiveMax}
-                  </button>
-                ))}
+                {sizing.mergeTargets.map(t => {
+                  const dir = hexDirection(t.position.q - unit.position.q, t.position.r - unit.position.r)
+                  return (
+                    <button
+                      key={t.id}
+                      type="button"
+                      disabled={sizing.busy}
+                      onClick={() => handleMergeClick(t.id)}
+                      title={`${KIND_LABEL[t.kind]} à ${dir.label}, ${t.effective}/${t.effectiveMax} hommes`}
+                      className="w-full flex items-center gap-2 text-[10px] px-2 py-1 border rounded-[2px] disabled:opacity-30 disabled:cursor-not-allowed enabled:hover:bg-blue-400/20 transition"
+                      style={{ borderColor: '#60a5fa', color: '#60a5fa' }}
+                    >
+                      <span className="text-[14px] leading-none">{dir.arrow}</span>
+                      <span className="flex-1 text-left">
+                        {KIND_LABEL[t.kind]} · {dir.label}
+                      </span>
+                      <span className="tabular-nums opacity-80">{t.effective}/{t.effectiveMax}</span>
+                    </button>
+                  )
+                })}
               </div>
             </div>
           )}
@@ -303,6 +318,17 @@ function StatCell({
       </div>
     </div>
   )
+}
+
+// Convention TACTICA flat-top hex (cf. engine/hex/neighbors.ts HEX_DIRECTIONS)
+function hexDirection(dq: number, dr: number): { arrow: string; label: string } {
+  if (dq === +1 && dr ===  0) return { arrow: '→', label: 'Est' }
+  if (dq === +1 && dr === -1) return { arrow: '↗', label: 'N-E' }
+  if (dq ===  0 && dr === -1) return { arrow: '↖', label: 'N-O' }
+  if (dq === -1 && dr ===  0) return { arrow: '←', label: 'Ouest' }
+  if (dq === -1 && dr === +1) return { arrow: '↙', label: 'S-O' }
+  if (dq ===  0 && dr === +1) return { arrow: '↘', label: 'S-E' }
+  return { arrow: '·', label: `q${dq >= 0 ? '+' : ''}${dq} r${dr >= 0 ? '+' : ''}${dr}` }
 }
 
 function ActionLine({
