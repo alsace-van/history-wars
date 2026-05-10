@@ -1,7 +1,7 @@
+// v1.6 (10/05/2026) — Phase 2 2.5 : prop damageFloaters (queue DamageFloater rendue en 3D au-dessus des unités)
 // v1.5 (10/05/2026) — Phase 1.5 : prop cameraFocusCube (centrer la vue sur une unité depuis CombatResultPanel)
 // v1.4 (10/05/2026) — Phase 1.5 : prop highlightedUnitIds (halo jaune unités du rapport combat actif)
 // v1.3 (10/05/2026) — Phase 1.5 : prop viewerTeam pour barre PV asymetrique (own only)
-// v1.2 (09/05/2026) — Animation case par case : prop unitPaths + onUnitPathDone
 import { useMemo } from 'react'
 import { cubeToWorld, type Cube } from '@engine/hex'
 import type { Scale, Team } from '@/types/game'
@@ -10,7 +10,9 @@ import { HexGrid } from '../hex/HexGrid'
 import { UnitPlaceholder } from '../units/UnitPlaceholder'
 import { CameraController } from '../camera/CameraController'
 import { SceneLighting } from '../lighting/SceneLighting'
+import { DamageFloater } from '../effects/DamageFloater'
 import type { UnitInstance, HexTileState } from '../types'
+import type { DamageFloaterEntry } from '@hooks/useCombatAnimator'
 import { SceneShell } from './SceneShell'
 
 interface TacticalSceneProps {
@@ -33,6 +35,11 @@ interface TacticalSceneProps {
   onUnitClick?: (unit: UnitInstance) => void
   onUnitPointerOver?: (unit: UnitInstance) => void
   onUnitPointerOut?: (unit: UnitInstance) => void
+  /** Phase 2 2.5 : queue de chiffres de dégâts flottants (rendu Billboard 3D). */
+  damageFloaters?: ReadonlyArray<DamageFloaterEntry>
+  /** Durée d'un floater en ms (depuis useSettings). */
+  damageFloaterDurationMs?: number
+  onDamageFloaterDone?: (id: string) => void
   className?: string
 }
 
@@ -53,6 +60,9 @@ export function TacticalScene({
   onUnitClick,
   onUnitPointerOver,
   onUnitPointerOut,
+  damageFloaters,
+  damageFloaterDurationMs = 1800,
+  onDamageFloaterDone,
   className,
 }: TacticalSceneProps) {
   const { hexSize } = SCALE_CONFIG[scale]
@@ -105,6 +115,17 @@ export function TacticalScene({
       <SceneLighting />
       <HexGrid scale={scale} cubes={cubes} onTileClick={onTileClick} tileStates={tileStates} />
       {renderedUnits}
+      {damageFloaters?.map(f => (
+        <DamageFloater
+          key={f.id}
+          cube={f.cube}
+          hexSize={hexSize}
+          killed={f.killed}
+          wounded={f.wounded}
+          durationMs={damageFloaterDurationMs}
+          onComplete={() => onDamageFloaterDone?.(f.id)}
+        />
+      ))}
     </SceneShell>
   )
 }
