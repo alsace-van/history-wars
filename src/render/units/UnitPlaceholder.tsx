@@ -1,7 +1,7 @@
+// v1.5 (10/05/2026) — Fix ring #2 : halo/net séparés en Y + depthWrite=false (rayures coplanaires)
 // v1.4 (10/05/2026) — Fix ring sélection : RING_LIFT 0.06 → 0.1 anti z-fighting (cf piege #47)
 // v1.3 (09/05/2026) — Animation case par case via prop path[] (au lieu de lerp direct A→D)
 // v1.2 (09/05/2026) — L1C.3+ : remplacement cylindre par SoldierMesh (glb teinte team)
-// v1.1 (09/05/2026) — L1C.3 : selected ring (amber) + onClick + animation lerp 300ms via useFrame
 import { Suspense, useEffect, useMemo, useRef } from 'react'
 import { Billboard, Text } from '@react-three/drei'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
@@ -29,7 +29,8 @@ interface UnitPlaceholderProps {
 }
 
 const SOLDIER_SCALE_RATIO = 0.5
-const RING_LIFT = 0.1 // bien au-dessus de TILE_THICKNESS/2 + EDGE_LIFT (0.045) — anti z-fighting (piege #47)
+const RING_LIFT = 0.1 // halo : bien au-dessus de TILE_THICKNESS/2 + EDGE_LIFT (0.045) — piege #47
+const RING_NET_LIFT = RING_LIFT + 0.004 // net : 4mm au-dessus du halo — anti z-fight coplanaire (piege #47)
 const SECONDS_PER_HEX = 1.0
 const SEGMENT_DURATION_MS = SECONDS_PER_HEX * 1000
 
@@ -163,30 +164,38 @@ export function UnitPlaceholder({
   return (
     <group ref={groupRef}>
       {selected && (
-        <group position={[0, RING_LIFT, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          {/* Halo flou (opacite faible, plus large) */}
-          <mesh>
-            <ringGeometry args={[ringRadius * 0.95, ringRadius * 1.55, 48]} />
-            <meshBasicMaterial color={COLORS.unitSelectedRing} transparent opacity={0.25} side={THREE.DoubleSide} />
-          </mesh>
-          {/* Ring net */}
-          <mesh>
-            <ringGeometry args={[ringRadius * 1.05, ringRadius * 1.25, 48]} />
-            <meshBasicMaterial color={COLORS.unitSelectedRing} transparent opacity={0.85} side={THREE.DoubleSide} />
-          </mesh>
-        </group>
+        <>
+          {/* Halo flou (opacite faible, plus large) — Y = RING_LIFT */}
+          <group position={[0, RING_LIFT, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <mesh renderOrder={1}>
+              <ringGeometry args={[ringRadius * 0.95, ringRadius * 1.55, 48]} />
+              <meshBasicMaterial color={COLORS.unitSelectedRing} transparent opacity={0.25} side={THREE.DoubleSide} depthWrite={false} />
+            </mesh>
+          </group>
+          {/* Ring net — Y = RING_NET_LIFT (4mm au-dessus du halo) */}
+          <group position={[0, RING_NET_LIFT, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <mesh renderOrder={2}>
+              <ringGeometry args={[ringRadius * 1.05, ringRadius * 1.25, 48]} />
+              <meshBasicMaterial color={COLORS.unitSelectedRing} transparent opacity={0.85} side={THREE.DoubleSide} depthWrite={false} />
+            </mesh>
+          </group>
+        </>
       )}
       {targetable && !selected && (
-        <group position={[0, RING_LIFT, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <mesh>
-            <ringGeometry args={[ringRadius * 0.9, ringRadius * 1.45, 48]} />
-            <meshBasicMaterial color={COLORS.unitTargetableHalo} transparent opacity={0.2} side={THREE.DoubleSide} />
-          </mesh>
-          <mesh>
-            <ringGeometry args={[ringRadius * 1.0, ringRadius * 1.2, 48]} />
-            <meshBasicMaterial color={COLORS.unitTargetableHalo} transparent opacity={0.75} side={THREE.DoubleSide} />
-          </mesh>
-        </group>
+        <>
+          <group position={[0, RING_LIFT, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <mesh renderOrder={1}>
+              <ringGeometry args={[ringRadius * 0.9, ringRadius * 1.45, 48]} />
+              <meshBasicMaterial color={COLORS.unitTargetableHalo} transparent opacity={0.2} side={THREE.DoubleSide} depthWrite={false} />
+            </mesh>
+          </group>
+          <group position={[0, RING_NET_LIFT, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <mesh renderOrder={2}>
+              <ringGeometry args={[ringRadius * 1.0, ringRadius * 1.2, 48]} />
+              <meshBasicMaterial color={COLORS.unitTargetableHalo} transparent opacity={0.75} side={THREE.DoubleSide} depthWrite={false} />
+            </mesh>
+          </group>
+        </>
       )}
 
       <mesh position={[0, soldierScale, 0]} onClick={handleClick} onPointerOver={handleOver} onPointerOut={handleOut}>
