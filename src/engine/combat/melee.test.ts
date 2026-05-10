@@ -21,6 +21,11 @@ function makeUnit(overrides: Partial<UnitState>): UnitState {
     hasMoved: false,
     hasAttacked: false,
     routed: false,
+    // Phase 2 (v2) defaults : mappes 1:1 sur hp pour tests legacy v1
+    effective: 100,
+    effectiveMax: 100,
+    effectiveMin: 10,
+    killed: 0,
     ...overrides,
   }
 }

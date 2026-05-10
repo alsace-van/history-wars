@@ -1,3 +1,4 @@
+// v2.0 (10/05/2026) — Phase 2 2C.2 : ActionType etendu split_unit/merge_unit + AttackResultV2 + payloads + error codes
 // v1.2 (09/05/2026) — Phase 1 L1B.4a : ajout AttackPayload/Result + EndTurn* + INVALID_TARGET, GAME_FINISHED
 // v1.1 (09/05/2026) — Phase 1 L1B.3 : ajout ActionPayload + ERROR_CODES resolve_action
 // v1.0 (09/05/2026) — Phase 1 L1B.2 : types partages EF (initial)
@@ -37,7 +38,7 @@ export interface UnitPlacement {
 // Phase 1 L1B.3 — Action types & payloads (move)
 // ----------------------------------------------------------------------------
 
-export type ActionType = 'move' | 'attack_ranged' | 'attack_melee'
+export type ActionType = 'move' | 'attack_ranged' | 'attack_melee' | 'split_unit' | 'merge_unit'
 
 export interface MovePayload {
   unit_id: string
@@ -119,6 +120,126 @@ export interface AttackResult {
 }
 
 // ----------------------------------------------------------------------------
+// Phase 2 v2 — Combat etendu (effectif, phase, breakdown)
+// ----------------------------------------------------------------------------
+
+export type AttackPhase = 'melee' | 'ranged' | 'charge'
+
+export interface BonusBreakdownEntry {
+  label: string
+  multiplier: number
+  appliedTo: 'attacker' | 'defender'
+}
+
+/**
+ * Snapshot resultat combat v2 (mirror engine/combat/v2/types.ts CombatResultV2).
+ * Etend CombatResultSnapshot v1 avec champs effectif + breakdown.
+ */
+export interface CombatResultSnapshotV2 extends CombatResultSnapshot {
+  attackPhase: AttackPhase
+  attackerEffectiveBefore: number
+  attackerEffectiveAfter: number
+  defenderEffectiveBefore: number
+  defenderEffectiveAfter: number
+  menEngagedAttacker: number
+  menEngagedDefender: number
+  contactCap: number
+  bonusBreakdown: ReadonlyArray<BonusBreakdownEntry>
+  chargeBonusApplied: boolean
+}
+
+/**
+ * AttackResult v2 : combat avec champs Phase 2 + retours UI riches.
+ * Conserve compatibilite v1 sur les champs hp/morale/routed.
+ */
+export interface AttackResultV2 {
+  attacker_id: string
+  defender_id: string
+  /** Phase d'attaque resolue (peut differer de la kind demandee : 'melee' demande peut devenir 'charge'). */
+  kind: AttackPhase
+  combat: CombatResultSnapshotV2
+  riposte: CombatResultSnapshotV2 | null
+  defender_killed: boolean
+  attacker_killed: boolean
+  attacker_after: {
+    hp: number
+    wounded: number
+    morale: number
+    routed: boolean
+    has_attacked: true
+    effective: number
+    killed: number
+  } | null
+  defender_after: {
+    hp: number
+    wounded: number
+    morale: number
+    routed: boolean
+    effective: number
+    killed: number
+  } | null
+  seed: number
+}
+
+// ----------------------------------------------------------------------------
+// Phase 2 v2 — Sizing (split / merge)
+// ----------------------------------------------------------------------------
+
+/** Body POST resolve_action — payload pour split_unit. */
+export interface SplitPayload {
+  unit_id: string
+  target_q: number
+  target_r: number
+  ratio: 'half' | 'three_quarter' | 'nine_one'
+}
+
+export interface SplitResult {
+  source_id: string
+  new_unit_id: string
+  ratio: 'half' | 'three_quarter' | 'nine_one'
+  source_after: {
+    effective: number
+    wounded: number
+    killed: number
+    hp: number
+    has_moved: true
+    has_attacked: true
+  }
+  new_unit: {
+    id: string
+    q: number
+    r: number
+    effective: number
+    wounded: number
+    killed: number
+    hp: number
+  }
+}
+
+export interface MergePayload {
+  target_unit_id: string
+  source_unit_id: string
+}
+
+export interface MergeResult {
+  target_id: string
+  source_id_deleted: string
+  target_after: {
+    effective: number
+    effectiveMax: number
+    effectiveMin: number
+    wounded: number
+    killed: number
+    hp: number
+    hpMax: number
+    morale: number
+    routed: boolean
+    has_moved: true
+    has_attacked: true
+  }
+}
+
+// ----------------------------------------------------------------------------
 // Phase 1 L1B.4c — End turn
 // ----------------------------------------------------------------------------
 
@@ -176,6 +297,16 @@ export const ERROR_CODES = {
   NO_LINE_OF_SIGHT: 'NO_LINE_OF_SIGHT',
   INVALID_TARGET: 'INVALID_TARGET',
   GAME_FINISHED: 'GAME_FINISHED',
+  // Phase 2 — sizing
+  EFFECTIVE_TOO_LOW: 'EFFECTIVE_TOO_LOW',
+  TARGET_NOT_ADJACENT: 'TARGET_NOT_ADJACENT',
+  TARGET_OCCUPIED: 'TARGET_OCCUPIED',
+  HAS_ATTACKED_ALREADY: 'HAS_ATTACKED_ALREADY',
+  KIND_MISMATCH: 'KIND_MISMATCH',
+  TEAM_MISMATCH: 'TEAM_MISMATCH',
+  UNITS_NOT_ADJACENT: 'UNITS_NOT_ADJACENT',
+  EFFECTIVE_OVERFLOW: 'EFFECTIVE_OVERFLOW',
+  CHARGE_NOT_ALLOWED: 'CHARGE_NOT_ALLOWED',
   // generique
   INTERNAL: 'INTERNAL',
 } as const

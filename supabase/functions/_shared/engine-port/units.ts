@@ -1,10 +1,11 @@
+// v2.0 (10/05/2026) — Phase 2 2C.1 : effective elastique (UnitState v2 + UNIT_STATS_V2 + sizing)
 // v1.2 (10/05/2026) — Phase 1.5 : ajout `wounded` a UnitState (mirror src/engine/units/types.ts v1.1)
-// v1.1 (09/05/2026) — Phase 1 L1B.4a : ajout UnitState (necessaire morale + combat)
 // v1.0 (09/05/2026) — Phase 1 L1B.2 : port engine/units pour Deno EF
-// Source de verite : src/engine/units/{stats.ts,types.ts}. Duplication controlee (piege #12).
+// Source de verite : src/engine/units/{stats.ts,types.ts,sizing.ts}. Duplication controlee (piege #12).
 
 import type { UnitKind, Team } from '../types.ts'
 import type { Cube } from './hex/index.ts'
+import { cubeDistance } from './hex/index.ts'
 
 export interface UnitStats {
   hpMax: number
@@ -25,24 +26,245 @@ export function getUnitStats(kind: UnitKind): UnitStats {
   return UNIT_STATS_BY_KIND[kind]
 }
 
+// ----------------------------------------------------------------------------
+// Phase 2 v2 : stats effectif + facteurs unitaires
+// ----------------------------------------------------------------------------
+
+export type UnitSubKind = 'archer' | 'artillery'
+
+export interface SubKindOverride {
+  range?: number
+  minRange?: number
+  rangedPower?: number
+}
+
+export interface UnitStatsV2 {
+  effectiveMax: number
+  effectiveMin: number
+  attack: number
+  defense: number
+  rangedPower: number
+  range: number
+  minRange: number
+  movement: number
+  moraleMax: number
+  archerOverride?: SubKindOverride
+}
+
+export const UNIT_STATS_V2: Record<UnitKind, UnitStatsV2> = Object.freeze({
+  I: Object.freeze({
+    effectiveMax: 800, effectiveMin: 100,
+    attack: 1.0, defense: 1.0, rangedPower: 0,
+    range: 1, minRange: 0, movement: 3, moraleMax: 100,
+  }),
+  C: Object.freeze({
+    effectiveMax: 180, effectiveMin: 25,
+    attack: 1.5, defense: 0.7, rangedPower: 0,
+    range: 1, minRange: 0, movement: 6, moraleMax: 100,
+  }),
+  A: Object.freeze({
+    effectiveMax: 120, effectiveMin: 30,
+    attack: 0.5, defense: 0.3, rangedPower: 4.0,
+    range: 7, minRange: 2, movement: 2, moraleMax: 100,
+    archerOverride: Object.freeze({ range: 4, minRange: 0, rangedPower: 2.5 }),
+  }),
+}) as Record<UnitKind, UnitStatsV2>
+
+export function getUnitStatsV2(kind: UnitKind): UnitStatsV2 {
+  return UNIT_STATS_V2[kind]
+}
+
+export function resolveUnitStatsV2(kind: UnitKind, subKind?: UnitSubKind): UnitStatsV2 {
+  const base = UNIT_STATS_V2[kind]
+  if (subKind === 'archer' && base.archerOverride) {
+    return Object.freeze({
+      ...base,
+      range: base.archerOverride.range ?? base.range,
+      minRange: base.archerOverride.minRange ?? base.minRange,
+      rangedPower: base.archerOverride.rangedPower ?? base.rangedPower,
+    }) as UnitStatsV2
+  }
+  return base
+}
+
 /**
  * Etat d'une unite consomme par les fonctions engine pures (morale, combat).
  * Bati a la volee dans les EF depuis UnitRow.
- * Source : src/engine/units/types.ts (UnitState).
+ * Source : src/engine/units/types.ts (UnitState v2.0).
  */
 export interface UnitState {
   readonly id: string
   readonly kind: UnitKind
   readonly team: Team
   readonly position: Cube
-  /** Soldats actifs au combat. */
+  /** Soldats actifs au combat (legacy v1, conserve 1 phase). */
   readonly hp: number
   readonly hpMax: number
-  /** Phase 1.5 : soldats blesses (recoverable Phase 3). hp + wounded <= hpMax. */
+  /** Phase 1.5 : soldats blesses (recoverable Phase 5). hp + wounded <= hpMax. */
   readonly wounded: number
   readonly morale: number
   readonly moraleMax: number
   readonly hasMoved: boolean
   readonly hasAttacked: boolean
   readonly routed: boolean
+  // Phase 2 v2 :
+  readonly effective: number
+  readonly effectiveMax: number
+  readonly effectiveMin: number
+  readonly killed: number
+  readonly lastMovePath?: ReadonlyArray<Cube>
+  readonly subKind?: UnitSubKind
+  readonly regimentId?: string
+  readonly formation?: string
+}
+
+// ----------------------------------------------------------------------------
+// Phase 2 v2 : sizing (split / merge)
+// ----------------------------------------------------------------------------
+
+export type SplitRatio = 'half' | 'three_quarter' | 'nine_one'
+
+const RATIO_VALUES: Record<SplitRatio, number> = { half: 0.5, three_quarter: 0.75, nine_one: 0.9 }
+
+export interface SplitParams {
+  source: UnitState
+  ratio: SplitRatio
+  targetPosition: Cube
+  newUnitId: string
+}
+
+export interface SplitResult {
+  left: UnitState
+  right: UnitState
+}
+
+export interface MergeParams {
+  target: UnitState
+  source: UnitState
+}
+
+export type SizingErrorCode =
+  | 'effective_too_low'
+  | 'target_not_adjacent'
+  | 'has_attacked_already'
+  | 'kind_mismatch'
+  | 'team_mismatch'
+  | 'units_not_adjacent'
+  | 'effective_overflow'
+
+export interface SizingError {
+  code: SizingErrorCode
+  message: string
+}
+
+export function isSizingError(x: SplitResult | UnitState | SizingError): x is SizingError {
+  return typeof (x as SizingError).code === 'string' && typeof (x as SizingError).message === 'string'
+}
+
+export function splitUnit(params: SplitParams): SplitResult | SizingError {
+  const { source, ratio, targetPosition, newUnitId } = params
+  const stats = resolveUnitStatsV2(source.kind, source.subKind)
+
+  if (source.hasAttacked) {
+    return { code: 'has_attacked_already', message: 'cannot split after attacking this turn' }
+  }
+  if (source.effective < 2 * stats.effectiveMin) {
+    return { code: 'effective_too_low', message: `effective ${source.effective} < 2 * effectiveMin ${stats.effectiveMin}` }
+  }
+  if (cubeDistance(source.position, targetPosition) !== 1) {
+    return { code: 'target_not_adjacent', message: 'target position must be adjacent to source' }
+  }
+
+  const r = RATIO_VALUES[ratio]
+  const leftEffective = Math.floor(source.effective * r)
+  const rightEffective = source.effective - leftEffective
+  if (leftEffective < stats.effectiveMin || rightEffective < stats.effectiveMin) {
+    return { code: 'effective_too_low', message: `split would put one side under effectiveMin ${stats.effectiveMin}` }
+  }
+
+  const leftWounded = Math.round(source.wounded * r)
+  const rightWounded = source.wounded - leftWounded
+  const leftKilled = Math.round(source.killed * r)
+  const rightKilled = source.killed - leftKilled
+  const leftHp = Math.round(source.hp * r)
+  const rightHp = source.hp - leftHp
+
+  const left: UnitState = {
+    ...source,
+    effective: leftEffective,
+    effectiveMax: stats.effectiveMax,
+    effectiveMin: stats.effectiveMin,
+    wounded: leftWounded,
+    killed: leftKilled,
+    hp: leftHp,
+    hasMoved: true,
+    hasAttacked: true,
+    lastMovePath: undefined,
+  }
+
+  const right: UnitState = {
+    ...source,
+    id: newUnitId,
+    position: targetPosition,
+    effective: rightEffective,
+    effectiveMax: stats.effectiveMax,
+    effectiveMin: stats.effectiveMin,
+    wounded: rightWounded,
+    killed: rightKilled,
+    hp: rightHp,
+    hasMoved: true,
+    hasAttacked: true,
+    lastMovePath: undefined,
+  }
+
+  return { left, right }
+}
+
+export function mergeUnits(params: MergeParams): UnitState | SizingError {
+  const { target, source } = params
+
+  if (target.kind !== source.kind) return { code: 'kind_mismatch', message: `kinds differ` }
+  if ((target.subKind ?? null) !== (source.subKind ?? null)) {
+    return { code: 'kind_mismatch', message: 'subKinds differ' }
+  }
+  if (target.team !== source.team) return { code: 'team_mismatch', message: 'teams differ' }
+  if (cubeDistance(target.position, source.position) !== 1) {
+    return { code: 'units_not_adjacent', message: 'units must be adjacent to merge' }
+  }
+  if (target.hasAttacked || source.hasAttacked) {
+    return { code: 'has_attacked_already', message: 'cannot merge units that have attacked this turn' }
+  }
+
+  const totalEffective = target.effective + source.effective
+  const mergedEffectiveMax = target.effectiveMax + source.effectiveMax
+  if (totalEffective > mergedEffectiveMax) {
+    return { code: 'effective_overflow', message: `total ${totalEffective} > max ${mergedEffectiveMax}` }
+  }
+
+  const totalWounded = target.wounded + source.wounded
+  const totalKilled = target.killed + source.killed
+  const totalHpMax = target.hpMax + source.hpMax
+  const totalHp = Math.min(target.hp + source.hp, totalHpMax)
+  const mergedEffectiveMin = target.effectiveMin + source.effectiveMin
+  const weightedMorale = totalEffective > 0
+    ? Math.round((target.morale * target.effective + source.morale * source.effective) / totalEffective)
+    : Math.round((target.morale + source.morale) / 2)
+
+  const merged: UnitState = {
+    ...target,
+    effective: totalEffective,
+    effectiveMax: mergedEffectiveMax,
+    effectiveMin: mergedEffectiveMin,
+    wounded: totalWounded,
+    killed: totalKilled,
+    hp: totalHp,
+    hpMax: totalHpMax,
+    morale: weightedMorale,
+    routed: target.routed && source.routed,
+    hasMoved: true,
+    hasAttacked: true,
+    lastMovePath: undefined,
+  }
+
+  return merged
 }

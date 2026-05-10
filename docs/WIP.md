@@ -2,6 +2,100 @@
 
 ---
 
+## Session 15 &mdash; 10/05/2026 &mdash; Phase 2 refonte combat (sessions 1-7 + closure docs)
+
+**Contexte** : audit + plan Phase 2 livres `AUDIT-PHASE-2-COMBAT-V2.md` + `PLAN-PHASE-2-COMBAT-V2.md` + `02-PLAN-MASTER-V2.md`.
+
+Refonte combat MVP → modele riche : effectif elastique, 3 phases (melee/ranged/charge), saturation terrain, charge cavalerie, scission/fusion, breakdown UI lisible.
+
+**Sous-lots livres** :
+
+### 2A — Engine pur (Session 1+2)
+- `engine/units/types.ts` v2.0 : UnitState etend `effective`, `effectiveMax`, `effectiveMin`, `killed`, `lastMovePath?`, `subKind?`, `regimentId?`, `formation?`.
+- `engine/units/stats.ts` v2.0 : `UNIT_STATS_V2` (I=800, C=180, A=120) + `resolveUnitStatsV2(kind, subKind)` (override archer).
+- `engine/units/sizing.ts` (NEW) : `splitUnit`, `mergeUnits`, `isSizingError`. 3 ratios preset.
+- `engine/terrain/{types,caps,index}.ts` (NEW) : 6 types terrain MVP, `TERRAIN_CAPS` avec `contactCap` Thermopyles.
+- `engine/combat/v2/{types,matchup,charge,distance,contact,preview,index}.ts` (NEW) :
+  - 3 matrices matchup melee/ranged/charge.
+  - `resolveContact()` pipeline puissance - resistance × variance ±15%, plancher 1 si attackPossible.
+  - `resolveCombat()` dispatch + riposte melee uniquement.
+  - `chargeMultiplier()` + `isChargeApplicable()` + `isPathStraight()` + `chargedDistance()`.
+  - `distancePrecision()` sweet spot 50-70% range, tail-off 0.5 a max.
+  - `previewCombatV2()` avec breakdown ligne par ligne (sans rng).
+
+### 2A — Tests Vitest
+- 22 tests sizing + 5 tests terrain + 8 tests stats v2 + 7 tests matchup + 14 tests charge + 8 tests distance + 16 tests contact + 8 tests preview + 8 tests integration = **+93 nouveaux** (203 total vs baseline 110).
+- `npm run test` : 24 fichiers / 203 tests **verts**.
+
+### 2A — Mise a jour fixtures legacy
+- `combat/{melee,ranged,preview}.test.ts` + `morale/morale.test.ts` + `zoc/zoc.test.ts` : ajout `effective/effectiveMax/effectiveMin/killed` aux factories `makeUnit`.
+- `unitAdapter.unitRowToState` : derive Phase 2 depuis hp/hpMax+kind si BDD pas encore migree.
+
+### 2B — Migrations BDD (Session 3)
+- **Migration 012** `units_effective_elastique.sql` : ajoute `effective`, `effective_max`, `effective_min`, `killed`, `sub_kind`, `regiment_id`, `formation`, `last_move_path`. Backfill conservatif depuis hp/hp_max + UNIT_STATS_V2. Constraints + defaults.
+- **Migration 013** `terrain_tiles.sql` : table `terrain_tiles {game_id, q, r, type}` + RLS SELECT membre + Realtime + REPLICA IDENTITY FULL.
+- **Migration 014** `combat_config.sql` : table + seed initial JSONB qui mirror `DEFAULT_COMBAT_CONFIG` (stats, terrainCaps, matchupMatrix, diceVariance, chargeMultipliers, moraleThresholds).
+- `start_battle` EF v2.0 : seed `effective/effective_max/effective_min/killed` + seed `terrain_tiles` (defaut plaine_standard sur tout le board, 91 hex pour radius=5). Rollback if terrain insert echoue.
+- **Migrations a appliquer cote prod** : `mcp_supabase__apply_migration` non execute en local. A faire avant test humain.
+
+### 2C — Engine-port miroir Deno (Session 4)
+- `_shared/engine-port/units.ts` v2.0 : ajoute `UnitStatsV2`, `UnitSubKind`, `UNIT_STATS_V2`, `resolveUnitStatsV2`, sizing `splitUnit/mergeUnits/isSizingError`.
+- `_shared/engine-port/terrain/{types,caps,index}.ts` (NEW).
+- `_shared/engine-port/combat/v2/{types,matchup,charge,distance,contact,preview,index}.ts` (NEW). Mirror exact du client.
+
+### 2C — Refacto resolve_action en handlers (Session 5)
+- `resolve_action/index.ts` v2.0 : pure dispatcher (~165 lignes vs 609 avant).
+- `_handlers/_common.ts` : `UnitRow` Phase 2, `buildUnitState`, `loadTerrainMap`, `loadCombatConfig`, `terrainAt`, `UNIT_SELECT_COLUMNS`.
+- `_handlers/handleMove.ts` v1.0 : extrait + tracking `last_move_path` (interpolation cubique du path start→dest pour detection charge).
+- `_handlers/handleAttack.ts` v1.0 : refonte v2 avec `resolveCombat`, terrain map, combat_config, snapshot `AttackResultV2` enrichi.
+- `_handlers/handleSplit.ts` v1.0 (NEW) : validation adjacence + libre + effectif, UPDATE source + INSERT new unit, rollback sur race UNIQUE.
+- `_handlers/handleMerge.ts` v1.0 (NEW) : validation same kind/team/adjacent + cap effectif, UPDATE target + DELETE source.
+- `resolve_turn` v1.1 : reset `last_move_path = null` en debut de tour pour toTeam.
+- `_shared/types.ts` v2.0 : `ActionType` etendu `split_unit`/`merge_unit`, `AttackPhase`, `BonusBreakdownEntry`, `CombatResultSnapshotV2`, `AttackResultV2`, `SplitPayload/Result`, `MergePayload/Result`, codes erreur Phase 2.
+
+### 2D — UI (Session 6)
+- `useCombatActions` v2.0 : `SplitAction` + `MergeAction` types, codes erreur humanises Phase 2.
+- `useUnitSizing` (NEW) : hook `canSplit`, `canMerge`, `splitTargets`, `mergeTargets`, `performSplit/Merge` (POST EF).
+- `UnitInspector` v2.0 : affiche effective + section "Manoeuvre" avec boutons Scinder/Fusionner + sub-modale inline (3 ratio + cases adjacentes).
+- `BattleSidebar` v1.1 : effectifs cumules par camp en haut + propage `gameId/allUnits` a Inspector.
+- `CombatPreviewTooltip` v2.0 : breakdown ligne par ligne (ATK base, matchup, charge, terrain, moral, variance), hommes engages, cap terrain.
+- `CombatResultPanel` v3.0 : icone 🐎 + label "Charge cav" pour kind='charge'. `useCombatNotifications` v2.0 supporte 'charge' + champs effective optionnels.
+- `Game.tsx` : passe `gameId={game.id}` + `allUnits={unitStates}` a BattleSidebar.
+
+### 2E — Render (Session 7)
+- `UnitPlaceholder` v2.0 : scale soldat selon `effective/effectiveMax` (plage 0.35-1.0 amplifiee). Fallback hp/hpMax legacy.
+- `UnitHealthBar` v2.0 : props `effective/effectiveMax/wounded` (au lieu de hp/hpMax/wounded). Toujours own-only.
+- `UnitInstance` (`render/types.ts`) v2.0 : ajoute `effective?`, `effectiveMax?`. `unitRowToInstance` propage.
+
+### 2F — Closure docs (Session 8)
+- `docs/COMBAT-V2.md` (NEW, ~250 lignes) : reference complete des regles Phase 2 (stats, terrain caps, matrices matchup, pipeline calcul, charge, distance, sizing, riposte, config runtime, snapshot AttackResultV2).
+- `docs/WIP.md` : cette session en tete.
+
+### Verifications finales
+- `npx tsc --noEmit` : 0 erreur.
+- `npm run test` : 24 fichiers / 203 tests verts.
+- Aucun fichier > 600 lignes (resolve_action/index 165, handlers 100-220 chacun).
+
+### Reportes (Session 2.5 polish ulterieur)
+- `CombatAnimator` (anim 2s skippable, projectile, courbe charge, deroute).
+- `DamageFloater` (chiffre rouge flottant).
+- `SettingsContext.animationSpeed` persistant + raccourci `Espace` skip.
+- Application des migrations 012/013/014 en prod via `mcp_supabase__apply_migration`.
+- `Supabase:get_advisors` apres migrations : verifier 0 warning critique.
+- Test humain 2 navigateurs avec une partie complete.
+- `npm run build` PWA + Lighthouse >= 90.
+- Tag git `phase-2-complete` apres validation humaine.
+
+**Fichiers touches (resume)** :
+- Engine : 13 fichiers nouveaux (engine/units/sizing.ts, engine/terrain/*, engine/combat/v2/*, tests)
+- BDD : 3 migrations 012-014
+- EF Deno : 5 nouveaux handlers (_handlers/_common, handleMove, handleAttack, handleSplit, handleMerge), engine-port miroir Phase 2 complet
+- UI/hooks : useUnitSizing (NEW), useCombatActions/useCombatNotifications/UnitInspector/BattleSidebar/CombatPreviewTooltip/CombatResultPanel mis a jour
+- Render : UnitPlaceholder/UnitHealthBar/types/unitAdapter mis a jour
+- Docs : COMBAT-V2.md (NEW), WIP.md
+
+---
+
 ## Session 14 &mdash; 10/05/2026 &mdash; Audit fin de Phase 1.5 + corrections de dette
 
 **Contexte** : audit rigoureux post-Phase 1.5 demandé (3 écarts identifiés vs CLAUDE.md/plan master).

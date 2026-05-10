@@ -1,5 +1,5 @@
+// v2.0 (10/05/2026) — Phase 2 2D.3 : kind etendu 'charge' + lit effective si dispo (fallback hp legacy)
 // v1.2 (10/05/2026) — Phase 1.5 : tabs (notifications array + removeNotification) + attackerId/defenderId pour highlight
-// v1.1 (10/05/2026) — Phase 1.5 fix UX : queue + state au lieu de toasts éphémères (cf piège #52)
 // v1.0 (10/05/2026) — Phase 1.5 P1.5-NOTIF-01 : Realtime listener game_actions → toasts asymétriques
 import { useCallback, useRef, useState } from 'react'
 import { useRealtime } from './useRealtime'
@@ -18,18 +18,28 @@ interface CombatResultSnapshot {
   attackerRouted: boolean
   defenderRouted: boolean
   defenderKilled: boolean
+  // Phase 2 v2 (optionnels pour retrocompat avec actions anciennes en BDD)
+  attackPhase?: 'melee' | 'ranged' | 'charge'
+  defenderEffectiveAfter?: number
+  attackerEffectiveAfter?: number
+  chargeBonusApplied?: boolean
 }
 
 interface AttackResultSnapshot {
   attacker_id: string
   defender_id: string
-  kind: 'melee' | 'ranged'
+  /** Phase 2 : 'charge' ajoute. */
+  kind: 'melee' | 'ranged' | 'charge'
   combat: CombatResultSnapshot
   riposte: CombatResultSnapshot | null
   defender_killed: boolean
   attacker_killed: boolean
-  attacker_after: { hp: number; wounded: number; morale: number; routed: boolean } | null
-  defender_after: { hp: number; wounded: number; morale: number; routed: boolean } | null
+  attacker_after:
+    | { hp: number; wounded: number; morale: number; routed: boolean; effective?: number; killed?: number }
+    | null
+  defender_after:
+    | { hp: number; wounded: number; morale: number; routed: boolean; effective?: number; killed?: number }
+    | null
 }
 
 interface GameActionRow {
@@ -63,8 +73,8 @@ export interface CombatNotification {
   id: string
   /** Tour ou s'est resolu le combat (pour libelle d'onglet). */
   turn: number
-  /** Type d'engagement. */
-  kind: 'melee' | 'ranged'
+  /** Type d'engagement (Phase 2 : 'charge' ajoute). */
+  kind: 'melee' | 'ranged' | 'charge'
   /** ID de l'unite attaquante (pour highlight visuel sur le plateau). */
   attackerId: string
   /** ID de l'unite defenseuse (pour highlight visuel sur le plateau). */
