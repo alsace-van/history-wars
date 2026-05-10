@@ -196,4 +196,4 @@ Recopiés dans `AUDIT-PHASE-1.md` § 5. À cocher avant bascule Phase 2 :
 
 ---
 
-**État courant** : Phase 0 ✅ — **Phase 1 ✅ 13/13** — prochaine étape **Phase 2 IA solo** (audit + plan à produire en début de phase).
+**État courant** : Phase 0 ✅ — **Phase 1 ✅ 13/13** — **Phase 1.5 ✅ polish wounded + visuels asymétriques** (migration 011 appliquée, ratio 60/40 killed/wounded, barre PV own-only, toasts combat asymétriques) — prochaine étape **Phase 2 IA solo** (audit + plan à produire en début de phase).

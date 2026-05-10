@@ -1,10 +1,16 @@
 # dependency-map.md — TACTICA
 
-> Mise à jour : 10/05/2026 (clôture Phase 1 — L1A + L1B + L1C complets, migrations 007-010).
-> Source : analyse statique automatique de `src/` (~85 fichiers, ~180 imports internes).
+> Mise à jour : 10/05/2026 (Phase 1.5 polish — wounded + visuels asymétriques + toasts combat, migrations 007-011).
+> Source : analyse statique automatique de `src/` (~88 fichiers, ~185 imports internes).
 > Format : `cible <- dépendant`. Indique l'impact d'une modif sur la cible.
 
-## ⚠ Nouveaux composants Phase 1 fin (session 12)
+## ⚠ Nouveaux composants Phase 1.5 (session 13)
+
+- `src/hooks/useCombatNotifications.ts` v1.0 — Realtime listener INSERT `game_actions`, dispatch toasts asymétriques selon viewerTeam vs actor team. Consommé par Game.tsx.
+- `src/render/units/UnitHealthBar.tsx` v1.0 — Billboard 3-segments vert/orange/sombre, own only.
+- `supabase/migrations/011_units_wounded_column.sql` — colonne `units.wounded`.
+
+## Composants Phase 1 fin (session 12)
 
 - `src/hooks/useTacticalSelection.ts` v1.1 — hook clé : selection + reachable + targetable + dangerousZocKeys + tileStates. Consommé par Game.tsx.
 - `src/ui/game/BattleSidebar.tsx` v1.0 — panneau latéral en bataille (extrait de Game.tsx).

@@ -1,3 +1,4 @@
+// v1.2 (10/05/2026) — Phase 1.5 P1.5-PREV-01 : ajout split tués/blessés sous les dégâts
 // v1.1 (10/05/2026) — Phase 1.5 : retire la ligne PV ennemi exacte (fog of war)
 // v1.0 (10/05/2026) — P1-L1C4-01 : tooltip DOM ancré écran, preview combat (mêlée/tir)
 import { previewMelee, previewRanged, type CombatModifiers } from '@engine/combat'
@@ -80,8 +81,14 @@ export function CombatPreviewTooltip({
             <div className="text-[8px] uppercase tracking-[0.16em] text-muted-foreground">
               Dégâts
             </div>
-            <div className="text-[14px] font-semibold text-tactica-amber tabular-nums">
+            <div className="text-[14px] font-semibold text-tactica-amber tabular-nums leading-tight">
               {preview.damageMin}–{preview.damageMax}
+            </div>
+            {/* Phase 1.5 PREV-01 : split tués / blessés (estimation, dérivée des bornes de dégâts) */}
+            <div className="text-[9px] text-muted-foreground tabular-nums mt-[2px] leading-tight">
+              <span style={{ color: '#ef4444' }}>≈{preview.killedMin}–{preview.killedMax} tués</span>
+              <span className="opacity-50"> · </span>
+              <span style={{ color: '#fb923c' }}>≈{preview.woundedAddMin}–{preview.woundedAddMax} blessés</span>
             </div>
           </div>
           <div className="text-right">

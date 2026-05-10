@@ -86,14 +86,18 @@ Exception : confiance < 95 % AVANT de coder → plan détaillé + questions auto
 
 Ne jamais demander un re-upload si le fichier est accessible via une de ces sources.
 
-## 7. État courant (10/05/2026 — clôture session 12)
+## 7. État courant (10/05/2026 — clôture session 13, Phase 1.5)
 
 - Phase 0 ✅ 13/13
 - **Phase 1 ✅ 13/13** — combat MVP tactique complet
-  - L1A engine ✅ 107/107 tests verts
-  - L1B BDD + 3 EFs ✅ (start_battle, resolve_action move/melee/ranged, resolve_turn)
-  - L1B migrations 007-010 ✅ (units + game_actions + JSONB + REPLICA IDENTITY FULL)
-  - L1C UI ✅ (selection + reachable + targetable + dangerous ZoC + GameHUD + EndGameModal + CombatPreviewTooltip + animation path step + glow naturel)
+- **Phase 1.5 ✅** polish wounded + visuels asymétriques + toasts combat
+  - Migration 011 appliquée prod (`units.wounded`)
+  - Engine + EF v1.2 split killed/wounded ratio 60/40
+  - UnitHealthBar Billboard 3-segments own-only
+  - Scale soldat selon `(hp+wounded)/hpMax`
+  - useCombatNotifications Realtime → toasts asymétriques
+  - CombatPreviewTooltip enrichi split + UnitInspector segment wounded
+  - 110/110 tests verts
 - Phases 2-13 ⬜
 
 Prochaine action : démarrer **Phase 2 IA solo** — produire `AUDIT-PHASE-2.md` + `PLAN-PHASE-2.md` en début de session.
