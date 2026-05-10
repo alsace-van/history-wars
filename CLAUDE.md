@@ -86,14 +86,19 @@ Exception : confiance < 95 % AVANT de coder → plan détaillé + questions auto
 
 Ne jamais demander un re-upload si le fichier est accessible via une de ces sources.
 
-## 7. État courant (10/05/2026)
+## 7. État courant (10/05/2026 — clôture session 12)
 
 - Phase 0 ✅ 13/13
-- Phase 1 🟡 12/13 — il reste 11 TASKs (vague 1 prête à lancer)
-  - L1A engine ✅ 107 tests verts
-  - L1B BDD + 3 EFs ✅ déployées
-  - L1C UI : C.1 ✅ C.2 ✅ C.3 🟡 (bug ring à fixer) C.4 ⬜ C.5 ⬜
-  - Migrations 008/010 ✅ versionnées et pushées 10/05
+- **Phase 1 ✅ 13/13** — combat MVP tactique complet
+  - L1A engine ✅ 107/107 tests verts
+  - L1B BDD + 3 EFs ✅ (start_battle, resolve_action move/melee/ranged, resolve_turn)
+  - L1B migrations 007-010 ✅ (units + game_actions + JSONB + REPLICA IDENTITY FULL)
+  - L1C UI ✅ (selection + reachable + targetable + dangerous ZoC + GameHUD + EndGameModal + CombatPreviewTooltip + animation path step + glow naturel)
 - Phases 2-13 ⬜
 
-Prochaine action : lancer la **vague 1** du plan Phase 1 (P1-REFACTOR-01, P1-FIX-01, P1-L1C4-04 en parallèle).
+Prochaine action : démarrer **Phase 2 IA solo** — produire `AUDIT-PHASE-2.md` + `PLAN-PHASE-2.md` en début de session.
+
+À faire côté utilisateur avant tag `phase-1-complete` :
+1. Tester manuellement une partie complète 2 navigateurs (lobby → bataille → combat → fin tour → victoire).
+2. `npm run build` PWA + Lighthouse score ≥ 90.
+3. Pousser le tag git `phase-1-complete`.
