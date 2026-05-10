@@ -1,3 +1,4 @@
+// v2.1 (10/05/2026) — Phase 1.5 : bouton "Centrer la vue" sur l'onglet actif (focus camera mon unité)
 // v2.0 (10/05/2026) — Phase 1.5 : refactor en onglets + clic sélectionne combat actif (highlight unités plateau)
 // v1.1 (10/05/2026) — Phase 1.5 : agrandi chiffres pertes (20px gras) pour lisibilité
 // v1.0 (10/05/2026) — Phase 1.5 fix UX : panneau resultat combat persistant (X close), libelles equipes explicites
@@ -14,6 +15,8 @@ interface CombatResultPanelProps {
   onRemove: (id: string) => void
   /** Vide toutes les notifications (X global du panel). */
   onClear: () => void
+  /** Phase 1.5 : centre la caméra sur une unité (typiquement l'unité du viewer dans le combat actif). */
+  onFocusUnit?: (unitId: string) => void
 }
 
 const TEAM_COLOR: Record<Team, string> = {
@@ -26,7 +29,7 @@ const TEAM_NAME: Record<Team, string> = {
   red: 'Rouges',
 }
 
-export function CombatResultPanel({ notifications, onActiveChange, onRemove, onClear }: CombatResultPanelProps) {
+export function CombatResultPanel({ notifications, onActiveChange, onRemove, onClear, onFocusUnit }: CombatResultPanelProps) {
   // Onglet actif : par defaut le dernier (le plus recent)
   const [activeId, setActiveId] = useState<string | null>(null)
 
@@ -84,7 +87,7 @@ export function CombatResultPanel({ notifications, onActiveChange, onRemove, onC
         </div>
 
         {/* Contenu de l'onglet actif */}
-        {activeNotif && <ReportContent notif={activeNotif} />}
+        {activeNotif && <ReportContent notif={activeNotif} onFocusUnit={onFocusUnit} />}
       </div>
     </div>
   )
@@ -138,7 +141,7 @@ function Tab({
   )
 }
 
-function ReportContent({ notif }: { notif: CombatNotification }) {
+function ReportContent({ notif, onFocusUnit }: { notif: CombatNotification; onFocusUnit?: (unitId: string) => void }) {
   const actionLabel = notif.kind === 'melee' ? 'Charge' : 'Tir'
   const titleColor = notif.isMyAttack ? TEAM_COLOR[notif.attackerTeam] : TEAM_COLOR[notif.defenderTeam]
 
@@ -146,14 +149,31 @@ function ReportContent({ notif }: { notif: CombatNotification }) {
     ? `${actionLabel} : ${notif.attackerKindLabel} ${TEAM_NAME[notif.attackerTeam]} vs ${notif.defenderKindLabel} ${TEAM_NAME[notif.defenderTeam]}`
     : `${actionLabel} subi : ${notif.attackerKindLabel} ${TEAM_NAME[notif.attackerTeam]} attaque votre ${notif.defenderKindLabel}`
 
+  // Mon unité dans ce combat = l'attaquant si j'ai attaqué, sinon le défenseur
+  const myUnitId = notif.isMyAttack ? notif.attackerId : notif.defenderId
+  const myUnitLabel = notif.isMyAttack ? notif.attackerKindLabel : notif.defenderKindLabel
+
   return (
     <>
-      {/* Sous-titre engagement */}
-      <div
-        className="px-4 pt-3 pb-2 text-[12px] font-semibold uppercase tracking-[0.04em] leading-tight"
-        style={{ color: titleColor }}
-      >
-        {titleSummary}
+      {/* Sous-titre engagement + bouton centrer */}
+      <div className="px-4 pt-3 pb-2 flex items-start justify-between gap-2">
+        <div
+          className="text-[12px] font-semibold uppercase tracking-[0.04em] leading-tight flex-1 min-w-0"
+          style={{ color: titleColor }}
+        >
+          {titleSummary}
+        </div>
+        {onFocusUnit && (
+          <button
+            onClick={() => onFocusUnit(myUnitId)}
+            title={`Centrer la vue sur ma ${myUnitLabel}`}
+            aria-label={`Centrer la vue sur ma ${myUnitLabel}`}
+            className="shrink-0 px-2 py-1 text-[10px] uppercase tracking-[0.06em] bg-tactica-amber/10 hover:bg-tactica-amber/20 border border-tactica-amber/40 hover:border-tactica-amber text-tactica-amber rounded-[2px] transition-colors flex items-center gap-1 leading-none"
+          >
+            <span aria-hidden>📍</span>
+            Centrer
+          </button>
+        )}
       </div>
 
       {/* Bloc pertes defenseur */}

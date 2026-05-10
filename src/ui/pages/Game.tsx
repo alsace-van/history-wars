@@ -1,7 +1,7 @@
+// v3.12 (10/05/2026) — Phase 1.5 : bouton "Centrer la vue" dans CombatResultPanel (cameraFocusCube)
 // v3.11 (10/05/2026) — Phase 1.5 : CombatResultPanel onglets + highlightedUnitIds plateau (rapport actif)
 // v3.10 (10/05/2026) — Phase 1.5 fix UX : remplace toasts ephemères par CombatResultPanel persistant (X close)
 // v3.9 (10/05/2026) — Phase 1.5 P1.5-NOTIF-01 : useCombatNotifications + retire toast local attaque
-// v3.8 (10/05/2026) — Phase 1.5 : viewerTeam → barre PV asymetrique own-only + scale par hp ratio
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -36,7 +36,7 @@ import { aStar } from '@engine/movement'
 import { computeEnemyZoc } from '@engine/zoc'
 import { cn } from '@lib/cn'
 
-const TAG = '[Game v3.11]'
+const TAG = '[Game v3.12]'
 
 const MVP_CUBES: Cube[] = spiral({ q: 0, r: 0, s: 0 }, 5)
 const MVP_BOARD_KEYS = new Set(MVP_CUBES.map(cubeKey))
@@ -207,6 +207,16 @@ export function Game() {
     if (!activeCombatNotif) return new Set()
     return new Set([activeCombatNotif.attackerId, activeCombatNotif.defenderId])
   }, [activeCombatNotif])
+
+  // Phase 1.5 : focus camera sur une unité depuis le bouton "Centrer" de CombatResultPanel
+  const [cameraFocusCube, setCameraFocusCube] = useState<Cube | null>(null)
+  const handleFocusUnit = useCallback(
+    (unitId: string) => {
+      const u = unitStates.find(uu => uu.id === unitId)
+      if (u) setCameraFocusCube(u.position)
+    },
+    [unitStates]
+  )
 
   // ---- Hover ennemi targetable → tooltip combat ----
   const [hoveredEnemyId, setHoveredEnemyId] = useState<string | null>(null)
@@ -485,6 +495,7 @@ export function Game() {
               targetableUnitIds={showBattle ? targetableUnitIds : undefined}
               exhaustedUnitIds={showBattle ? exhaustedUnitIds : undefined}
               highlightedUnitIds={showBattle ? highlightedUnitIds : undefined}
+              cameraFocusCube={cameraFocusCube}
               unitPaths={showBattle ? unitPaths : undefined}
               onUnitPathDone={onUnitPathDone}
               onTileClick={showBattle ? handleTileClick : undefined}
@@ -497,6 +508,7 @@ export function Game() {
               onActiveChange={setActiveCombatNotif}
               onRemove={removeCombatNotif}
               onClear={clearCombatNotifs}
+              onFocusUnit={handleFocusUnit}
             />
             {hoveredEnemy && selectedUnit && (
               <CombatPreviewTooltip
