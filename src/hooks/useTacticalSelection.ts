@@ -1,8 +1,9 @@
+// v1.3 (10/05/2026) — Phase 2 2D.6 : param splitMode → tileStates 'split-target' sur hex adjacents libres
 // v1.2 (10/05/2026) — Phase 1.5 : ajout visibleEnemyIds (fog of war via LoS depuis toutes mes unités)
 // v1.1 (10/05/2026) — P1-L1C4-02 : ajout targetableUnitIds + dangerousZocKeys + tileStates 'dangerous'
 // v1.0 (10/05/2026) — P1-REFACTOR-02 : extraction de la logique selection/reachable/tileStates depuis Game.tsx
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { cubeKey, cubeDistance } from '@engine/hex'
+import { cubeKey, cubeDistance, neighbors } from '@engine/hex'
 import { bfsReachable } from '@engine/movement'
 import { computeEnemyZoc } from '@engine/zoc'
 import { hasLineOfSight } from '@engine/los'
@@ -19,6 +20,12 @@ interface UseTacticalSelectionParams {
   unitStates: ReadonlyArray<UnitState>
   /** cles cubiques des hex de la carte — limite la propagation BFS */
   boardKeys: ReadonlySet<string>
+  /**
+   * Phase 2 2D.6 : si true et selectedUnit existe, on remplace reachableMap/tileStates
+   * par les 6 voisins libres en state 'split-target' (UX : sélection visuelle de la case
+   * cible pour scinder). Le click sur ces tiles déclenche split_unit dans Game.tsx.
+   */
+  splitMode: boolean
 }
 
 interface UseTacticalSelectionResult {
@@ -37,6 +44,8 @@ interface UseTacticalSelectionResult {
   tileStates: Map<string, HexTileState>
   /** Set des unites qui ont epuise leurs ordres (visuellement attenuees) */
   exhaustedUnitIds: Set<string>
+  /** Phase 2 2D.6 : Set des cubeKey adjacentes libres en mode split (vide sinon). */
+  splitTargetKeys: Set<string>
   handleUnitClick: (unit: { id: string; team: Team }) => void
   clearSelection: () => void
 }
@@ -44,7 +53,7 @@ interface UseTacticalSelectionResult {
 export function useTacticalSelection(
   params: UseTacticalSelectionParams
 ): UseTacticalSelectionResult {
-  const { inProgress, isMyTurn, myTeam, activeTeam, unitStates, boardKeys } = params
+  const { inProgress, isMyTurn, myTeam, activeTeam, unitStates, boardKeys, splitMode } = params
 
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null)
 
@@ -146,14 +155,38 @@ export function useTacticalSelection(
     return out
   }, [myTeam, unitStates])
 
+  // Phase 2 2D.6 : 6 voisins libres autour de la source quand splitMode actif.
+  // Calcul indépendant de reachableMap (pas de coût MP, juste adjacence + libre).
+  const splitTargetKeys = useMemo<Set<string>>(() => {
+    const out = new Set<string>()
+    if (!splitMode || !selectedUnit || !isSelectedMine || !isMyTurn) return out
+    const occupied = new Set<string>()
+    for (const u of unitStates) {
+      if (u.id === selectedUnit.id) continue
+      occupied.add(cubeKey(u.position))
+    }
+    for (const n of neighbors(selectedUnit.position)) {
+      const k = cubeKey(n)
+      if (!boardKeys.has(k)) continue
+      if (occupied.has(k)) continue
+      out.add(k)
+    }
+    return out
+  }, [splitMode, selectedUnit, isSelectedMine, isMyTurn, unitStates, boardKeys])
+
   const tileStates = useMemo<Map<string, HexTileState>>(() => {
     const map = new Map<string, HexTileState>()
+    // En mode split : on ignore reachable/dangerous, on ne montre QUE les 6 cibles split.
+    if (splitMode) {
+      for (const k of splitTargetKeys) map.set(k, 'split-target')
+      return map
+    }
     for (const k of reachableMap.keys()) {
       // hex reachable mais en ZoC ennemie → 'dangerous' (entree y stoppe le mouvement)
       map.set(k, enemyZoc.has(k) ? 'dangerous' : 'reachable')
     }
     return map
-  }, [reachableMap, enemyZoc])
+  }, [splitMode, splitTargetKeys, reachableMap, enemyZoc])
 
   const exhaustedUnitIds = useMemo<Set<string>>(() => {
     const set = new Set<string>()
@@ -191,6 +224,7 @@ export function useTacticalSelection(
     visibleEnemyIds,
     tileStates,
     exhaustedUnitIds,
+    splitTargetKeys,
     handleUnitClick,
     clearSelection,
   }

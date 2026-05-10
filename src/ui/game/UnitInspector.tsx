@@ -1,8 +1,8 @@
+// v2.1 (10/05/2026) — Phase 2 2D.6 : choix case split via highlight grille (au lieu de boutons q/r dans la modale)
 // v2.0a (10/05/2026) — split/merge UX : direction (flèches + N/S/E/O) au lieu de q/r bruts
 // v2.0 (10/05/2026) — Phase 2 2D.1 : effectif elastique + boutons split/merge + selection ratio/case adjacente
 // v1.1 (10/05/2026) — Phase 1.5 P1.5-INSP-01 : barre HP multi-segment vert/orange + ligne blessés
-// v1.0 (09/05/2026) — L1C.3 : panel inspector unite selectionnee (nom, hp, morale, actions dispo)
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { UnitState, SplitRatio } from '@engine/units'
 import { resolveUnitStatsV2 } from '@engine/units'
 import { useUnitSizing } from '@hooks/useUnitSizing'
@@ -15,6 +15,15 @@ interface UnitInspectorProps {
   gameId: string | null
   /** Phase 2 : tous les pions sur la carte, pour calculer adjacence/cibles fusion. */
   allUnits: ReadonlyArray<UnitState>
+  /**
+   * Phase 2 2D.6 : true si on est actuellement en mode "choisir la case cible split"
+   * (les hex adjacents s'illuminent sur la grille). Inspector affiche un message d'attente.
+   */
+  splitActive: boolean
+  /** Phase 2 2D.6 : appelé quand l'utilisateur valide le ratio et passe en mode sélection grille. */
+  onEnterSplitMode: (ratio: SplitRatio) => void
+  /** Phase 2 2D.6 : annuler le mode sélection grille (revient à l'inspector normal). */
+  onExitSplitMode: () => void
 }
 
 const KIND_LABEL: Record<string, string> = {
@@ -31,11 +40,26 @@ const RATIO_LABEL: Record<SplitRatio, string> = {
 
 type Manoeuvre = 'none' | 'split' | 'merge'
 
-export function UnitInspector({ unit, isMyUnit, isMyTurn, gameId, allUnits }: UnitInspectorProps) {
+export function UnitInspector({
+  unit,
+  isMyUnit,
+  isMyTurn,
+  gameId,
+  allUnits,
+  splitActive,
+  onEnterSplitMode,
+  onExitSplitMode,
+}: UnitInspectorProps) {
   const stats = resolveUnitStatsV2(unit.kind, unit.subKind)
   const sizing = useUnitSizing({ gameId, unit, allUnits, isMyUnit, isMyTurn })
   const [manoeuvre, setManoeuvre] = useState<Manoeuvre>('none')
   const [selectedRatio, setSelectedRatio] = useState<SplitRatio>('half')
+
+  // Quand le splitMode global se ferme (validation ou annulation), on revient sur 'none'.
+  // Quand il s'active, on force la sub-section sur 'split' (au cas où l'utilisateur ait fermé puis le parent l'a réouvert).
+  useEffect(() => {
+    if (splitActive) setManoeuvre('split')
+  }, [splitActive])
 
   const effectivePct = Math.max(0, Math.min(100, (unit.effective / unit.effectiveMax) * 100))
   const woundedPct = Math.max(0, Math.min(100 - effectivePct, (unit.wounded / unit.effectiveMax) * 100))
@@ -47,10 +71,15 @@ export function UnitInspector({ unit, isMyUnit, isMyTurn, gameId, allUnits }: Un
   const canMove = !unit.hasMoved && !unit.routed
   const canAttack = !unit.hasAttacked && !unit.routed
 
-  const handleSplitClick = (ratio: SplitRatio, target: { q: number; r: number }) => {
-    sizing.performSplit(ratio, target).then(ok => {
-      if (ok) setManoeuvre('none')
-    })
+  const freeAdjacentCount = sizing.splitTargets.filter(t => t.free).length
+
+  const handleEnterSplit = () => {
+    onEnterSplitMode(selectedRatio)
+  }
+
+  const handleCancelSplit = () => {
+    onExitSplitMode()
+    setManoeuvre('none')
   }
 
   const handleMergeClick = (otherId: string) => {
@@ -211,50 +240,60 @@ export function UnitInspector({ unit, isMyUnit, isMyTurn, gameId, allUnits }: Un
             1 tour d'inactivité offensive après l'opération.
           </div>
 
-          {manoeuvre === 'split' && sizing.canSplit && (
-            <div className="mt-3 space-y-2 p-2 bg-[rgba(15,23,42,0.6)] rounded-[2px] border border-[rgba(234,179,8,0.3)]">
-              <div className="text-[9px] uppercase tracking-[0.12em] text-muted-foreground">
-                Ratio
-              </div>
-              <div className="flex gap-1">
-                {(['half', 'three_quarter', 'nine_one'] as SplitRatio[]).map(r => (
-                  <button
-                    key={r}
-                    type="button"
-                    onClick={() => setSelectedRatio(r)}
-                    className={`flex-1 text-[10px] px-2 py-1 border rounded-[2px] tabular-nums transition ${
-                      selectedRatio === r
-                        ? 'bg-tactica-amber/30 border-tactica-amber text-tactica-amber'
-                        : 'border-[rgba(226,232,240,0.20)] text-muted-foreground hover:bg-[rgba(234,179,8,0.10)]'
-                    }`}
-                  >
-                    {RATIO_LABEL[r]}
-                  </button>
-                ))}
-              </div>
-              <div className="text-[9px] uppercase tracking-[0.12em] text-muted-foreground">
-                Case cible
-              </div>
-              <div className="grid grid-cols-2 gap-1">
-                {sizing.splitTargets.map(t => {
-                  const dir = hexDirection(t.q - unit.position.q, t.r - unit.position.r)
-                  return (
+          {manoeuvre === 'split' && sizing.canSplit && !splitActive && (
+            <div className="mt-3 space-y-3 p-3 bg-[rgba(15,23,42,0.6)] rounded-[2px] border border-[rgba(234,179,8,0.3)]">
+              <div>
+                <div className="text-[9px] uppercase tracking-[0.12em] text-muted-foreground mb-1">
+                  Ratio
+                </div>
+                <div className="flex gap-1">
+                  {(['half', 'three_quarter', 'nine_one'] as SplitRatio[]).map(r => (
                     <button
-                      key={`${t.q}_${t.r}`}
+                      key={r}
                       type="button"
-                      disabled={!t.free || sizing.busy}
-                      onClick={() => handleSplitClick(selectedRatio, { q: t.q, r: t.r })}
-                      title={t.free ? `Vers ${dir.label}` : `${dir.label} — case occupée`}
-                      className="flex items-center justify-center gap-1.5 text-[10px] px-2 py-1 border rounded-[2px] disabled:opacity-30 disabled:cursor-not-allowed enabled:hover:bg-tactica-amber/20 transition"
-                      style={{ borderColor: t.free ? '#eab308' : '#475569', color: t.free ? '#eab308' : '#64748b' }}
+                      onClick={() => setSelectedRatio(r)}
+                      className={`flex-1 text-[11px] px-2 py-1.5 border rounded-[2px] tabular-nums transition ${
+                        selectedRatio === r
+                          ? 'bg-tactica-amber/30 border-tactica-amber text-tactica-amber'
+                          : 'border-[rgba(226,232,240,0.20)] text-muted-foreground hover:bg-[rgba(234,179,8,0.10)]'
+                      }`}
                     >
-                      <span className="text-[14px] leading-none">{dir.arrow}</span>
-                      <span>{dir.label}</span>
-                      <span className="opacity-70">{t.free ? '✓' : '×'}</span>
+                      {RATIO_LABEL[r]}
                     </button>
-                  )
-                })}
+                  ))}
+                </div>
               </div>
+              <button
+                type="button"
+                onClick={handleEnterSplit}
+                disabled={freeAdjacentCount === 0 || sizing.busy}
+                className="w-full text-[11px] font-semibold uppercase tracking-[0.08em] px-3 py-2 border-2 rounded-[2px] bg-tactica-amber/15 border-tactica-amber text-tactica-amber enabled:hover:bg-tactica-amber/30 disabled:opacity-40 disabled:cursor-not-allowed transition"
+              >
+                Sélectionner la case →
+              </button>
+              <div className="text-[9px] text-muted-foreground text-center italic">
+                {freeAdjacentCount === 0
+                  ? 'Aucune case adjacente libre.'
+                  : `${freeAdjacentCount} case${freeAdjacentCount > 1 ? 's' : ''} adjacente${freeAdjacentCount > 1 ? 's' : ''} libre${freeAdjacentCount > 1 ? 's' : ''}.`}
+              </div>
+            </div>
+          )}
+
+          {splitActive && (
+            <div className="mt-3 space-y-2 p-3 bg-tactica-amber/10 rounded-[2px] border-2 border-tactica-amber animate-pulse">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-tactica-amber text-center">
+                Ratio {RATIO_LABEL[selectedRatio]}
+              </div>
+              <div className="text-[10px] text-foreground text-center leading-relaxed">
+                Clique sur une case <span className="text-tactica-amber font-semibold">ambre</span> de la carte pour positionner la nouvelle unité.
+              </div>
+              <button
+                type="button"
+                onClick={handleCancelSplit}
+                className="w-full text-[10px] uppercase tracking-[0.08em] px-2 py-1.5 border border-muted-foreground/40 rounded-[2px] text-muted-foreground hover:bg-white/5 transition"
+              >
+                Annuler
+              </button>
             </div>
           )}
 

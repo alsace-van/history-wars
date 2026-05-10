@@ -1,7 +1,8 @@
+// v1.2 (10/05/2026) — Phase 2 2D.6 : propagation splitActive/onEnterSplitMode/onExitSplitMode a Inspector
 // v1.1 (10/05/2026) — Phase 2 2D.4 : effectif total par camp + propagation gameId/allUnits a Inspector
 // v1.0 (10/05/2026) — P1-REFACTOR-01 : extraction depuis Game.tsx (panneau lateral en bataille)
 import type { Team } from '@/types/game'
-import type { UnitState } from '@engine/units'
+import type { UnitState, SplitRatio } from '@engine/units'
 import { TeamPanel, type SlotData } from '@ui/game/TeamPanel'
 import { UnitInspector } from '@ui/game/UnitInspector'
 
@@ -15,6 +16,12 @@ export interface BattleSidebarProps {
   allUnits: ReadonlyArray<UnitState>
   /** Phase 2 : pour appel EF resolve_action depuis Inspector. */
   gameId: string | null
+  /** Phase 2 2D.6 : true si l'utilisateur est en cours de choix de case split sur la grille. */
+  splitActive: boolean
+  /** Phase 2 2D.6 : entre en mode "choisir case split" (parent active highlight grille). */
+  onEnterSplitMode: (ratio: SplitRatio) => void
+  /** Phase 2 2D.6 : sort du mode split (parent éteint highlight). */
+  onExitSplitMode: () => void
   blueSlots: SlotData[]
   redSlots: SlotData[]
   hostUserId: string
@@ -29,6 +36,9 @@ export function BattleSidebar({
   selectedUnit,
   allUnits,
   gameId,
+  splitActive,
+  onEnterSplitMode,
+  onExitSplitMode,
   blueSlots,
   redSlots,
   hostUserId,
@@ -86,6 +96,9 @@ export function BattleSidebar({
           isMyTurn={isMyTurn}
           gameId={gameId}
           allUnits={allUnits}
+          splitActive={splitActive}
+          onEnterSplitMode={onEnterSplitMode}
+          onExitSplitMode={onExitSplitMode}
         />
       ) : (
         <div className="px-3 py-3 text-[10px] uppercase tracking-[0.08em] text-muted-foreground border border-[rgba(226,232,240,0.10)] rounded-[2px]">
