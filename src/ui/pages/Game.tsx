@@ -1,7 +1,7 @@
+// v3.7 (10/05/2026) — P1-L1C4-01/03 : tooltip combat + click ennemi targetable → attack
+// v3.6 (10/05/2026) — P1-L1C5-03 : intégration GameHUD + EndGameModal, retire boutons inline
+// v3.5 (10/05/2026) — P1-REFACTOR-02 : extraction useTacticalSelection (selection + reachable + tileStates)
 // v3.4 (10/05/2026) — P1-REFACTOR-01 : extraction BattleSidebar vers src/ui/game/BattleSidebar.tsx
-// v3.3 (10/05/2026) — Fix ring sélection (option A) : retire state 'selected' du tileStates
-// v3.2 (09/05/2026) — Animation case par case : aStar avant submit + unitPaths state
-// v3.1 (09/05/2026) — L1C.3 : selection unite + reachable BFS + click move + UnitInspector
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -11,6 +11,7 @@ import { useRealtime } from '@hooks/useRealtime'
 import { useOnlineStatus } from '@hooks/useOnlineStatus'
 import { useBattleUnits } from '@hooks/useBattleUnits'
 import { useCombatActions } from '@hooks/useCombatActions'
+import { useTacticalSelection } from '@hooks/useTacticalSelection'
 import {
   isHost,
   isPlayerInGame,
@@ -20,19 +21,19 @@ import {
 import { PageBackground } from '@ui/layout/PageBackground'
 import { TeamPanel, type SlotData } from '@ui/game/TeamPanel'
 import { BattleSidebar } from '@ui/game/BattleSidebar'
+import { GameHUD } from '@ui/game/GameHUD'
+import { EndGameModal } from '@ui/game/EndGameModal'
+import { CombatPreviewTooltip } from '@ui/game/CombatPreviewTooltip'
 import { TacticalScene, buildMvpUnitPlacement } from '@/render'
 import { unitRowsToInstances, unitRowsToStates } from '@render/_data/unitAdapter'
-import type { HexTileState } from '@render/types'
+import type { UnitInstance } from '@render/types'
 import { spiral, cubeKey, type Cube } from '@engine/hex'
 import { getUnitStats, type UnitState } from '@engine/units'
-import { bfsReachable, aStar } from '@engine/movement'
+import { aStar } from '@engine/movement'
 import { computeEnemyZoc } from '@engine/zoc'
 import { cn } from '@lib/cn'
 
-const TAG = '[Game v3.4]'
-
-const PRIMARY_BTN_CLIP =
-  'polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px)'
+const TAG = '[Game v3.7]'
 
 const MVP_CUBES: Cube[] = spiral({ q: 0, r: 0, s: 0 }, 5)
 const MVP_BOARD_KEYS = new Set(MVP_CUBES.map(cubeKey))
@@ -121,7 +122,7 @@ export function Game() {
     [showBattle, dbUnits]
   )
 
-  const { busy: actionsBusy, startBattle, submitAction } = useCombatActions()
+  const { busy: actionsBusy, startBattle, submitAction, endTurn } = useCombatActions()
 
   const online = useOnlineStatus()
 
@@ -159,8 +160,54 @@ export function Game() {
   )
   const isMyTurn = inProgress && myTeam === activeTeam
 
-  // ---- Selection + reachable ----
-  const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null)
+  // ---- Selection + reachable + tileStates + targetable (extrait via hook) ----
+  const {
+    selectedUnitId,
+    selectedUnit,
+    reachableMap,
+    targetableUnitIds,
+    tileStates,
+    exhaustedUnitIds,
+    handleUnitClick: hookHandleUnitClick,
+    clearSelection,
+  } = useTacticalSelection({
+    inProgress,
+    isMyTurn,
+    myTeam,
+    activeTeam,
+    unitStates,
+    boardKeys: MVP_BOARD_KEYS,
+  })
+
+  // ---- Hover ennemi targetable → tooltip combat ----
+  const [hoveredEnemyId, setHoveredEnemyId] = useState<string | null>(null)
+  const [mousePos, setMousePos] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
+
+  const handleSceneMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (!hoveredEnemyId) return // pas de tooltip → inutile de mettre a jour
+    const rect = e.currentTarget.getBoundingClientRect()
+    setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top })
+  }, [hoveredEnemyId])
+
+  const handleUnitPointerOver = useCallback((unit: UnitInstance) => {
+    if (targetableUnitIds.has(unit.id)) setHoveredEnemyId(unit.id)
+  }, [targetableUnitIds])
+
+  const handleUnitPointerOut = useCallback((unit: UnitInstance) => {
+    setHoveredEnemyId(prev => (prev === unit.id ? null : prev))
+  }, [])
+
+  const hoveredEnemy = useMemo<UnitState | null>(
+    () => unitStates.find(u => u.id === hoveredEnemyId) ?? null,
+    [unitStates, hoveredEnemyId]
+  )
+
+  // Reset hover si selection change (l'ennemi peut sortir du targetableUnitIds)
+  useEffect(() => {
+    if (hoveredEnemyId && !targetableUnitIds.has(hoveredEnemyId)) {
+      setHoveredEnemyId(null)
+    }
+  }, [hoveredEnemyId, targetableUnitIds])
 
   // ---- Animation paths : Map<unitId, path[]> consommee par UnitPlaceholder ----
   const [unitPaths, setUnitPaths] = useState<Map<string, ReadonlyArray<Cube>>>(new Map())
@@ -174,84 +221,50 @@ export function Game() {
     })
   }, [])
 
-  useEffect(() => {
-    if (!inProgress) {
-      setSelectedUnitId(null)
-      return
-    }
-    if (selectedUnitId && !unitStates.some(u => u.id === selectedUnitId)) {
-      setSelectedUnitId(null)
-    }
-  }, [inProgress, activeTeam, unitStates, selectedUnitId])
-
-  const selectedUnit = useMemo<UnitState | null>(
-    () => unitStates.find(u => u.id === selectedUnitId) ?? null,
-    [unitStates, selectedUnitId]
-  )
-
-  const isSelectedMine = !!selectedUnit && selectedUnit.team === myTeam
-
-  const reachableMap = useMemo<Map<string, number>>(() => {
-    if (!selectedUnit || !isSelectedMine || !isMyTurn) return new Map()
-    if (selectedUnit.hasMoved || selectedUnit.routed) return new Map()
-    const stats = getUnitStats(selectedUnit.kind)
-    const others = unitStates.filter(u => u.id !== selectedUnit.id)
-    const blockers = new Set(others.map(u => cubeKey(u.position)))
-    const enemyZoc = computeEnemyZoc(unitStates, selectedUnit.team)
-    const raw = bfsReachable({
-      start: selectedUnit.position,
-      movementPoints: stats.movement,
-      blockers,
-      enemyZocCubes: enemyZoc,
-    })
-    const startKey = cubeKey(selectedUnit.position)
-    const out = new Map<string, number>()
-    for (const [k, c] of raw) {
-      if (k === startKey) continue
-      if (!MVP_BOARD_KEYS.has(k)) continue
-      out.set(k, c)
-    }
-    return out
-  }, [selectedUnit, isSelectedMine, isMyTurn, unitStates])
-
-  const tileStates = useMemo<Map<string, HexTileState>>(() => {
-    // Fix ring v3.3 : on ne marque PAS la tile sous l'unite selectionnee en 'selected'.
-    // L'anneau autour du soldat suffit visuellement (cf piege #47).
-    const map = new Map<string, HexTileState>()
-    for (const k of reachableMap.keys()) map.set(k, 'reachable')
-    return map
-  }, [reachableMap])
-
-  const exhaustedUnitIds = useMemo<Set<string>>(() => {
-    const set = new Set<string>()
-    for (const u of unitStates) {
-      if (u.hasMoved && u.hasAttacked) set.add(u.id)
-      if (u.routed) set.add(u.id)
-    }
-    return set
-  }, [unitStates])
-
-  // ---- Handlers ----
+  // ---- Handler unit click (composite : attack si ennemi targetable, sinon toggle) ----
   const handleUnitClick = useCallback(
-    (unit: { id: string; team: Team }) => {
-      if (!inProgress) return
-      if (selectedUnitId === unit.id) {
-        setSelectedUnitId(null)
+    async (unit: { id: string; team: Team }) => {
+      if (!gameId || !inProgress) return
+      // Click ennemi targetable → attack
+      if (selectedUnit && unit.team !== myTeam && targetableUnitIds.has(unit.id)) {
+        if (actionsBusy) return
+        const atkStats = getUnitStats(selectedUnit.kind)
+        const isRanged = atkStats.range > 1
+        const res = await submitAction(gameId, {
+          type: isRanged ? 'attack_ranged' : 'attack_melee',
+          payload: { unit_id: selectedUnit.id, target_unit_id: unit.id },
+        })
+        if (res.ok) {
+          clearSelection()
+          setHoveredEnemyId(null)
+          toast.success(isRanged ? 'Tir effectué.' : 'Charge engagée.')
+        }
         return
       }
-      if (unit.team !== myTeam) return
-      setSelectedUnitId(unit.id)
+      // Sinon delegue au hook (toggle selection mes unites)
+      hookHandleUnitClick(unit)
     },
-    [inProgress, selectedUnitId, myTeam]
+    [
+      gameId,
+      inProgress,
+      selectedUnit,
+      myTeam,
+      targetableUnitIds,
+      actionsBusy,
+      submitAction,
+      clearSelection,
+      hookHandleUnitClick,
+    ]
   )
 
+  // ---- Handler tile click (move) — reste ici car couple a submitAction + unitPaths ----
   const handleTileClick = useCallback(
     async (cube: Cube) => {
       if (!gameId || !inProgress) return
       if (!selectedUnit) return
       const key = cubeKey(cube)
       if (!reachableMap.has(key)) {
-        setSelectedUnitId(null)
+        clearSelection()
         return
       }
       if (actionsBusy) return
@@ -284,7 +297,7 @@ export function Game() {
         })
       }
     },
-    [gameId, inProgress, selectedUnit, reachableMap, actionsBusy, submitAction, unitStates]
+    [gameId, inProgress, selectedUnit, reachableMap, actionsBusy, submitAction, unitStates, clearSelection]
   )
 
   async function handleLeave() {
@@ -331,6 +344,22 @@ export function Game() {
     const res = await startBattle(gameId)
     if (res.ok) toast.success('Bataille engagée.')
   }
+
+  async function handleEndTurn() {
+    if (!gameId || !inProgress || !isMyTurn || actionsBusy) return
+    const res = await endTurn(gameId)
+    if (res.ok) {
+      clearSelection()
+      toast.success('Tour terminé.')
+    }
+  }
+
+  // Modal de fin : ouverte automatiquement sur status='finished',
+  // refermable une fois (l'utilisateur peut rester sur le plateau pour debriefer).
+  const [endModalDismissed, setEndModalDismissed] = useState(false)
+  useEffect(() => {
+    if (!finished) setEndModalDismissed(false)
+  }, [finished, gameId])
 
   if (authLoading || !user || loading || !game) {
     return (
@@ -413,20 +442,33 @@ export function Game() {
             </div>
           </div>
 
-          <div className="flex-1 relative min-h-0">
+          <div
+            className="flex-1 relative min-h-0"
+            onMouseMove={showBattle ? handleSceneMouseMove : undefined}
+          >
             <TacticalScene
               scale={game.current_scale}
               cubes={MVP_CUBES}
               units={renderUnits}
               tileStates={showBattle ? tileStates : undefined}
               selectedUnitId={selectedUnitId}
+              targetableUnitIds={showBattle ? targetableUnitIds : undefined}
               exhaustedUnitIds={showBattle ? exhaustedUnitIds : undefined}
               unitPaths={showBattle ? unitPaths : undefined}
               onUnitPathDone={onUnitPathDone}
               onTileClick={showBattle ? handleTileClick : undefined}
               onUnitClick={showBattle ? handleUnitClick : undefined}
+              onUnitPointerOver={showBattle ? handleUnitPointerOver : undefined}
+              onUnitPointerOut={showBattle ? handleUnitPointerOut : undefined}
             />
-            <div className="absolute bottom-3 left-3 px-3 py-2 bg-[rgba(15,23,42,0.85)] backdrop-blur-[6px] border border-[rgba(226,232,240,0.18)] rounded-[2px] text-[10px] text-muted-foreground tracking-[0.05em] uppercase pointer-events-none">
+            {hoveredEnemy && selectedUnit && (
+              <CombatPreviewTooltip
+                attacker={selectedUnit}
+                defender={hoveredEnemy}
+                screenPos={mousePos}
+              />
+            )}
+            <div className="absolute top-3 left-3 px-3 py-2 bg-[rgba(15,23,42,0.85)] backdrop-blur-[6px] border border-[rgba(226,232,240,0.18)] rounded-[2px] text-[10px] text-muted-foreground tracking-[0.05em] uppercase pointer-events-none">
               <div>Drag : rotation · Drag droit : pan · Molette : zoom</div>
             </div>
             {showBattle && unitsLoading && (
@@ -434,6 +476,19 @@ export function Game() {
                 Chargement des unités…
               </div>
             )}
+            <GameHUD
+              status={game.status}
+              iAmHost={iAmHost}
+              iAmIn={iAmIn}
+              isMyTurn={isMyTurn}
+              canStart={canStart}
+              startTooltip={startTooltip}
+              busy={busy}
+              actionsBusy={actionsBusy}
+              onStartBattle={handleStartBattle}
+              onEndTurn={handleEndTurn}
+              onLeave={handleLeave}
+            />
           </div>
         </div>
 
@@ -463,7 +518,7 @@ export function Game() {
             <div aria-hidden className="absolute top-[-1px] left-3 right-3 h-px opacity-40" style={{ background: 'linear-gradient(90deg, transparent, #EF9F27, transparent)' }} />
             <Bracket position="tl" /><Bracket position="tr" /><Bracket position="bl" /><Bracket position="br" />
 
-            <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center justify-between">
               <div className="text-muted-foreground text-[10px] uppercase tracking-[0.12em]">
                 <strong className="text-foreground font-semibold">{players.length} / {game.max_players} officiers</strong>
                 {' · '}
@@ -474,42 +529,22 @@ export function Game() {
                 <span className={online ? 'text-muted-foreground' : 'text-red-400'}>{online ? 'En ligne' : 'Hors ligne'}</span>
               </span>
             </div>
-
-            <div className="flex flex-col gap-2">
-              {!showBattle && (
-                <span className="relative group">
-                  <button
-                    disabled={!canStart || actionsBusy}
-                    onClick={handleStartBattle}
-                    className={cn(
-                      'w-full px-4 py-[10px] text-[11px] font-semibold uppercase tracking-[0.12em] transition-colors',
-                      canStart && !actionsBusy
-                        ? 'bg-tactica-amber text-[#0f172a] hover:bg-tactica-amber/90 cursor-pointer'
-                        : 'bg-tactica-amber/20 text-tactica-amber/40 cursor-not-allowed'
-                    )}
-                    style={{ clipPath: PRIMARY_BTN_CLIP }}
-                  >
-                    {actionsBusy ? 'Lancement…' : 'Engager la bataille'}
-                  </button>
-                  {startTooltip && (
-                    <span className="absolute bottom-full right-0 mb-[6px] whitespace-nowrap text-[10px] uppercase tracking-[0.12em] bg-[rgba(8,12,24,0.95)] border border-tactica-amber px-[10px] py-[6px] rounded-[2px] text-foreground opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                      {startTooltip}
-                    </span>
-                  )}
-                </span>
-              )}
-
-              <button
-                onClick={handleLeave}
-                disabled={busy || !iAmIn}
-                className="bg-transparent border border-destructive/50 text-destructive hover:bg-destructive hover:text-white disabled:opacity-50 disabled:cursor-not-allowed px-3 py-[7px] text-[11px] font-semibold uppercase tracking-[0.12em] rounded-[2px] transition-colors"
-              >
-                {iAmHost ? 'Dissoudre la partie' : 'Quitter la bataille'}
-              </button>
-            </div>
           </div>
         </aside>
       </div>
+
+      {gameId && (
+        <EndGameModal
+          open={finished && !endModalDismissed}
+          onClose={() => {
+            setEndModalDismissed(true)
+            navigate('/lobby')
+          }}
+          gameId={gameId}
+          winner={tactical?.winner ?? null}
+          totalTurns={tactical?.currentTurn ?? game.turn_number}
+        />
+      )}
     </div>
   )
 }
