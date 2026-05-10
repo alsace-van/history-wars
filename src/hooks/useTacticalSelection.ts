@@ -1,8 +1,10 @@
+// v1.1 (10/05/2026) — P1-L1C4-02 : ajout targetableUnitIds + dangerousZocKeys + tileStates 'dangerous'
 // v1.0 (10/05/2026) — P1-REFACTOR-02 : extraction de la logique selection/reachable/tileStates depuis Game.tsx
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { cubeKey } from '@engine/hex'
+import { cubeKey, cubeDistance } from '@engine/hex'
 import { bfsReachable } from '@engine/movement'
 import { computeEnemyZoc } from '@engine/zoc'
+import { hasLineOfSight } from '@engine/los'
 import { getUnitStats, type UnitState } from '@engine/units'
 import type { HexTileState } from '@render/types'
 import type { Team } from '@/types/game'
@@ -24,6 +26,10 @@ interface UseTacticalSelectionResult {
   isSelectedMine: boolean
   /** Map<cubeKey, cout MP> des cases atteignables (vide si pas de selection ou unite ennemie) */
   reachableMap: Map<string, number>
+  /** Set des unitId ennemis attaquables par l'unite selectionnee (range + LoS) */
+  targetableUnitIds: Set<string>
+  /** Set des cubeKey en ZoC ennemie ; entrer y stoppe le mouvement (cf piege #41) */
+  dangerousZocKeys: Set<string>
   /** Map<cubeKey, HexTileState> a passer a TacticalScene */
   tileStates: Map<string, HexTileState>
   /** Set des unites qui ont epuise leurs ordres (visuellement attenuees) */
@@ -57,13 +63,19 @@ export function useTacticalSelection(
 
   const isSelectedMine = !!selectedUnit && selectedUnit.team === myTeam
 
+  // ZoC ennemie depuis le point de vue de l'unite selectionnee. Memoise + reutilise par
+  // reachableMap (BFS stop) et dangerousZocKeys (visuel) — evite double calcul.
+  const enemyZoc = useMemo<Set<string>>(() => {
+    if (!selectedUnit || !isSelectedMine) return new Set()
+    return computeEnemyZoc(unitStates, selectedUnit.team)
+  }, [selectedUnit, isSelectedMine, unitStates])
+
   const reachableMap = useMemo<Map<string, number>>(() => {
     if (!selectedUnit || !isSelectedMine || !isMyTurn) return new Map()
     if (selectedUnit.hasMoved || selectedUnit.routed) return new Map()
     const stats = getUnitStats(selectedUnit.kind)
     const others = unitStates.filter(u => u.id !== selectedUnit.id)
     const blockers = new Set(others.map(u => cubeKey(u.position)))
-    const enemyZoc = computeEnemyZoc(unitStates, selectedUnit.team)
     const raw = bfsReachable({
       start: selectedUnit.position,
       movementPoints: stats.movement,
@@ -78,13 +90,42 @@ export function useTacticalSelection(
       out.set(k, c)
     }
     return out
-  }, [selectedUnit, isSelectedMine, isMyTurn, unitStates, boardKeys])
+  }, [selectedUnit, isSelectedMine, isMyTurn, unitStates, enemyZoc, boardKeys])
+
+  const targetableUnitIds = useMemo<Set<string>>(() => {
+    const out = new Set<string>()
+    if (!selectedUnit || !isSelectedMine || !isMyTurn) return out
+    if (selectedUnit.hasAttacked || selectedUnit.routed) return out
+    const stats = getUnitStats(selectedUnit.kind)
+    const range = stats.range
+    for (const enemy of unitStates) {
+      if (enemy.team === selectedUnit.team) continue
+      if (enemy.routed) continue
+      const dist = cubeDistance(selectedUnit.position, enemy.position)
+      if (dist === 0 || dist > range) continue
+      if (range > 1) {
+        // LoS : blockers = tous corps sauf le tireur et la cible
+        const blockers = new Set<string>()
+        for (const u of unitStates) {
+          if (u.id === selectedUnit.id) continue
+          if (u.id === enemy.id) continue
+          blockers.add(cubeKey(u.position))
+        }
+        if (!hasLineOfSight(selectedUnit.position, enemy.position, blockers)) continue
+      }
+      out.add(enemy.id)
+    }
+    return out
+  }, [selectedUnit, isSelectedMine, isMyTurn, unitStates])
 
   const tileStates = useMemo<Map<string, HexTileState>>(() => {
     const map = new Map<string, HexTileState>()
-    for (const k of reachableMap.keys()) map.set(k, 'reachable')
+    for (const k of reachableMap.keys()) {
+      // hex reachable mais en ZoC ennemie → 'dangerous' (entree y stoppe le mouvement)
+      map.set(k, enemyZoc.has(k) ? 'dangerous' : 'reachable')
+    }
     return map
-  }, [reachableMap])
+  }, [reachableMap, enemyZoc])
 
   const exhaustedUnitIds = useMemo<Set<string>>(() => {
     const set = new Set<string>()
@@ -117,6 +158,8 @@ export function useTacticalSelection(
     selectedUnit,
     isSelectedMine,
     reachableMap,
+    targetableUnitIds,
+    dangerousZocKeys: enemyZoc,
     tileStates,
     exhaustedUnitIds,
     handleUnitClick,
