@@ -1,7 +1,7 @@
+// v3.3 (10/05/2026) — Fix ring sélection (option A) : retire state 'selected' du tileStates
 // v3.2 (09/05/2026) — Animation case par case : aStar avant submit + unitPaths state
 // v3.1 (09/05/2026) — L1C.3 : selection unite + reachable BFS + click move + UnitInspector
 // v3.0 (09/05/2026) — L1C.2 : bouton Engager câblé + switch lobby/in_progress + units BDD
-// v2.0a (09/05/2026) — Lot 7 : badge online/offline dans footer sidebar
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -29,7 +29,7 @@ import { bfsReachable, aStar } from '@engine/movement'
 import { computeEnemyZoc } from '@engine/zoc'
 import { cn } from '@lib/cn'
 
-const TAG = '[Game v3.2]'
+const TAG = '[Game v3.3]'
 
 const PRIMARY_BTN_CLIP =
   'polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px)'
@@ -215,11 +215,12 @@ export function Game() {
   }, [selectedUnit, isSelectedMine, isMyTurn, unitStates])
 
   const tileStates = useMemo<Map<string, HexTileState>>(() => {
+    // Fix ring v3.3 : on ne marque PAS la tile sous l'unite selectionnee en 'selected'.
+    // L'anneau autour du soldat suffit visuellement (cf piege #47).
     const map = new Map<string, HexTileState>()
-    if (selectedUnit) map.set(cubeKey(selectedUnit.position), 'selected')
     for (const k of reachableMap.keys()) map.set(k, 'reachable')
     return map
-  }, [selectedUnit, reachableMap])
+  }, [reachableMap])
 
   const exhaustedUnitIds = useMemo<Set<string>>(() => {
     const set = new Set<string>()
