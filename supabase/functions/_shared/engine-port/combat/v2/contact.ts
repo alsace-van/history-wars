@@ -9,7 +9,7 @@ import { splitCasualties } from '../types.ts'
 import { distancePrecision } from './distance.ts'
 import { describeMatchup, getMatchupCoef } from './matchup.ts'
 import type { AttackPhase, BonusBreakdownEntry, CombatConfig, CombatResultV2 } from './types.ts'
-import { DEFAULT_COMBAT_CONFIG } from './types.ts'
+import { DEFAULT_BASE_ATTRITION_RATE, DEFAULT_COMBAT_CONFIG } from './types.ts'
 
 export interface ContactInput {
   attacker: UnitState
@@ -52,15 +52,18 @@ export function resolveContact(input: ContactInput): CombatResultV2 {
   const resistance =
     menEngagedDefender * baseDefenseFactor * defTerrainMult * defenderMoraleMult
 
+  // Phase 2.5 : plancher d'attrition proportionnel aux hommes engagés (mirror src v1.1)
   const attackPossible =
     baseAttackFactor > 0 && matchupCoef > 0 && (phase !== 'ranged' || precisionMult > 0)
+  const attritionRate = config.baseAttritionRate ?? DEFAULT_BASE_ATTRITION_RATE
+  const baseAttrition = Math.max(1, Math.round(menEngagedAttacker * attritionRate))
   const damageRawNoFloor = Math.max(0, power - resistance)
-  const damageRaw = attackPossible ? Math.max(1, damageRawNoFloor) : damageRawNoFloor
+  const damageRaw = attackPossible ? Math.max(baseAttrition, damageRawNoFloor) : damageRawNoFloor
 
   const rollRaw = rng()
   const variance = config.diceVariance.low + rollRaw * config.diceVariance.range
   const damageFinal = attackPossible
-    ? Math.max(1, Math.round(damageRaw * variance))
+    ? Math.max(baseAttrition, Math.round(damageRaw * variance))
     : Math.max(0, Math.round(damageRaw * variance))
 
   const menLost = Math.min(damageFinal, defender.effective)

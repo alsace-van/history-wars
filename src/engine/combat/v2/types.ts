@@ -79,7 +79,17 @@ export interface CombatConfig {
   readonly matchupMatrix: Readonly<
     Record<AttackPhase, Readonly<Record<UnitKind, Readonly<Record<UnitKind, number>>>>>
   >
+  /**
+   * Phase 2.5 balance : plancher d'attrition naturelle proportionnel aux hommes engagés.
+   * Évite le bug "1 dégât à forces égales" (cf. 800I vs 800I plaine donnait power=resistance).
+   * Default 0.08 = 8 % : 200 hommes engagés → minimum 16 pertes/tour à égalité parfaite.
+   * Optionnel : fallback sur 0.08 si combat_config BDD encore au seed Phase 2 initial.
+   */
+  readonly baseAttritionRate?: number
 }
+
+/** Fallback runtime si combat_config BDD ne contient pas encore baseAttritionRate (seed Phase 2 initial). */
+export const DEFAULT_BASE_ATTRITION_RATE = 0.08
 
 /**
  * Config par defaut MVP Phase 2. Source de verite jusqu'a chargement BDD via combat_config.
@@ -89,6 +99,7 @@ export const DEFAULT_COMBAT_CONFIG: CombatConfig = Object.freeze({
   diceVariance: Object.freeze({ low: 0.85, range: 0.30 }),
   chargeMultipliers: Object.freeze({ two: 1.3, three: 1.4, fourPlus: 1.5 }),
   moraleThresholds: Object.freeze({ rout: 25, test: 30 }),
+  baseAttritionRate: DEFAULT_BASE_ATTRITION_RATE,
   matchupMatrix: Object.freeze({
     melee: Object.freeze({
       I: Object.freeze({ I: 1.0, C: 1.1, A: 1.5 }),

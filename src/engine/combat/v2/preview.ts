@@ -1,3 +1,4 @@
+// v1.1 (10/05/2026) — Phase 2 2.5 balance : bornes preview ≥ baseAttrition (mirror contact.ts)
 // v1.0 (10/05/2026) — Phase 2 2A.10 : preview combat v2 (breakdown sans rng pour UI)
 // Source : PLAN-PHASE-2-COMBAT-V2.md § 2A.10
 
@@ -10,7 +11,7 @@ import { KILLED_RATIO } from '../types'
 import { distancePrecision } from './distance'
 import { describeMatchup, getMatchupCoef } from './matchup'
 import type { AttackPhase, BonusBreakdownEntry, CombatConfig } from './types'
-import { DEFAULT_COMBAT_CONFIG } from './types'
+import { DEFAULT_BASE_ATTRITION_RATE, DEFAULT_COMBAT_CONFIG } from './types'
 
 export interface PreviewInput {
   readonly attacker: UnitState
@@ -82,19 +83,20 @@ export function previewCombatV2(input: PreviewInput): PreviewResultV2 {
 
   const attackPossible =
     baseAttackFactor > 0 && matchupCoef > 0 && (phase !== 'ranged' || precisionMult > 0)
+  const attritionRate = config.baseAttritionRate ?? DEFAULT_BASE_ATTRITION_RATE
+  const baseAttrition = Math.max(1, Math.round(menEngagedAttacker * attritionRate))
   const damageRawNoFloor = Math.max(0, power - resistance)
-  const damageRaw = attackPossible ? Math.max(1, damageRawNoFloor) : damageRawNoFloor
+  const damageRaw = attackPossible ? Math.max(baseAttrition, damageRawNoFloor) : damageRawNoFloor
 
-  // Bornes variance : low → low+range
+  // Bornes variance : low → low+range. Plancher attrition s'applique (cohérent avec contact.ts).
   const varianceLow = config.diceVariance.low
   const varianceHigh = config.diceVariance.low + config.diceVariance.range
 
   let damageMinFloat = damageRaw * varianceLow
   let damageMaxFloat = damageRaw * varianceHigh
-  // Plancher 1 sur les bornes si attack possible (cohérent avec contact.ts)
   if (attackPossible) {
-    damageMinFloat = Math.max(1, damageMinFloat)
-    damageMaxFloat = Math.max(1, damageMaxFloat)
+    damageMinFloat = Math.max(baseAttrition, damageMinFloat)
+    damageMaxFloat = Math.max(baseAttrition, damageMaxFloat)
   }
   const damageMin = Math.round(damageMinFloat)
   const damageMax = Math.round(damageMaxFloat)
