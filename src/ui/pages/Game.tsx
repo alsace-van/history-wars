@@ -1,7 +1,7 @@
+// v3.16 (10/05/2026) — Phase 2 2.5 : useSettings + useCombatAnimator (DamageFloater 3D + skip Espace)
 // v3.15 (10/05/2026) — Phase 2 2D.6 : splitMode state + case cible split via highlight grille (clic hex au lieu de bouton q/r)
 // v3.14 (10/05/2026) — câble useGameRealtime à la place du useRealtime inline (DRY + lignes < 600)
 // v3.13 (10/05/2026) — Phase 1.5 : highlight ennemi rapport combat filtré par visibleEnemyIds (fog of war)
-// v3.12 (10/05/2026) — Phase 1.5 : bouton "Centrer la vue" dans CombatResultPanel (cameraFocusCube)
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -13,6 +13,8 @@ import { useBattleUnits } from '@hooks/useBattleUnits'
 import { useCombatActions } from '@hooks/useCombatActions'
 import { useTacticalSelection } from '@hooks/useTacticalSelection'
 import { useCombatNotifications } from '@hooks/useCombatNotifications'
+import { useCombatAnimator } from '@hooks/useCombatAnimator'
+import { useSettings } from '@hooks/useSettings'
 import {
   isHost,
   isPlayerInGame,
@@ -38,7 +40,7 @@ import { aStar } from '@engine/movement'
 import { computeEnemyZoc } from '@engine/zoc'
 import { cn } from '@lib/cn'
 
-const TAG = '[Game v3.15]'
+const TAG = '[Game v3.16]'
 
 const MVP_CUBES: Cube[] = spiral({ q: 0, r: 0, s: 0 }, 5)
 const MVP_BOARD_KEYS = new Set(MVP_CUBES.map(cubeKey))
@@ -165,7 +167,6 @@ export function Game() {
     return map
   }, [players])
 
-  // Phase 2 2D.6 : splitMode = ratio en cours de sélection sur la grille (null = idle).
   const [splitMode, setSplitMode] = useState<SplitRatio | null>(null)
 
   const {
@@ -184,7 +185,6 @@ export function Game() {
     boardKeys: MVP_BOARD_KEYS, splitMode: splitMode !== null,
   })
 
-  // Reset si l'unité change ou si le tour bascule.
   useEffect(() => { setSplitMode(null) }, [selectedUnitId, isMyTurn])
 
   // ---- Notifications combat en onglets (cf piège #52) ----
@@ -196,6 +196,9 @@ export function Game() {
       playerTeams,
       units: unitStates,
     })
+
+  const { animationDurationMs } = useSettings()
+  const { floaters: damageFloaters, removeFloater } = useCombatAnimator({ notifications: combatNotifs, unitStates, animationDurationMs, enabled: showBattle })
 
   // Highlight unitéIds = mon unité + ennemi du rapport actif (ennemi filtré par fog of war : LoS depuis n'importe laquelle de mes unités).
   const [activeCombatNotif, setActiveCombatNotif] = useState<CombatNotification | null>(null)
@@ -494,6 +497,9 @@ export function Game() {
               onUnitClick={showBattle ? handleUnitClick : undefined}
               onUnitPointerOver={showBattle ? handleUnitPointerOver : undefined}
               onUnitPointerOut={showBattle ? handleUnitPointerOut : undefined}
+              damageFloaters={showBattle ? damageFloaters : undefined}
+              damageFloaterDurationMs={animationDurationMs}
+              onDamageFloaterDone={removeFloater}
             />
             <CombatResultPanel
               notifications={combatNotifs}
@@ -503,11 +509,7 @@ export function Game() {
               onFocusUnit={handleFocusUnit}
             />
             {hoveredEnemy && selectedUnit && (
-              <CombatPreviewTooltip
-                attacker={selectedUnit}
-                defender={hoveredEnemy}
-                screenPos={mousePos}
-              />
+              <CombatPreviewTooltip attacker={selectedUnit} defender={hoveredEnemy} screenPos={mousePos} />
             )}
             <div className="absolute top-3 left-3 px-3 py-2 bg-[rgba(15,23,42,0.85)] backdrop-blur-[6px] border border-[rgba(226,232,240,0.18)] rounded-[2px] text-[10px] text-muted-foreground tracking-[0.05em] uppercase pointer-events-none">
               <div>Drag : rotation · Drag droit : pan · Molette : zoom</div>
