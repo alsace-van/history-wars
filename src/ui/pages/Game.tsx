@@ -1,7 +1,7 @@
+// v3.7 (10/05/2026) — P1-L1C4-01/03 : tooltip combat + click ennemi targetable → attack
 // v3.6 (10/05/2026) — P1-L1C5-03 : intégration GameHUD + EndGameModal, retire boutons inline
 // v3.5 (10/05/2026) — P1-REFACTOR-02 : extraction useTacticalSelection (selection + reachable + tileStates)
 // v3.4 (10/05/2026) — P1-REFACTOR-01 : extraction BattleSidebar vers src/ui/game/BattleSidebar.tsx
-// v3.3 (10/05/2026) — Fix ring sélection (option A) : retire state 'selected' du tileStates
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -23,15 +23,17 @@ import { TeamPanel, type SlotData } from '@ui/game/TeamPanel'
 import { BattleSidebar } from '@ui/game/BattleSidebar'
 import { GameHUD } from '@ui/game/GameHUD'
 import { EndGameModal } from '@ui/game/EndGameModal'
+import { CombatPreviewTooltip } from '@ui/game/CombatPreviewTooltip'
 import { TacticalScene, buildMvpUnitPlacement } from '@/render'
 import { unitRowsToInstances, unitRowsToStates } from '@render/_data/unitAdapter'
+import type { UnitInstance } from '@render/types'
 import { spiral, cubeKey, type Cube } from '@engine/hex'
-import { type UnitState } from '@engine/units'
+import { getUnitStats, type UnitState } from '@engine/units'
 import { aStar } from '@engine/movement'
 import { computeEnemyZoc } from '@engine/zoc'
 import { cn } from '@lib/cn'
 
-const TAG = '[Game v3.6]'
+const TAG = '[Game v3.7]'
 
 const MVP_CUBES: Cube[] = spiral({ q: 0, r: 0, s: 0 }, 5)
 const MVP_BOARD_KEYS = new Set(MVP_CUBES.map(cubeKey))
@@ -158,14 +160,15 @@ export function Game() {
   )
   const isMyTurn = inProgress && myTeam === activeTeam
 
-  // ---- Selection + reachable + tileStates (extrait via hook) ----
+  // ---- Selection + reachable + tileStates + targetable (extrait via hook) ----
   const {
     selectedUnitId,
     selectedUnit,
     reachableMap,
+    targetableUnitIds,
     tileStates,
     exhaustedUnitIds,
-    handleUnitClick,
+    handleUnitClick: hookHandleUnitClick,
     clearSelection,
   } = useTacticalSelection({
     inProgress,
@@ -175,6 +178,36 @@ export function Game() {
     unitStates,
     boardKeys: MVP_BOARD_KEYS,
   })
+
+  // ---- Hover ennemi targetable → tooltip combat ----
+  const [hoveredEnemyId, setHoveredEnemyId] = useState<string | null>(null)
+  const [mousePos, setMousePos] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
+
+  const handleSceneMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (!hoveredEnemyId) return // pas de tooltip → inutile de mettre a jour
+    const rect = e.currentTarget.getBoundingClientRect()
+    setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top })
+  }, [hoveredEnemyId])
+
+  const handleUnitPointerOver = useCallback((unit: UnitInstance) => {
+    if (targetableUnitIds.has(unit.id)) setHoveredEnemyId(unit.id)
+  }, [targetableUnitIds])
+
+  const handleUnitPointerOut = useCallback((unit: UnitInstance) => {
+    setHoveredEnemyId(prev => (prev === unit.id ? null : prev))
+  }, [])
+
+  const hoveredEnemy = useMemo<UnitState | null>(
+    () => unitStates.find(u => u.id === hoveredEnemyId) ?? null,
+    [unitStates, hoveredEnemyId]
+  )
+
+  // Reset hover si selection change (l'ennemi peut sortir du targetableUnitIds)
+  useEffect(() => {
+    if (hoveredEnemyId && !targetableUnitIds.has(hoveredEnemyId)) {
+      setHoveredEnemyId(null)
+    }
+  }, [hoveredEnemyId, targetableUnitIds])
 
   // ---- Animation paths : Map<unitId, path[]> consommee par UnitPlaceholder ----
   const [unitPaths, setUnitPaths] = useState<Map<string, ReadonlyArray<Cube>>>(new Map())
@@ -187,6 +220,42 @@ export function Game() {
       return next
     })
   }, [])
+
+  // ---- Handler unit click (composite : attack si ennemi targetable, sinon toggle) ----
+  const handleUnitClick = useCallback(
+    async (unit: { id: string; team: Team }) => {
+      if (!gameId || !inProgress) return
+      // Click ennemi targetable → attack
+      if (selectedUnit && unit.team !== myTeam && targetableUnitIds.has(unit.id)) {
+        if (actionsBusy) return
+        const atkStats = getUnitStats(selectedUnit.kind)
+        const isRanged = atkStats.range > 1
+        const res = await submitAction(gameId, {
+          type: isRanged ? 'attack_ranged' : 'attack_melee',
+          payload: { unit_id: selectedUnit.id, target_unit_id: unit.id },
+        })
+        if (res.ok) {
+          clearSelection()
+          setHoveredEnemyId(null)
+          toast.success(isRanged ? 'Tir effectué.' : 'Charge engagée.')
+        }
+        return
+      }
+      // Sinon delegue au hook (toggle selection mes unites)
+      hookHandleUnitClick(unit)
+    },
+    [
+      gameId,
+      inProgress,
+      selectedUnit,
+      myTeam,
+      targetableUnitIds,
+      actionsBusy,
+      submitAction,
+      clearSelection,
+      hookHandleUnitClick,
+    ]
+  )
 
   // ---- Handler tile click (move) — reste ici car couple a submitAction + unitPaths ----
   const handleTileClick = useCallback(
@@ -373,19 +442,32 @@ export function Game() {
             </div>
           </div>
 
-          <div className="flex-1 relative min-h-0">
+          <div
+            className="flex-1 relative min-h-0"
+            onMouseMove={showBattle ? handleSceneMouseMove : undefined}
+          >
             <TacticalScene
               scale={game.current_scale}
               cubes={MVP_CUBES}
               units={renderUnits}
               tileStates={showBattle ? tileStates : undefined}
               selectedUnitId={selectedUnitId}
+              targetableUnitIds={showBattle ? targetableUnitIds : undefined}
               exhaustedUnitIds={showBattle ? exhaustedUnitIds : undefined}
               unitPaths={showBattle ? unitPaths : undefined}
               onUnitPathDone={onUnitPathDone}
               onTileClick={showBattle ? handleTileClick : undefined}
               onUnitClick={showBattle ? handleUnitClick : undefined}
+              onUnitPointerOver={showBattle ? handleUnitPointerOver : undefined}
+              onUnitPointerOut={showBattle ? handleUnitPointerOut : undefined}
             />
+            {hoveredEnemy && selectedUnit && (
+              <CombatPreviewTooltip
+                attacker={selectedUnit}
+                defender={hoveredEnemy}
+                screenPos={mousePos}
+              />
+            )}
             <div className="absolute top-3 left-3 px-3 py-2 bg-[rgba(15,23,42,0.85)] backdrop-blur-[6px] border border-[rgba(226,232,240,0.18)] rounded-[2px] text-[10px] text-muted-foreground tracking-[0.05em] uppercase pointer-events-none">
               <div>Drag : rotation · Drag droit : pan · Molette : zoom</div>
             </div>
