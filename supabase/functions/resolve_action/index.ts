@@ -1,3 +1,4 @@
+// v1.2a (10/05/2026) — Phase 1.5 fix : SELECT incluait pas wounded → blessés écrasés à chaque round
 // v1.2 (10/05/2026) — Phase 1.5 : split casualties killed/woundedAdd, UPDATE units.wounded
 // v1.1 (09/05/2026) — Phase 1 L1B.4b : handlers attack_ranged + attack_melee + riposte melee
 // v1.0 (09/05/2026) — Phase 1 L1B.3 : EF resolve_action dispatcher (cas 'move' uniquement)
@@ -35,7 +36,7 @@ import { computeEnemyZoc, type UnitForZoc } from '../_shared/engine-port/zoc/ind
 import { resolveMelee, resolveRanged, seededRng } from '../_shared/engine-port/combat/index.ts'
 import { hasLineOfSight } from '../_shared/engine-port/los/index.ts'
 
-const TAG = '[resolve_action v1.2]'
+const TAG = '[resolve_action v1.2a]'
 
 interface UnitRow {
   id: string
@@ -139,7 +140,7 @@ Deno.serve(async (req: Request) => {
     // 6. Charger unites
     const { data: unitsRaw, error: unitsErr } = await admin
       .from('units')
-      .select('id, game_id, team, kind, q, r, hp, hp_max, morale, morale_max, routed, has_moved, has_attacked')
+      .select('id, game_id, team, kind, q, r, hp, hp_max, wounded, morale, morale_max, routed, has_moved, has_attacked')
       .eq('game_id', gameId)
 
     if (unitsErr || !unitsRaw) {
