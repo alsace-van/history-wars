@@ -1,10 +1,11 @@
+// v2.0a (10/05/2026) — Phase 2 2D.6 : HexTileState 'split-target' (case adjacente libre pour scinder)
 // v2.0 (10/05/2026) — Phase 2 2E.1 : UnitInstance enrichi avec effective/effectiveMax (Phase 2 effectif elastique)
 // v1.2 (10/05/2026) — Phase 1.5 : UnitInstance enrichi avec hp/hpMax/wounded pour scale + barre PV
 // v1.0 (09/05/2026) — Types render partages
 import type { Cube } from '@engine/hex'
 import type { Team, UnitKind } from '@/types/game'
 
-export type HexTileState = 'idle' | 'hover' | 'selected' | 'reachable' | 'targetable' | 'dangerous'
+export type HexTileState = 'idle' | 'hover' | 'selected' | 'reachable' | 'targetable' | 'dangerous' | 'split-target'
 export type HexTileVisibility = 'visible' | 'fog' | 'hidden'
 
 export interface UnitInstance {

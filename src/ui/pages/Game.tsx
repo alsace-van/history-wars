@@ -1,7 +1,7 @@
+// v3.15 (10/05/2026) — Phase 2 2D.6 : splitMode state + case cible split via highlight grille (clic hex au lieu de bouton q/r)
 // v3.14 (10/05/2026) — câble useGameRealtime à la place du useRealtime inline (DRY + lignes < 600)
 // v3.13 (10/05/2026) — Phase 1.5 : highlight ennemi rapport combat filtré par visibleEnemyIds (fog of war)
 // v3.12 (10/05/2026) — Phase 1.5 : bouton "Centrer la vue" dans CombatResultPanel (cameraFocusCube)
-// v3.11 (10/05/2026) — Phase 1.5 : CombatResultPanel onglets + highlightedUnitIds plateau (rapport actif)
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -24,6 +24,7 @@ import { TeamPanel, type SlotData } from '@ui/game/TeamPanel'
 import { BattleSidebar } from '@ui/game/BattleSidebar'
 import { GameHUD } from '@ui/game/GameHUD'
 import { GameTopBar } from '@ui/game/GameTopBar'
+import { Bracket } from '@ui/game/Bracket'
 import { EndGameModal } from '@ui/game/EndGameModal'
 import { CombatPreviewTooltip } from '@ui/game/CombatPreviewTooltip'
 import { CombatResultPanel } from '@ui/game/CombatResultPanel'
@@ -32,12 +33,12 @@ import { TacticalScene, buildMvpUnitPlacement } from '@/render'
 import { unitRowsToInstances, unitRowsToStates } from '@render/_data/unitAdapter'
 import type { UnitInstance } from '@render/types'
 import { spiral, cubeKey, type Cube } from '@engine/hex'
-import { getUnitStats, type UnitState } from '@engine/units'
+import { getUnitStats, type UnitState, type SplitRatio } from '@engine/units'
 import { aStar } from '@engine/movement'
 import { computeEnemyZoc } from '@engine/zoc'
 import { cn } from '@lib/cn'
 
-const TAG = '[Game v3.14]'
+const TAG = '[Game v3.15]'
 
 const MVP_CUBES: Cube[] = spiral({ q: 0, r: 0, s: 0 }, 5)
 const MVP_BOARD_KEYS = new Set(MVP_CUBES.map(cubeKey))
@@ -164,7 +165,9 @@ export function Game() {
     return map
   }, [players])
 
-  // ---- Selection + reachable + tileStates + targetable + visibleEnemyIds (extrait via hook) ----
+  // Phase 2 2D.6 : splitMode = ratio en cours de sélection sur la grille (null = idle).
+  const [splitMode, setSplitMode] = useState<SplitRatio | null>(null)
+
   const {
     selectedUnitId,
     selectedUnit,
@@ -173,16 +176,16 @@ export function Game() {
     visibleEnemyIds,
     tileStates,
     exhaustedUnitIds,
+    splitTargetKeys,
     handleUnitClick: hookHandleUnitClick,
     clearSelection,
   } = useTacticalSelection({
-    inProgress,
-    isMyTurn,
-    myTeam,
-    activeTeam,
-    unitStates,
-    boardKeys: MVP_BOARD_KEYS,
+    inProgress, isMyTurn, myTeam, activeTeam, unitStates,
+    boardKeys: MVP_BOARD_KEYS, splitMode: splitMode !== null,
   })
+
+  // Reset si l'unité change ou si le tour bascule.
+  useEffect(() => { setSplitMode(null) }, [selectedUnitId, isMyTurn])
 
   // ---- Notifications combat en onglets (cf piège #52) ----
   const { notifications: combatNotifs, removeNotification: removeCombatNotif, clear: clearCombatNotifs } =
@@ -297,12 +300,22 @@ export function Game() {
     ]
   )
 
-  // ---- Handler tile click (move) — reste ici car couple a submitAction + unitPaths ----
+  // ---- Handler tile click (move OU split selon splitMode) ----
   const handleTileClick = useCallback(
     async (cube: Cube) => {
       if (!gameId || !inProgress) return
       if (!selectedUnit) return
       const key = cubeKey(cube)
+
+      if (splitMode !== null) {
+        if (!splitTargetKeys.has(key)) { setSplitMode(null); return }
+        if (actionsBusy) return
+        const res = await submitAction(gameId, { type: 'split_unit',
+          payload: { unit_id: selectedUnit.id, target_q: cube.q, target_r: cube.r, ratio: splitMode } })
+        if (res.ok) { setSplitMode(null); clearSelection() }
+        return
+      }
+
       if (!reachableMap.has(key)) {
         clearSelection()
         return
@@ -337,7 +350,7 @@ export function Game() {
         })
       }
     },
-    [gameId, inProgress, selectedUnit, reachableMap, actionsBusy, submitAction, unitStates, clearSelection]
+    [gameId, inProgress, selectedUnit, splitMode, splitTargetKeys, reachableMap, actionsBusy, submitAction, unitStates, clearSelection]
   )
 
   async function handleLeave() {
@@ -531,6 +544,9 @@ export function Game() {
                 selectedUnit={selectedUnit}
                 allUnits={unitStates}
                 gameId={game.id}
+                splitActive={splitMode !== null}
+                onEnterSplitMode={ratio => setSplitMode(ratio)}
+                onExitSplitMode={() => setSplitMode(null)}
                 blueSlots={blueSlots}
                 redSlots={redSlots}
                 hostUserId={hostUserId}
@@ -579,12 +595,3 @@ export function Game() {
   )
 }
 
-function Bracket({ position }: { position: 'tl' | 'tr' | 'bl' | 'br' }) {
-  const cls = {
-    tl: 'top-1 left-1 border-r-0 border-b-0',
-    tr: 'top-1 right-1 border-l-0 border-b-0',
-    bl: 'bottom-1 left-1 border-r-0 border-t-0',
-    br: 'bottom-1 right-1 border-l-0 border-t-0',
-  }[position]
-  return <span aria-hidden className={cn('absolute w-[10px] h-[10px] border border-tactica-amber opacity-50', cls)} />
-}

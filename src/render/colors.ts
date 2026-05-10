@@ -29,6 +29,9 @@ export const COLORS = {
   // L1C.4 : dangerous = orange amorti (ZoC ennemie, traversee couteuse)
   tileDangerous: 0x5a3514,
   tileDangerousEdge: 0xfb923c,
+  // Phase 2 2D.6 : split-target = ambre lumineux (case adjacente libre pour scinder une unite)
+  tileSplitTarget: 0x4a3a14,
+  tileSplitTargetEdge: 0xfacc15,
 
   // Unit highlights
   unitSelectedRing: 0xef9f27, // amber autour cylindre selectionne
