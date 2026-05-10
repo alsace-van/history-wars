@@ -1,3 +1,4 @@
+// v1.2 (10/05/2026) — Phase 1.5 : tabs (notifications array + removeNotification) + attackerId/defenderId pour highlight
 // v1.1 (10/05/2026) — Phase 1.5 fix UX : queue + state au lieu de toasts éphémères (cf piège #52)
 // v1.0 (10/05/2026) — Phase 1.5 P1.5-NOTIF-01 : Realtime listener game_actions → toasts asymétriques
 import { useCallback, useRef, useState } from 'react'
@@ -60,8 +61,14 @@ const TEAM_LABEL: Record<Team, string> = {
 export interface CombatNotification {
   /** ID unique = action.id en BDD (stable, pas de doublon a la re-souscription Realtime). */
   id: string
+  /** Tour ou s'est resolu le combat (pour libelle d'onglet). */
+  turn: number
   /** Type d'engagement. */
   kind: 'melee' | 'ranged'
+  /** ID de l'unite attaquante (pour highlight visuel sur le plateau). */
+  attackerId: string
+  /** ID de l'unite defenseuse (pour highlight visuel sur le plateau). */
+  defenderId: string
   /** Camp de l'attaquant. */
   attackerTeam: Team
   /** Camp du defenseur (= adverse de l'attaquant). */
@@ -91,13 +98,11 @@ interface UseCombatNotificationsOptions {
 }
 
 interface UseCombatNotificationsResult {
-  /** Tete de la queue (combat en cours d'affichage). null si aucun en attente. */
-  current: CombatNotification | null
-  /** Nombre total en queue (ex: "1 / 3"). */
-  pendingCount: number
-  /** Ferme la notif courante et passe a la suivante (si pending > 1). */
-  dismiss: () => void
-  /** Vide toute la queue (utile au changement de tour ou de partie). */
+  /** Liste de toutes les notifications recues (ordre d'arrivee). Le composant CombatResultPanel les affiche en onglets. */
+  notifications: CombatNotification[]
+  /** Retire une notification par id (X de l'onglet). */
+  removeNotification: (id: string) => void
+  /** Vide toute la liste (utile au changement de partie ou bouton "tout fermer"). */
   clear: () => void
 }
 
@@ -120,7 +125,7 @@ export function useCombatNotifications({
   playerTeams,
   units,
 }: UseCombatNotificationsOptions): UseCombatNotificationsResult {
-  const [queue, setQueue] = useState<CombatNotification[]>([])
+  const [notifications, setNotifications] = useState<CombatNotification[]>([])
 
   // Refs pour acceder aux dernieres valeurs sans re-subscribe a chaque render
   const viewerTeamRef = useRef(viewerTeam)
@@ -142,8 +147,8 @@ export function useCombatNotifications({
             onChange: payload => {
               const notif = parseAction(payload, viewerTeamRef.current, playerTeamsRef.current, unitsRef.current)
               if (notif) {
-                setQueue(prev => {
-                  // Anti-doublon : si l'id est deja en queue, ignore
+                setNotifications(prev => {
+                  // Anti-doublon : si l'id est deja en liste, ignore
                   if (prev.some(n => n.id === notif.id)) return prev
                   return [...prev, notif]
                 })
@@ -154,20 +159,15 @@ export function useCombatNotifications({
       : undefined,
   })
 
-  const dismiss = useCallback(() => {
-    setQueue(prev => prev.slice(1))
+  const removeNotification = useCallback((id: string) => {
+    setNotifications(prev => prev.filter(n => n.id !== id))
   }, [])
 
   const clear = useCallback(() => {
-    setQueue([])
+    setNotifications([])
   }, [])
 
-  return {
-    current: queue[0] ?? null,
-    pendingCount: queue.length,
-    dismiss,
-    clear,
-  }
+  return { notifications, removeNotification, clear }
 }
 
 function parseAction(
@@ -223,7 +223,10 @@ function parseAction(
 
   return {
     id: newRow.id,
+    turn: newRow.turn,
     kind: result.kind,
+    attackerId: result.attacker_id,
+    defenderId: result.defender_id,
     attackerTeam,
     defenderTeam,
     isMyAttack,
