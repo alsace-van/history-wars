@@ -2,6 +2,53 @@
 
 ---
 
+## Session 13 &mdash; 10/05/2026 &mdash; Phase 1.5 polish : wounded + visuels asymétriques + toasts combat
+
+**Objectif** : combler 2 trous UX signalés post-Phase 1 (pas de retour visuel des combats sans cliquer ; pas de notion de blessés distinguable de tués). Préparation Phase 3 unité Infirmier.
+
+**Audit + plan livrés** : `PLAN-PHASE-1-5-AUDIT.md` (PR #9). 9 TASKs sur 5 vagues, 4 PRs.
+
+**Fait** :
+- **Migration 011** appliquée sur Supabase prod (`abhbkdyoknrsdavimbpr`) via MCP : `units.wounded integer NOT NULL DEFAULT 0 check (>= 0)`. Advisors clean.
+- **Engine** v1.1 : `UnitState.wounded`, `CombatResult.{killed, woundedAdd, actualDamage, defenderWoundedAfter}`, helper `splitCasualties()` ratio 60/40, `CombatPreview` enrichi avec bornes split.
+- **EF `resolve_action` v1.2** : engine-port mirror, UPDATE `units.wounded` côté défenseur + côté attaquant si riposte mêlée, snapshot `AttackResult` enrichi.
+- **`useTacticalSelection` v1.1** déjà fait en Phase 1 — pas re-touché.
+- **Render asymétrique** :
+  - `UnitInstance` enrichi (hp/hpMax/wounded optionnels) + `unitRowToInstance` map.
+  - `UnitPlaceholder` v1.8 : scale soldat selon `(hp+wounded)/hpMax` lerp `[0.65, 1.0]`, hitbox + ring stables (baseScale).
+  - `UnitHealthBar` (NEW, 73 lignes) : Billboard 3-segments vert/orange/sombre, **own only**.
+  - Effectif chiffré sous le label kind aussi conditionné `viewerTeam` (fog of war confirmé).
+- **`useCombatNotifications`** (NEW, 170 lignes) : Realtime listener INSERT `game_actions` filter `game_id`, parser asymétrique :
+  - Attaquant moi → toast vert `"Charge : X ennemis abattus"` (kills uniquement)
+  - Défenseur moi → toast rouge `"Cavalerie sous attaque — X morts, Y blessés, Z restants"` (full info)
+  - Riposte mêlée : 2 toasts distincts selon perspective
+  - Observateur tiers (4-joueurs en équipe Phase 4 future) → silencieux
+- **`CombatPreviewTooltip` v1.2** : retire ligne `PV ennemi exact` (PR #12) puis ajoute split estimé `≈3–5 tués · ≈1–2 blessés` sous les dégâts.
+- **`UnitInspector` v1.1** : barre HP devient 2-segments flex (vert hp + orange wounded) + ligne stats `X blessés · Y morts au combat`.
+
+**PRs livrées** :
+- #9 audit (mergée)
+- #10 wounded data model + scale + barre PV (mergée)
+- #11 fog count chiffré (mergée)
+- #12 fog PV ennemi tooltip (mergée)
+- #13 (à ouvrir) NOTIF + PREV + INSP + DOCS
+
+**Pièges ajoutés** :
+- **#50** Realtime payload `INSERT game_actions` arrive parfois avant le DELETE/UPDATE de `units` → lookup unit kind cote client peut être null. Solution : fallback générique "Unité ennemie".
+- **#51** Le `result` JSONB d'`AttackResult` doit être typé en mirror entre client et EF. Toute évolution → 2 fichiers à update.
+
+**Backlog enrichi** :
+- Rebalance ratio split par UnitKind (artillerie 0.7 plus létal, mêlée 0.55-0.6).
+- Unité Infirmier (Phase 3) : action `heal` qui transfère `wounded → hp`.
+- Wounded reset partiel en fin de tour (récupération naturelle 5 % ?).
+- Toast combat fusion : si 2 actions de combat dans le même seconde côté défenseur, fusionner en un seul toast.
+
+**Phase 1.5 — état** : ✅ complète (sous réserve merge PR #13).
+
+**Prochain Lot** : Phase 2 — IA solo (audit + plan à produire en début de Phase 2).
+
+---
+
 ## Session 12 &mdash; 10/05/2026 &mdash; Phase 1 fin : clôture L1C (combat MVP tactique complet)
 
 **Contexte** : reprise après session 5 (WIP-PHASE-1-SESSION-5.md), bug ring sélection ouvert, L1C.4 + L1C.5 à démarrer.

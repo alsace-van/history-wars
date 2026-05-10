@@ -6,6 +6,14 @@ Format : 1-2 lignes par item, étiquettes entre crochets.
 
 ---
 
+## Phase 1.5 — backlog enrichi
+
+- **[balance]** Rebalance ratio split killed/wounded par `UnitKind` : artillerie 0.7 (plus létal), cavalerie 0.65, infanterie 0.55-0.6, futurs siège 0.85 (massacre). Actuellement uniforme 0.6.
+- **[gameplay]** Unité Infirmier (Phase 3) : action `heal` qui transfère `wounded → hp` au taux X/tour avec portée 1 hex. Consomme un point d'ordre.
+- **[gameplay]** Récupération naturelle wounded en fin de tour : 5 % du `wounded` total transféré vers `hp` si l'unité n'a pas combattu et n'est pas en ZdC ennemie. Pré-requis Infirmier ou en complément.
+- **[ux]** Fusion toasts combat rapprochés : si 2+ actions de combat sur la même unité du défenseur dans la même seconde, agréger en 1 toast au lieu d'en empiler 2-3.
+- **[piège #50]** Realtime payload INSERT `game_actions` peut arriver avant le DELETE/UPDATE `units` → lookup `kind` côté client null. Mitigation actuelle = fallback "Unité ennemie". Futur : enrichir `AttackResult` côté EF avec `attacker_kind` + `defender_kind`.
+
 ## Phase 1 — reports / dette technique
 
 - **[asset]** Compresser `public/models/soldier.glb` (~5 Mo, 10 % du bundle) via Draco + KTX2 → cible < 500 Ko. Impact PWA install size.

@@ -1,7 +1,7 @@
+// v3.9 (10/05/2026) — Phase 1.5 P1.5-NOTIF-01 : useCombatNotifications + retire toast local attaque
 // v3.8 (10/05/2026) — Phase 1.5 : viewerTeam → barre PV asymetrique own-only + scale par hp ratio
 // v3.7 (10/05/2026) — P1-L1C4-01/03 : tooltip combat + click ennemi targetable → attack
 // v3.6 (10/05/2026) — P1-L1C5-03 : intégration GameHUD + EndGameModal, retire boutons inline
-// v3.5 (10/05/2026) — P1-REFACTOR-02 : extraction useTacticalSelection (selection + reachable + tileStates)
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -12,6 +12,7 @@ import { useOnlineStatus } from '@hooks/useOnlineStatus'
 import { useBattleUnits } from '@hooks/useBattleUnits'
 import { useCombatActions } from '@hooks/useCombatActions'
 import { useTacticalSelection } from '@hooks/useTacticalSelection'
+import { useCombatNotifications } from '@hooks/useCombatNotifications'
 import {
   isHost,
   isPlayerInGame,
@@ -33,7 +34,7 @@ import { aStar } from '@engine/movement'
 import { computeEnemyZoc } from '@engine/zoc'
 import { cn } from '@lib/cn'
 
-const TAG = '[Game v3.8]'
+const TAG = '[Game v3.9]'
 
 const MVP_CUBES: Cube[] = spiral({ q: 0, r: 0, s: 0 }, 5)
 const MVP_BOARD_KEYS = new Set(MVP_CUBES.map(cubeKey))
@@ -160,6 +161,15 @@ export function Game() {
   )
   const isMyTurn = inProgress && myTeam === activeTeam
 
+  // Lookup actor_user_id → team pour useCombatNotifications (toasts asymetriques)
+  const playerTeams = useMemo<Map<string, Team>>(() => {
+    const map = new Map<string, Team>()
+    for (const p of players) {
+      if (p.user_id && p.team) map.set(p.user_id, p.team)
+    }
+    return map
+  }, [players])
+
   // ---- Selection + reachable + tileStates + targetable (extrait via hook) ----
   const {
     selectedUnitId,
@@ -177,6 +187,15 @@ export function Game() {
     activeTeam,
     unitStates,
     boardKeys: MVP_BOARD_KEYS,
+  })
+
+  // ---- Toasts asymetriques sur INSERT game_actions (Phase 1.5 P1.5-NOTIF-01) ----
+  useCombatNotifications({
+    gameId: gameId ?? null,
+    viewerTeam: showBattle ? myTeam : null,
+    enabled: showBattle,
+    playerTeams,
+    units: unitStates,
   })
 
   // ---- Hover ennemi targetable → tooltip combat ----
@@ -237,7 +256,7 @@ export function Game() {
         if (res.ok) {
           clearSelection()
           setHoveredEnemyId(null)
-          toast.success(isRanged ? 'Tir effectué.' : 'Charge engagée.')
+          // Toast detaille gere par useCombatNotifications (Realtime INSERT game_actions)
         }
         return
       }

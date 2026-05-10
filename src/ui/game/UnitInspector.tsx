@@ -1,3 +1,4 @@
+// v1.1 (10/05/2026) — Phase 1.5 P1.5-INSP-01 : barre HP multi-segment vert/orange + ligne blessés
 // v1.0 (09/05/2026) — L1C.3 : panel inspector unite selectionnee (nom, hp, morale, actions dispo)
 import type { UnitState } from '@engine/units'
 import { getUnitStats } from '@engine/units'
@@ -17,6 +18,8 @@ const KIND_LABEL: Record<string, string> = {
 export function UnitInspector({ unit, isMyUnit, isMyTurn }: UnitInspectorProps) {
   const stats = getUnitStats(unit.kind)
   const hpPct = Math.max(0, Math.min(100, (unit.hp / unit.hpMax) * 100))
+  const woundedPct = Math.max(0, Math.min(100 - hpPct, (unit.wounded / unit.hpMax) * 100))
+  const killedCumul = Math.max(0, unit.hpMax - unit.hp - unit.wounded)
   const moralePct = Math.max(0, Math.min(100, (unit.morale / unit.moraleMax) * 100))
 
   const teamColor = unit.team === 'blue' ? '#3b82f6' : '#ef4444'
@@ -53,7 +56,7 @@ export function UnitInspector({ unit, isMyUnit, isMyTurn }: UnitInspectorProps) 
         </div>
       </div>
 
-      {/* HP bar */}
+      {/* HP bar — 3 segments : actifs (vert), blessés (orange), morts cumul (sombre) */}
       <div>
         <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.12em] text-muted-foreground mb-1">
           <span>Effectif</span>
@@ -61,7 +64,7 @@ export function UnitInspector({ unit, isMyUnit, isMyTurn }: UnitInspectorProps) 
             {unit.hp} / {unit.hpMax}
           </span>
         </div>
-        <div className="h-[6px] bg-[rgba(226,232,240,0.10)] rounded-[1px] overflow-hidden">
+        <div className="h-[6px] bg-[rgba(15,23,42,0.6)] rounded-[1px] overflow-hidden flex">
           <div
             className="h-full transition-all"
             style={{
@@ -69,7 +72,17 @@ export function UnitInspector({ unit, isMyUnit, isMyTurn }: UnitInspectorProps) 
               background: hpPct > 60 ? '#22c55e' : hpPct > 30 ? '#eab308' : '#ef4444',
             }}
           />
+          <div
+            className="h-full transition-all"
+            style={{ width: `${woundedPct}%`, background: '#fb923c' }}
+          />
         </div>
+        {(unit.wounded > 0 || killedCumul > 0) && (
+          <div className="flex justify-between text-[9px] tabular-nums mt-[3px]">
+            <span className="text-[#fb923c]">{unit.wounded} blessés</span>
+            <span className="text-muted-foreground">{killedCumul} morts au combat</span>
+          </div>
+        )}
       </div>
 
       {/* Morale bar */}
