@@ -1,7 +1,7 @@
+// v3.13 (10/05/2026) — Phase 1.5 : highlight ennemi rapport combat filtré par visibleEnemyIds (fog of war)
 // v3.12 (10/05/2026) — Phase 1.5 : bouton "Centrer la vue" dans CombatResultPanel (cameraFocusCube)
 // v3.11 (10/05/2026) — Phase 1.5 : CombatResultPanel onglets + highlightedUnitIds plateau (rapport actif)
 // v3.10 (10/05/2026) — Phase 1.5 fix UX : remplace toasts ephemères par CombatResultPanel persistant (X close)
-// v3.9 (10/05/2026) — Phase 1.5 P1.5-NOTIF-01 : useCombatNotifications + retire toast local attaque
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -36,7 +36,7 @@ import { aStar } from '@engine/movement'
 import { computeEnemyZoc } from '@engine/zoc'
 import { cn } from '@lib/cn'
 
-const TAG = '[Game v3.12]'
+const TAG = '[Game v3.13]'
 
 const MVP_CUBES: Cube[] = spiral({ q: 0, r: 0, s: 0 }, 5)
 const MVP_BOARD_KEYS = new Set(MVP_CUBES.map(cubeKey))
@@ -172,12 +172,13 @@ export function Game() {
     return map
   }, [players])
 
-  // ---- Selection + reachable + tileStates + targetable (extrait via hook) ----
+  // ---- Selection + reachable + tileStates + targetable + visibleEnemyIds (extrait via hook) ----
   const {
     selectedUnitId,
     selectedUnit,
     reachableMap,
     targetableUnitIds,
+    visibleEnemyIds,
     tileStates,
     exhaustedUnitIds,
     handleUnitClick: hookHandleUnitClick,
@@ -201,12 +202,20 @@ export function Game() {
       units: unitStates,
     })
 
-  // Highlight unitéIds = attaquant + défenseur du rapport actif. Le panel notifie via onActiveChange.
+  // Highlight unitéIds = mon unité + ennemi du rapport actif (ennemi filtré par fog of war : LoS depuis n'importe laquelle de mes unités).
   const [activeCombatNotif, setActiveCombatNotif] = useState<CombatNotification | null>(null)
   const highlightedUnitIds = useMemo<Set<string>>(() => {
     if (!activeCombatNotif) return new Set()
-    return new Set([activeCombatNotif.attackerId, activeCombatNotif.defenderId])
-  }, [activeCombatNotif])
+    const out = new Set<string>()
+    const myUnitId = activeCombatNotif.isMyAttack ? activeCombatNotif.attackerId : activeCombatNotif.defenderId
+    const enemyUnitId = activeCombatNotif.isMyAttack ? activeCombatNotif.defenderId : activeCombatNotif.attackerId
+    out.add(myUnitId)
+    // Fog of war : l'ennemi ne s'illumine que s'il est observé par AU MOINS une de mes unités
+    if (visibleEnemyIds.has(enemyUnitId)) {
+      out.add(enemyUnitId)
+    }
+    return out
+  }, [activeCombatNotif, visibleEnemyIds])
 
   // Phase 1.5 : focus camera sur une unité depuis le bouton "Centrer" de CombatResultPanel
   const [cameraFocusCube, setCameraFocusCube] = useState<Cube | null>(null)

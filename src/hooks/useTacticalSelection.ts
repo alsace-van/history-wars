@@ -1,3 +1,4 @@
+// v1.2 (10/05/2026) — Phase 1.5 : ajout visibleEnemyIds (fog of war via LoS depuis toutes mes unités)
 // v1.1 (10/05/2026) — P1-L1C4-02 : ajout targetableUnitIds + dangerousZocKeys + tileStates 'dangerous'
 // v1.0 (10/05/2026) — P1-REFACTOR-02 : extraction de la logique selection/reachable/tileStates depuis Game.tsx
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -30,6 +31,8 @@ interface UseTacticalSelectionResult {
   targetableUnitIds: Set<string>
   /** Set des cubeKey en ZoC ennemie ; entrer y stoppe le mouvement (cf piege #41) */
   dangerousZocKeys: Set<string>
+  /** Set des unitId ennemis observes par AU MOINS une de mes unites (LoS, fog of war Phase 1.5). */
+  visibleEnemyIds: Set<string>
   /** Map<cubeKey, HexTileState> a passer a TacticalScene */
   tileStates: Map<string, HexTileState>
   /** Set des unites qui ont epuise leurs ordres (visuellement attenuees) */
@@ -118,6 +121,31 @@ export function useTacticalSelection(
     return out
   }, [selectedUnit, isSelectedMine, isMyTurn, unitStates])
 
+  // Phase 1.5 fog of war : un ennemi est visible si AU MOINS une de mes unités non-routed a LoS sur lui.
+  // Blockers LoS = tous les corps SAUF l'observateur et la cible (cohérent avec hasLineOfSight côté EF).
+  const visibleEnemyIds = useMemo<Set<string>>(() => {
+    const out = new Set<string>()
+    if (!myTeam) return out
+    const myObservers = unitStates.filter(u => u.team === myTeam && !u.routed)
+    if (myObservers.length === 0) return out
+    for (const enemy of unitStates) {
+      if (enemy.team === myTeam) continue
+      for (const observer of myObservers) {
+        const blockers = new Set<string>()
+        for (const u of unitStates) {
+          if (u.id === observer.id) continue
+          if (u.id === enemy.id) continue
+          blockers.add(cubeKey(u.position))
+        }
+        if (hasLineOfSight(observer.position, enemy.position, blockers)) {
+          out.add(enemy.id)
+          break
+        }
+      }
+    }
+    return out
+  }, [myTeam, unitStates])
+
   const tileStates = useMemo<Map<string, HexTileState>>(() => {
     const map = new Map<string, HexTileState>()
     for (const k of reachableMap.keys()) {
@@ -160,6 +188,7 @@ export function useTacticalSelection(
     reachableMap,
     targetableUnitIds,
     dangerousZocKeys: enemyZoc,
+    visibleEnemyIds,
     tileStates,
     exhaustedUnitIds,
     handleUnitClick,
