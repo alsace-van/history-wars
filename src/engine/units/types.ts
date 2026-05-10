@@ -1,3 +1,4 @@
+// v1.1 (10/05/2026) — Phase 1.5 : ajout `wounded` (soldats blesses, soignables Phase 3)
 // v1.0 (09/05/2026) — Phase 1 L1A.1 : types unite tactique
 // Source : PLAN-PHASE-1.md § 2.2 (engine/units/types.ts)
 // Frontiere engine/ : zero React, zero Three, zero Supabase
@@ -32,8 +33,16 @@ export interface UnitState {
   readonly kind: UnitKind
   readonly team: Team
   readonly position: Cube
+  /** Soldats actifs (combattent, recoivent les coups, projettent ZoC). */
   readonly hp: number
   readonly hpMax: number
+  /**
+   * Soldats blesses : ne combattent pas, ne projettent pas de ZoC, mais sont
+   * encore presents physiquement (compte pour le scale visuel). Soignables
+   * par une future unite Infirmier (Phase 3).
+   * Invariant : hp + wounded <= hpMax.
+   */
+  readonly wounded: number
   readonly morale: number
   readonly moraleMax: number
   readonly hasMoved: boolean

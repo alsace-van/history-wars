@@ -1,3 +1,4 @@
+// v1.2 (10/05/2026) — Phase 1.5 : ajout `wounded` a UnitState (mirror src/engine/units/types.ts v1.1)
 // v1.1 (09/05/2026) — Phase 1 L1B.4a : ajout UnitState (necessaire morale + combat)
 // v1.0 (09/05/2026) — Phase 1 L1B.2 : port engine/units pour Deno EF
 // Source de verite : src/engine/units/{stats.ts,types.ts}. Duplication controlee (piege #12).
@@ -34,8 +35,11 @@ export interface UnitState {
   readonly kind: UnitKind
   readonly team: Team
   readonly position: Cube
+  /** Soldats actifs au combat. */
   readonly hp: number
   readonly hpMax: number
+  /** Phase 1.5 : soldats blesses (recoverable Phase 3). hp + wounded <= hpMax. */
+  readonly wounded: number
   readonly morale: number
   readonly moraleMax: number
   readonly hasMoved: boolean

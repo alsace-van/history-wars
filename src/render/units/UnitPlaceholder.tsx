@@ -1,15 +1,17 @@
+// v1.7 (10/05/2026) — Phase 1.5 : scale soldat par (hp+wounded)/hpMax + UnitHealthBar own-only
 // v1.6 (10/05/2026) — Glow naturel : 3 halos additifs + ring net + breathing pulse
 // v1.5 (10/05/2026) — Fix ring #2 : halo/net séparés en Y + depthWrite=false (rayures coplanaires)
 // v1.4 (10/05/2026) — Fix ring sélection : RING_LIFT 0.06 → 0.1 anti z-fighting (cf piege #47)
-// v1.3 (09/05/2026) — Animation case par case via prop path[] (au lieu de lerp direct A→D)
 import { Suspense, useEffect, useMemo, useRef } from 'react'
 import { Billboard, Text } from '@react-three/drei'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import * as THREE from 'three'
 import { cubeToWorld, type Cube } from '@engine/hex'
+import type { Team } from '@/types/game'
 import type { UnitInstance } from '../types'
 import { COLORS } from '../colors'
 import { SoldierMesh } from './SoldierMesh'
+import { UnitHealthBar } from './UnitHealthBar'
 
 interface UnitPlaceholderProps {
   unit: UnitInstance
@@ -17,6 +19,11 @@ interface UnitPlaceholderProps {
   selected?: boolean
   targetable?: boolean
   exhausted?: boolean
+  /**
+   * Equipe du joueur courant. Si renseigne et que `unit.team === viewerTeam`,
+   * la barre PV detaillee (vert/orange/morts) est affichee. Sinon — fog of war.
+   */
+  viewerTeam?: Team | null
   /**
    * Chemin a animer case par case (incluant start). Si fourni et length>=2,
    * anime segment par segment a SECONDS_PER_HEX par segment. Sinon lerp direct.
@@ -34,6 +41,11 @@ const RING_NET_LIFT = RING_LIFT + 0.004 // net : 4mm au-dessus du halo — anti 
 const SECONDS_PER_HEX = 1.0
 const SEGMENT_DURATION_MS = SECONDS_PER_HEX * 1000
 
+// Scale visuel selon (hp + wounded) / hpMax. Min 0.65 pour rester cliquable
+// et reconnaissable, max 1.0 pour les unites a effectif plein.
+const MIN_SOLDIER_SCALE_FACTOR = 0.65
+const MAX_SOLDIER_SCALE_FACTOR = 1.0
+
 // Linear : vitesse constante a travers le path, pas de pause a chaque case
 
 function cubeWorld(c: Cube, hexSize: number): [number, number, number] {
@@ -47,6 +59,7 @@ export function UnitPlaceholder({
   selected = false,
   targetable = false,
   exhausted = false,
+  viewerTeam,
   path,
   onPathDone,
   onClick,
@@ -57,8 +70,21 @@ export function UnitPlaceholder({
 
   const ringRadius = hexSize * 0.42
   const facingY = unit.team === 'red' ? Math.PI : 0
-  const soldierScale = hexSize * SOLDIER_SCALE_RATIO
+
+  // Scale soldat : ratio (hp + wounded) / hpMax — visible par les 2 equipes (observation
+  // de la masse de troupes : les morts retirent du volume). Default 1.0 si data absente.
+  const effectiveRatio = unit.hpMax && unit.hpMax > 0
+    ? Math.max(0, Math.min(1, ((unit.hp ?? unit.hpMax) + (unit.wounded ?? 0)) / unit.hpMax))
+    : 1
+  const scaleFactor = MIN_SOLDIER_SCALE_FACTOR + (MAX_SOLDIER_SCALE_FACTOR - MIN_SOLDIER_SCALE_FACTOR) * effectiveRatio
+  const soldierScale = hexSize * SOLDIER_SCALE_RATIO * scaleFactor
   const soldierTranslateY = soldierScale
+
+  // Hitbox + ring restent a la taille de base (cliquabilite + selection visuelle stables).
+  const baseScale = hexSize * SOLDIER_SCALE_RATIO
+
+  // Barre PV detaillee : seulement pour mes propres unites (fog of war partiel)
+  const showHealthBar = !!viewerTeam && unit.team === viewerTeam && !!unit.hpMax && unit.hpMax > 0
 
   // ---- Refs animation (path step par step OU lerp direct) ----
   const groupRef = useRef<THREE.Group>(null)
@@ -237,8 +263,9 @@ export function UnitPlaceholder({
         </>
       )}
 
-      <mesh position={[0, soldierScale, 0]} onClick={handleClick} onPointerOver={handleOver} onPointerOut={handleOut}>
-        <cylinderGeometry args={[ringRadius, ringRadius, soldierScale * 2, 8]} />
+      {/* Hitbox cylindre invisible : taille fixe (baseScale) pour stabilite click/hover. */}
+      <mesh position={[0, baseScale, 0]} onClick={handleClick} onPointerOver={handleOver} onPointerOut={handleOut}>
+        <cylinderGeometry args={[ringRadius, ringRadius, baseScale * 2, 8]} />
         <meshBasicMaterial transparent opacity={0} depthWrite={false} />
       </mesh>
 
@@ -247,6 +274,17 @@ export function UnitPlaceholder({
           <SoldierMesh team={unit.team} opacity={opacity} selected={selected} />
         </Suspense>
       </group>
+
+      {/* Phase 1.5 : barre PV multi-segment (vert hp / orange wounded / morts) — own only */}
+      {showHealthBar && (
+        <UnitHealthBar
+          hp={unit.hp ?? 0}
+          hpMax={unit.hpMax ?? 1}
+          wounded={unit.wounded ?? 0}
+          yOffset={baseScale * 2.2 + 0.55}
+          width={baseScale * 1.6}
+        />
+      )}
 
       <Billboard position={[0, soldierScale * 2.2 + 0.2, 0]} follow lockX={false} lockY={false} lockZ={false}>
         <Text fontSize={0.32} color="#ffffff" anchorX="center" anchorY="middle" outlineWidth={0.025} outlineColor="#000000">

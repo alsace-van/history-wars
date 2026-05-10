@@ -14,6 +14,7 @@ function makeUnit(overrides: Partial<UnitState>): UnitState {
     position: cube(0, 0, 0),
     hp: 100,
     hpMax: 100,
+    wounded: 0,
     morale: 100,
     moraleMax: 100,
     hasMoved: false,
@@ -51,5 +52,19 @@ describe('engine/combat/preview', () => {
     const p = previewMelee(atk, def, { flanked: false })
     expect(p.damageMax).toBeLessThan(def.hp)
     expect(p.killProbability).toBe(0)
+  })
+
+  it('Phase 1.5 : preview retourne les bornes killed et woundedAdd coherentes', () => {
+    const atk = makeUnit({ id: 'a', kind: 'C', morale: 90 })
+    const def = makeUnit({ id: 'd', kind: 'I', morale: 70, hp: 100, position: cube(1, 0, -1) })
+    const p = previewMelee(atk, def, { flanked: true })
+    // Bornes presentes
+    expect(p.killedMin).toBeGreaterThanOrEqual(0)
+    expect(p.killedMax).toBeGreaterThanOrEqual(p.killedMin)
+    expect(p.woundedAddMin).toBeGreaterThanOrEqual(0)
+    expect(p.woundedAddMax).toBeGreaterThanOrEqual(p.woundedAddMin)
+    // killed + woundedAdd ne depasse pas damage (clamp sur defender.hp)
+    expect(p.killedMin + p.woundedAddMin).toBeLessThanOrEqual(Math.min(p.damageMin, def.hp))
+    expect(p.killedMax + p.woundedAddMax).toBeLessThanOrEqual(Math.min(p.damageMax, def.hp))
   })
 })

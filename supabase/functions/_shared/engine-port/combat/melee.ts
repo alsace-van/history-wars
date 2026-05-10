@@ -1,10 +1,11 @@
+// v1.1 (10/05/2026) — Phase 1.5 : split casualties killed/woundedAdd via splitCasualties() (mirror src v1.1)
 // v1.0 (09/05/2026) — Phase 1 L1B.4a : port combat/melee pour Deno EF
 // Source de verite : src/engine/combat/melee.ts. Duplication controlee (piege #12).
 
 import type { UnitState } from '../units.ts'
 import { getUnitStats } from '../units.ts'
 import { applyMoraleDelta, moraleCombatBonus } from '../morale/morale.ts'
-import type { CombatModifiers, CombatResult } from './types.ts'
+import { splitCasualties, type CombatModifiers, type CombatResult } from './types.ts'
 
 const ROLL_RANGE_MELEE = 20  // roll = rng()*20 - 10 → [-10, +10)
 const FLANK_BONUS = 10
@@ -14,6 +15,7 @@ const ATTACKER_MORALE_DELTA_MELEE = 2
  * Resolution melee : ATK/DEF effectifs avec modifiers + bonus morale,
  * roll uniforme [-10, +10), damage clampe a 0.
  * Le rng est passe par le caller (EF) pour determinisme cross-runtime + replays.
+ * Le damage applique est split en killed (60 %) + woundedAdd (40 %) via splitCasualties.
  */
 export function resolveMelee(
   attacker: UnitState,
@@ -30,18 +32,24 @@ export function resolveMelee(
   const rollRaw = rng()
   const roll = rollRaw * ROLL_RANGE_MELEE - ROLL_RANGE_MELEE / 2  // [-10, +10)
   const damage = Math.max(0, Math.round(atkEff - defEff + roll))
-  const defenderHpAfter = Math.max(0, defender.hp - damage)
-  const defenderKilled = defenderHpAfter === 0
+
+  const split = splitCasualties(damage, defender.hp)
+  const defenderKilled = split.defenderHpAfter === 0
+  const defenderWoundedAfter = Math.min(defender.wounded + split.woundedAdd, defender.hpMax - split.defenderHpAfter)
 
   const attackerMoraleDelta = ATTACKER_MORALE_DELTA_MELEE
-  const defenderMoraleDelta = -Math.round(damage / 4)
+  const defenderMoraleDelta = -Math.round(split.actualDamage / 4)
 
   const attackerAfter = applyMoraleDelta(attacker, attackerMoraleDelta)
   const defenderAfter = applyMoraleDelta(defender, defenderMoraleDelta)
 
   return {
     damageDealt: damage,
-    defenderHpAfter,
+    actualDamage: split.actualDamage,
+    killed: split.killed,
+    woundedAdd: split.woundedAdd,
+    defenderHpAfter: split.defenderHpAfter,
+    defenderWoundedAfter,
     attackerMoraleDelta,
     defenderMoraleDelta,
     attackerMoraleAfter: attackerAfter.morale,

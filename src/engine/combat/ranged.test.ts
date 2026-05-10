@@ -16,6 +16,7 @@ function makeUnit(overrides: Partial<UnitState>): UnitState {
     position: cube(0, 0, 0),
     hp: 100,
     hpMax: 100,
+    wounded: 0,
     morale: 100,
     moraleMax: 100,
     hasMoved: false,

@@ -1,3 +1,4 @@
+// v1.1 (10/05/2026) — Phase 1.5 : ajout colonne `wounded` (migration 011) propage a UnitState
 // v1.0 (09/05/2026) — L1C.1 : adapter UnitRow BDD → UnitInstance render / UnitState engine
 
 import type { UnitInstance } from '../types'
@@ -5,7 +6,7 @@ import type { Team, UnitKind } from '@/types/game'
 import type { UnitState } from '@engine/units'
 
 /**
- * Forme brute renvoyee par SELECT * FROM units (table publique migration 007).
+ * Forme brute renvoyee par SELECT * FROM units (table publique migration 007 + 011).
  * Position stockee en axial (q,r) cote BDD, on derive s = -q-r.
  */
 export interface UnitRow {
@@ -17,6 +18,8 @@ export interface UnitRow {
   r: number
   hp: number
   hp_max: number
+  /** Migration 011 : soldats blesses (default 0). */
+  wounded: number
   morale: number
   morale_max: number
   routed: boolean
@@ -36,6 +39,10 @@ export function unitRowToInstance(row: UnitRow): UnitInstance {
     position: { q: row.q, r: row.r, s: -row.q - row.r },
     team: row.team,
     kind: row.kind,
+    hp: row.hp,
+    hpMax: row.hp_max,
+    wounded: row.wounded ?? 0,
+    count: row.hp,
   }
 }
 
@@ -52,6 +59,7 @@ export function unitRowToState(row: UnitRow): UnitState {
     position: { q: row.q, r: row.r, s: -row.q - row.r },
     hp: row.hp,
     hpMax: row.hp_max,
+    wounded: row.wounded ?? 0,
     morale: row.morale,
     moraleMax: row.morale_max,
     hasMoved: row.has_moved,

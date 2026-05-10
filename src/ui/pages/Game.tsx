@@ -1,7 +1,7 @@
+// v3.8 (10/05/2026) — Phase 1.5 : viewerTeam → barre PV asymetrique own-only + scale par hp ratio
 // v3.7 (10/05/2026) — P1-L1C4-01/03 : tooltip combat + click ennemi targetable → attack
 // v3.6 (10/05/2026) — P1-L1C5-03 : intégration GameHUD + EndGameModal, retire boutons inline
 // v3.5 (10/05/2026) — P1-REFACTOR-02 : extraction useTacticalSelection (selection + reachable + tileStates)
-// v3.4 (10/05/2026) — P1-REFACTOR-01 : extraction BattleSidebar vers src/ui/game/BattleSidebar.tsx
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -33,7 +33,7 @@ import { aStar } from '@engine/movement'
 import { computeEnemyZoc } from '@engine/zoc'
 import { cn } from '@lib/cn'
 
-const TAG = '[Game v3.7]'
+const TAG = '[Game v3.8]'
 
 const MVP_CUBES: Cube[] = spiral({ q: 0, r: 0, s: 0 }, 5)
 const MVP_BOARD_KEYS = new Set(MVP_CUBES.map(cubeKey))
@@ -450,6 +450,7 @@ export function Game() {
               scale={game.current_scale}
               cubes={MVP_CUBES}
               units={renderUnits}
+              viewerTeam={showBattle ? myTeam : null}
               tileStates={showBattle ? tileStates : undefined}
               selectedUnitId={selectedUnitId}
               targetableUnitIds={showBattle ? targetableUnitIds : undefined}
