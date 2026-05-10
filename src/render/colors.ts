@@ -1,3 +1,4 @@
+// v1.2 (10/05/2026) — P1-L1C4-04 : ajout tileDangerous/Edge (orange-warning, ZoC ennemie)
 // v1.1 (09/05/2026) — L1C.3 : ajout tileReachable/Edge (cyan) + tileTargetable/Edge (rouge) + unitSelectedRing (amber)
 // v1.0 (09/05/2026) — Constantes couleur Three.js, synchro tokens Tailwind
 // Tous les hex en notation 0xRRGGBB pour Three.js
@@ -25,6 +26,9 @@ export const COLORS = {
   // L1C.4 : targetable = rouge amorti (preparation, utilise au prochain lot)
   tileTargetable: 0x5a1f1f,
   tileTargetableEdge: 0xff6b6b,
+  // L1C.4 : dangerous = orange amorti (ZoC ennemie, traversee couteuse)
+  tileDangerous: 0x5a3514,
+  tileDangerousEdge: 0xfb923c,
 
   // Unit highlights
   unitSelectedRing: 0xef9f27, // amber autour cylindre selectionne
