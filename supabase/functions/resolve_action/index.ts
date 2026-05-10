@@ -1,3 +1,4 @@
+// v1.2 (10/05/2026) — Phase 1.5 : split casualties killed/woundedAdd, UPDATE units.wounded
 // v1.1 (09/05/2026) — Phase 1 L1B.4b : handlers attack_ranged + attack_melee + riposte melee
 // v1.0 (09/05/2026) — Phase 1 L1B.3 : EF resolve_action dispatcher (cas 'move' uniquement)
 //
@@ -34,7 +35,7 @@ import { computeEnemyZoc, type UnitForZoc } from '../_shared/engine-port/zoc/ind
 import { resolveMelee, resolveRanged, seededRng } from '../_shared/engine-port/combat/index.ts'
 import { hasLineOfSight } from '../_shared/engine-port/los/index.ts'
 
-const TAG = '[resolve_action v1.1]'
+const TAG = '[resolve_action v1.2]'
 
 interface UnitRow {
   id: string
@@ -45,6 +46,8 @@ interface UnitRow {
   r: number
   hp: number
   hp_max: number
+  /** Migration 011 : soldats blesses (default 0). */
+  wounded: number
   morale: number
   morale_max: number
   routed: boolean
@@ -193,6 +196,7 @@ function buildUnitState(row: UnitRow): UnitState {
     position: cube(row.q, row.r),
     hp: row.hp,
     hpMax: row.hp_max,
+    wounded: row.wounded ?? 0,
     morale: row.morale,
     moraleMax: row.morale_max,
     hasMoved: row.has_moved,
@@ -447,9 +451,11 @@ async function handleAttack(args: HandleAttackArgs): Promise<Response> {
   // Attacker : hp inchange (l'attaque seule ne blesse pas l'attaquant), morale = combat.attackerMoraleAfter, routed = combat.attackerRouted
 
   let attackerHpAfter = attacker.hp
+  let attackerWoundedAfter = attacker.wounded
   let attackerMoraleAfter = combat.attackerMoraleAfter
   let attackerRoutedAfter = combat.attackerRouted
   let defenderHpAfter = combat.defenderHpAfter
+  let defenderWoundedAfter = combat.defenderWoundedAfter
   let defenderMoraleAfter = combat.defenderMoraleAfter
   let defenderRoutedAfter = combat.defenderRouted
 
@@ -463,6 +469,7 @@ async function handleAttack(args: HandleAttackArgs): Promise<Response> {
     const defenderAfter: UnitState = {
       ...defender,
       hp: defenderHpAfter,
+      wounded: defenderWoundedAfter,
       morale: defenderMoraleAfter,
       routed: defenderRoutedAfter,
     }
@@ -476,9 +483,11 @@ async function handleAttack(args: HandleAttackArgs): Promise<Response> {
 
     // Apres riposte : defender (en tant qu'attaquant de riposte) gagne morale +2 → ripCombat.attackerMoraleAfter
     //                 attacker (en tant que cible) prend des degats + morale -damage/4 → ripCombat.defenderMoraleAfter
+    //                 Le wounded de l'attacker s'enrichit du woundedAdd de la riposte (defender = victime ici).
     defenderMoraleAfter = ripCombat.attackerMoraleAfter
     defenderRoutedAfter = ripCombat.attackerRouted
-    attackerHpAfter = Math.max(0, attacker.hp - ripCombat.damageDealt)
+    attackerHpAfter = ripCombat.defenderHpAfter
+    attackerWoundedAfter = ripCombat.defenderWoundedAfter
     attackerMoraleAfter = ripCombat.defenderMoraleAfter
     attackerRoutedAfter = ripCombat.defenderRouted
     attackerKilled = ripCombat.defenderKilled
@@ -502,6 +511,7 @@ async function handleAttack(args: HandleAttackArgs): Promise<Response> {
       .from('units')
       .update({
         hp: defenderHpAfter,
+        wounded: defenderWoundedAfter,
         morale: defenderMoraleAfter,
         routed: defenderRoutedAfter,
       })
@@ -528,6 +538,7 @@ async function handleAttack(args: HandleAttackArgs): Promise<Response> {
       .from('units')
       .update({
         hp: attackerHpAfter,
+        wounded: attackerWoundedAfter,
         morale: attackerMoraleAfter,
         routed: attackerRoutedAfter,
         has_attacked: true,
@@ -551,12 +562,14 @@ async function handleAttack(args: HandleAttackArgs): Promise<Response> {
     attacker_killed: attackerKilled,
     attacker_after: attackerKilled ? null : {
       hp: attackerHpAfter,
+      wounded: attackerWoundedAfter,
       morale: attackerMoraleAfter,
       routed: attackerRoutedAfter,
       has_attacked: true,
     },
     defender_after: defenderKilled ? null : {
       hp: defenderHpAfter,
+      wounded: defenderWoundedAfter,
       morale: defenderMoraleAfter,
       routed: defenderRoutedAfter,
     },

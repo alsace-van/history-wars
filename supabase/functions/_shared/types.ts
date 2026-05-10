@@ -81,10 +81,15 @@ export interface AttackPayload {
   target_unit_id: string  // defender
 }
 
-/** Resultat brut engine, dupliqué cote client (engine/combat/types). */
+/** Resultat brut engine, dupliqué cote client (engine/combat/types).
+ * v1.1 (Phase 1.5) : ajout actualDamage, killed, woundedAdd, defenderWoundedAfter. */
 export interface CombatResultSnapshot {
   damageDealt: number
+  actualDamage: number
+  killed: number
+  woundedAdd: number
   defenderHpAfter: number
+  defenderWoundedAfter: number
   attackerMoraleDelta: number
   defenderMoraleDelta: number
   attackerMoraleAfter: number
@@ -98,6 +103,7 @@ export interface CombatResultSnapshot {
 /**
  * Snapshot D13 stocke dans game_actions.result pour attaques.
  * Replay-ready : tout l'etat post-action est present.
+ * v1.1 (Phase 1.5) : attacker_after / defender_after exposent aussi `wounded`.
  */
 export interface AttackResult {
   attacker_id: string
@@ -107,8 +113,8 @@ export interface AttackResult {
   riposte: CombatResultSnapshot | null
   defender_killed: boolean
   attacker_killed: boolean
-  attacker_after: { hp: number; morale: number; routed: boolean; has_attacked: true } | null
-  defender_after: { hp: number; morale: number; routed: boolean } | null
+  attacker_after: { hp: number; wounded: number; morale: number; routed: boolean; has_attacked: true } | null
+  defender_after: { hp: number; wounded: number; morale: number; routed: boolean } | null
   seed: number
 }
 
