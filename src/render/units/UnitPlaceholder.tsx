@@ -1,7 +1,7 @@
+// v1.6 (10/05/2026) — Glow naturel : 3 halos additifs + ring net + breathing pulse
 // v1.5 (10/05/2026) — Fix ring #2 : halo/net séparés en Y + depthWrite=false (rayures coplanaires)
 // v1.4 (10/05/2026) — Fix ring sélection : RING_LIFT 0.06 → 0.1 anti z-fighting (cf piege #47)
 // v1.3 (09/05/2026) — Animation case par case via prop path[] (au lieu de lerp direct A→D)
-// v1.2 (09/05/2026) — L1C.3+ : remplacement cylindre par SoldierMesh (glb teinte team)
 import { Suspense, useEffect, useMemo, useRef } from 'react'
 import { Billboard, Text } from '@react-three/drei'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
@@ -71,6 +71,10 @@ export function UnitPlaceholder({
   const animatingRef = useRef(false)
   const doneCalledRef = useRef(false)
 
+  // ---- Refs glow selection (breathing pulse) ----
+  const glowGroupRef = useRef<THREE.Group>(null)
+  const innerRingMatRef = useRef<THREE.MeshBasicMaterial>(null)
+
   // Mount initial : pose direct (pas d'animation)
   useEffect(() => {
     if (groupRef.current) {
@@ -118,30 +122,43 @@ export function UnitPlaceholder({
     doneCalledRef.current = true // pas de path → pas de onPathDone
   }, [targetPos])
 
-  useFrame(() => {
-    if (!animatingRef.current || !groupRef.current) return
-    const elapsed = performance.now() - segStartTimeRef.current
-    const t = Math.min(1, elapsed / segDurationRef.current)
-    const e = t // linear, pas de freinage par segment
-    const [sx, sy, sz] = segStartRef.current
-    const [ex, ey, ez] = segEndRef.current
-    groupRef.current.position.set(sx + (ex - sx) * e, sy + (ey - sy) * e, sz + (ez - sz) * e)
+  useFrame(({ clock }) => {
+    // 1. Animation deplacement (segment ou lerp)
+    if (animatingRef.current && groupRef.current) {
+      const elapsed = performance.now() - segStartTimeRef.current
+      const t = Math.min(1, elapsed / segDurationRef.current)
+      const e = t // linear, pas de freinage par segment
+      const [sx, sy, sz] = segStartRef.current
+      const [ex, ey, ez] = segEndRef.current
+      groupRef.current.position.set(sx + (ex - sx) * e, sy + (ey - sy) * e, sz + (ez - sz) * e)
 
-    if (t >= 1) {
-      // Segment fini
-      const p = pathRef.current
-      const nextIdx = segIdxRef.current + 1
-      if (p && nextIdx < p.length) {
-        segIdxRef.current = nextIdx
-        segStartRef.current = [...segEndRef.current] as [number, number, number]
-        segEndRef.current = cubeWorld(p[nextIdx], hexSize)
-        segStartTimeRef.current = performance.now()
-      } else {
-        animatingRef.current = false
-        if (!doneCalledRef.current && p) {
-          doneCalledRef.current = true
-          onPathDone?.(unit.id)
+      if (t >= 1) {
+        // Segment fini
+        const p = pathRef.current
+        const nextIdx = segIdxRef.current + 1
+        if (p && nextIdx < p.length) {
+          segIdxRef.current = nextIdx
+          segStartRef.current = [...segEndRef.current] as [number, number, number]
+          segEndRef.current = cubeWorld(p[nextIdx], hexSize)
+          segStartTimeRef.current = performance.now()
+        } else {
+          animatingRef.current = false
+          if (!doneCalledRef.current && p) {
+            doneCalledRef.current = true
+            onPathDone?.(unit.id)
+          }
         }
+      }
+    }
+
+    // 2. Breathing pulse glow selection (halos scale + ring net opacity)
+    if (selected) {
+      const breath = 0.5 + 0.5 * Math.sin(clock.elapsedTime * 2.2) // 0..1
+      if (glowGroupRef.current) {
+        glowGroupRef.current.scale.setScalar(0.97 + 0.06 * breath)
+      }
+      if (innerRingMatRef.current) {
+        innerRingMatRef.current.opacity = 0.7 + 0.25 * breath
       }
     }
   })
@@ -165,34 +182,56 @@ export function UnitPlaceholder({
     <group ref={groupRef}>
       {selected && (
         <>
-          {/* Halo flou (opacite faible, plus large) — Y = RING_LIFT */}
-          <group position={[0, RING_LIFT, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-            <mesh renderOrder={1}>
-              <ringGeometry args={[ringRadius * 0.95, ringRadius * 1.55, 48]} />
-              <meshBasicMaterial color={COLORS.unitSelectedRing} transparent opacity={0.25} side={THREE.DoubleSide} depthWrite={false} />
-            </mesh>
+          {/* Halos additifs empilés (scale-pulse via glowGroupRef) → glow doux en gradient */}
+          <group ref={glowGroupRef}>
+            <group position={[0, RING_LIFT, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+              {/* Halo très large (faible opacité) */}
+              <mesh renderOrder={1}>
+                <ringGeometry args={[ringRadius * 1.25, ringRadius * 2.0, 64]} />
+                <meshBasicMaterial color={COLORS.unitSelectedRing} transparent opacity={0.07} side={THREE.DoubleSide} depthWrite={false} blending={THREE.AdditiveBlending} />
+              </mesh>
+              {/* Halo médium */}
+              <mesh renderOrder={2}>
+                <ringGeometry args={[ringRadius * 1.1, ringRadius * 1.55, 64]} />
+                <meshBasicMaterial color={COLORS.unitSelectedRing} transparent opacity={0.15} side={THREE.DoubleSide} depthWrite={false} blending={THREE.AdditiveBlending} />
+              </mesh>
+              {/* Halo proche (plus dense) */}
+              <mesh renderOrder={3}>
+                <ringGeometry args={[ringRadius * 1.0, ringRadius * 1.32, 64]} />
+                <meshBasicMaterial color={COLORS.unitSelectedRing} transparent opacity={0.25} side={THREE.DoubleSide} depthWrite={false} blending={THREE.AdditiveBlending} />
+              </mesh>
+            </group>
           </group>
-          {/* Ring net — Y = RING_NET_LIFT (4mm au-dessus du halo) */}
+          {/* Ring net (opacity-pulse via innerRingMatRef) — contour clair, normal blending */}
           <group position={[0, RING_NET_LIFT, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-            <mesh renderOrder={2}>
-              <ringGeometry args={[ringRadius * 1.05, ringRadius * 1.25, 48]} />
-              <meshBasicMaterial color={COLORS.unitSelectedRing} transparent opacity={0.85} side={THREE.DoubleSide} depthWrite={false} />
+            <mesh renderOrder={4}>
+              <ringGeometry args={[ringRadius * 1.06, ringRadius * 1.2, 64]} />
+              <meshBasicMaterial ref={innerRingMatRef} color={COLORS.unitSelectedRing} transparent opacity={0.85} side={THREE.DoubleSide} depthWrite={false} />
             </mesh>
           </group>
         </>
       )}
       {targetable && !selected && (
         <>
+          {/* Halos additifs rouges (statique, pas de pulse) */}
           <group position={[0, RING_LIFT, 0]} rotation={[-Math.PI / 2, 0, 0]}>
             <mesh renderOrder={1}>
-              <ringGeometry args={[ringRadius * 0.9, ringRadius * 1.45, 48]} />
-              <meshBasicMaterial color={COLORS.unitTargetableHalo} transparent opacity={0.2} side={THREE.DoubleSide} depthWrite={false} />
+              <ringGeometry args={[ringRadius * 1.2, ringRadius * 1.85, 64]} />
+              <meshBasicMaterial color={COLORS.unitTargetableHalo} transparent opacity={0.06} side={THREE.DoubleSide} depthWrite={false} blending={THREE.AdditiveBlending} />
+            </mesh>
+            <mesh renderOrder={2}>
+              <ringGeometry args={[ringRadius * 1.05, ringRadius * 1.45, 64]} />
+              <meshBasicMaterial color={COLORS.unitTargetableHalo} transparent opacity={0.14} side={THREE.DoubleSide} depthWrite={false} blending={THREE.AdditiveBlending} />
+            </mesh>
+            <mesh renderOrder={3}>
+              <ringGeometry args={[ringRadius * 0.95, ringRadius * 1.25, 64]} />
+              <meshBasicMaterial color={COLORS.unitTargetableHalo} transparent opacity={0.22} side={THREE.DoubleSide} depthWrite={false} blending={THREE.AdditiveBlending} />
             </mesh>
           </group>
           <group position={[0, RING_NET_LIFT, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-            <mesh renderOrder={2}>
-              <ringGeometry args={[ringRadius * 1.0, ringRadius * 1.2, 48]} />
-              <meshBasicMaterial color={COLORS.unitTargetableHalo} transparent opacity={0.75} side={THREE.DoubleSide} depthWrite={false} />
+            <mesh renderOrder={4}>
+              <ringGeometry args={[ringRadius * 1.0, ringRadius * 1.18, 64]} />
+              <meshBasicMaterial color={COLORS.unitTargetableHalo} transparent opacity={0.7} side={THREE.DoubleSide} depthWrite={false} />
             </mesh>
           </group>
         </>
