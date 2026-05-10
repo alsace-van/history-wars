@@ -1,7 +1,7 @@
+// v1.4 (10/05/2026) — Phase 1.5 : prop highlightedUnitIds (halo jaune unités du rapport combat actif)
 // v1.3 (10/05/2026) — Phase 1.5 : prop viewerTeam pour barre PV asymetrique (own only)
 // v1.2 (09/05/2026) — Animation case par case : prop unitPaths + onUnitPathDone
 // v1.1 (09/05/2026) — L1C.3 : props tileStates + selectedUnitId + onUnitClick + onUnitHover + targetableUnitIds + exhaustedUnitIds
-// v1.0 (09/05/2026) — Scene tactique complete : grid + units + camera + lighting
 import { useMemo } from 'react'
 import type { Cube } from '@engine/hex'
 import type { Scale, Team } from '@/types/game'
@@ -24,6 +24,8 @@ interface TacticalSceneProps {
   selectedUnitId?: string | null
   targetableUnitIds?: ReadonlySet<string>
   exhaustedUnitIds?: ReadonlySet<string>
+  /** Phase 1.5 : unités impliquées dans le rapport combat actif (halo jaune pulsant). */
+  highlightedUnitIds?: ReadonlySet<string>
   unitPaths?: Map<string, ReadonlyArray<Cube>>
   onUnitPathDone?: (unitId: string) => void
   onUnitClick?: (unit: UnitInstance) => void
@@ -42,6 +44,7 @@ export function TacticalScene({
   selectedUnitId,
   targetableUnitIds,
   exhaustedUnitIds,
+  highlightedUnitIds,
   unitPaths,
   onUnitPathDone,
   onUnitClick,
@@ -61,6 +64,7 @@ export function TacticalScene({
           selected={u.id === selectedUnitId}
           targetable={targetableUnitIds?.has(u.id) ?? false}
           exhausted={exhaustedUnitIds?.has(u.id) ?? false}
+          highlighted={highlightedUnitIds?.has(u.id) ?? false}
           viewerTeam={viewerTeam}
           path={unitPaths?.get(u.id)}
           onPathDone={onUnitPathDone}
@@ -75,6 +79,7 @@ export function TacticalScene({
       selectedUnitId,
       targetableUnitIds,
       exhaustedUnitIds,
+      highlightedUnitIds,
       viewerTeam,
       unitPaths,
       onUnitPathDone,

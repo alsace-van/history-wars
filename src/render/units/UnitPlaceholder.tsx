@@ -1,7 +1,7 @@
+// v1.9 (10/05/2026) — Phase 1.5 : prop highlighted (halo jaune pulsant) pour unités du rapport combat actif
 // v1.8 (10/05/2026) — Phase 1.5 fix : effectif chiffre (count) cache aux equipes adverses
 // v1.7 (10/05/2026) — Phase 1.5 : scale soldat par (hp+wounded)/hpMax + UnitHealthBar own-only
 // v1.6 (10/05/2026) — Glow naturel : 3 halos additifs + ring net + breathing pulse
-// v1.5 (10/05/2026) — Fix ring #2 : halo/net séparés en Y + depthWrite=false (rayures coplanaires)
 import { Suspense, useEffect, useMemo, useRef } from 'react'
 import { Billboard, Text } from '@react-three/drei'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
@@ -19,6 +19,8 @@ interface UnitPlaceholderProps {
   selected?: boolean
   targetable?: boolean
   exhausted?: boolean
+  /** Phase 1.5 : unité impliquée dans le rapport combat actif → halo jaune pulsant pour identification visuelle. */
+  highlighted?: boolean
   /**
    * Equipe du joueur courant. Si renseigne et que `unit.team === viewerTeam`,
    * la barre PV detaillee (vert/orange/morts) est affichee. Sinon — fog of war.
@@ -59,6 +61,7 @@ export function UnitPlaceholder({
   selected = false,
   targetable = false,
   exhausted = false,
+  highlighted = false,
   viewerTeam,
   path,
   onPathDone,
@@ -100,6 +103,9 @@ export function UnitPlaceholder({
   // ---- Refs glow selection (breathing pulse) ----
   const glowGroupRef = useRef<THREE.Group>(null)
   const innerRingMatRef = useRef<THREE.MeshBasicMaterial>(null)
+
+  // ---- Refs highlight rapport combat (Phase 1.5 : pulse jaune separe du selection ring) ----
+  const highlightGroupRef = useRef<THREE.Group>(null)
 
   // Mount initial : pose direct (pas d'animation)
   useEffect(() => {
@@ -187,6 +193,12 @@ export function UnitPlaceholder({
         innerRingMatRef.current.opacity = 0.7 + 0.25 * breath
       }
     }
+
+    // 3. Pulse highlight rapport combat (Phase 1.5) : amplitude plus large pour attirer l'attention
+    if (highlighted && highlightGroupRef.current) {
+      const breath = 0.5 + 0.5 * Math.sin(clock.elapsedTime * 3.0)
+      highlightGroupRef.current.scale.setScalar(0.95 + 0.10 * breath)
+    }
   })
 
   function handleClick(e: ThreeEvent<MouseEvent>) {
@@ -206,6 +218,25 @@ export function UnitPlaceholder({
 
   return (
     <group ref={groupRef}>
+      {/* Highlight rapport combat actif (Phase 1.5) : 3 halos jaunes additifs pulsants */}
+      {highlighted && (
+        <group ref={highlightGroupRef}>
+          <group position={[0, RING_LIFT, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <mesh renderOrder={0}>
+              <ringGeometry args={[ringRadius * 1.35, ringRadius * 2.2, 64]} />
+              <meshBasicMaterial color={0xfbbf24} transparent opacity={0.10} side={THREE.DoubleSide} depthWrite={false} blending={THREE.AdditiveBlending} />
+            </mesh>
+            <mesh renderOrder={0}>
+              <ringGeometry args={[ringRadius * 1.15, ringRadius * 1.7, 64]} />
+              <meshBasicMaterial color={0xfbbf24} transparent opacity={0.18} side={THREE.DoubleSide} depthWrite={false} blending={THREE.AdditiveBlending} />
+            </mesh>
+            <mesh renderOrder={0}>
+              <ringGeometry args={[ringRadius * 0.95, ringRadius * 1.4, 64]} />
+              <meshBasicMaterial color={0xfbbf24} transparent opacity={0.30} side={THREE.DoubleSide} depthWrite={false} blending={THREE.AdditiveBlending} />
+            </mesh>
+          </group>
+        </group>
+      )}
       {selected && (
         <>
           {/* Halos additifs empilés (scale-pulse via glowGroupRef) → glow doux en gradient */}
