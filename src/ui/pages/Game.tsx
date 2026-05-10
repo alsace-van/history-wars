@@ -1,7 +1,7 @@
+// v3.10 (10/05/2026) — Phase 1.5 fix UX : remplace toasts ephemères par CombatResultPanel persistant (X close)
 // v3.9 (10/05/2026) — Phase 1.5 P1.5-NOTIF-01 : useCombatNotifications + retire toast local attaque
 // v3.8 (10/05/2026) — Phase 1.5 : viewerTeam → barre PV asymetrique own-only + scale par hp ratio
 // v3.7 (10/05/2026) — P1-L1C4-01/03 : tooltip combat + click ennemi targetable → attack
-// v3.6 (10/05/2026) — P1-L1C5-03 : intégration GameHUD + EndGameModal, retire boutons inline
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -25,6 +25,7 @@ import { BattleSidebar } from '@ui/game/BattleSidebar'
 import { GameHUD } from '@ui/game/GameHUD'
 import { EndGameModal } from '@ui/game/EndGameModal'
 import { CombatPreviewTooltip } from '@ui/game/CombatPreviewTooltip'
+import { CombatResultPanel } from '@ui/game/CombatResultPanel'
 import { TacticalScene, buildMvpUnitPlacement } from '@/render'
 import { unitRowsToInstances, unitRowsToStates } from '@render/_data/unitAdapter'
 import type { UnitInstance } from '@render/types'
@@ -34,7 +35,7 @@ import { aStar } from '@engine/movement'
 import { computeEnemyZoc } from '@engine/zoc'
 import { cn } from '@lib/cn'
 
-const TAG = '[Game v3.9]'
+const TAG = '[Game v3.10]'
 
 const MVP_CUBES: Cube[] = spiral({ q: 0, r: 0, s: 0 }, 5)
 const MVP_BOARD_KEYS = new Set(MVP_CUBES.map(cubeKey))
@@ -189,14 +190,15 @@ export function Game() {
     boardKeys: MVP_BOARD_KEYS,
   })
 
-  // ---- Toasts asymetriques sur INSERT game_actions (Phase 1.5 P1.5-NOTIF-01) ----
-  useCombatNotifications({
-    gameId: gameId ?? null,
-    viewerTeam: showBattle ? myTeam : null,
-    enabled: showBattle,
-    playerTeams,
-    units: unitStates,
-  })
+  // ---- Queue de notifications combat (panneau persistant non-bloquant, cf piège #52) ----
+  const { current: combatNotif, pendingCount: combatPendingCount, dismiss: dismissCombatNotif } =
+    useCombatNotifications({
+      gameId: gameId ?? null,
+      viewerTeam: showBattle ? myTeam : null,
+      enabled: showBattle,
+      playerTeams,
+      units: unitStates,
+    })
 
   // ---- Hover ennemi targetable → tooltip combat ----
   const [hoveredEnemyId, setHoveredEnemyId] = useState<string | null>(null)
@@ -481,6 +483,13 @@ export function Game() {
               onUnitPointerOver={showBattle ? handleUnitPointerOver : undefined}
               onUnitPointerOut={showBattle ? handleUnitPointerOut : undefined}
             />
+            {combatNotif && (
+              <CombatResultPanel
+                notif={combatNotif}
+                pendingCount={combatPendingCount}
+                onClose={dismissCombatNotif}
+              />
+            )}
             {hoveredEnemy && selectedUnit && (
               <CombatPreviewTooltip
                 attacker={selectedUnit}

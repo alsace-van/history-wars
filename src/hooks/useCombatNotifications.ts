@@ -1,11 +1,10 @@
+// v1.1 (10/05/2026) — Phase 1.5 fix UX : queue + state au lieu de toasts éphémères (cf piège #52)
 // v1.0 (10/05/2026) — Phase 1.5 P1.5-NOTIF-01 : Realtime listener game_actions → toasts asymétriques
-import { useRef } from 'react'
-import { toast } from 'sonner'
+import { useCallback, useRef, useState } from 'react'
 import { useRealtime } from './useRealtime'
 import type { Team, UnitKind } from '@/types/game'
 import type { UnitState } from '@engine/units'
 
-/** Snapshot stocke dans game_actions.result pour les attaques (mirror _shared/types.ts AttackResult). */
 interface CombatResultSnapshot {
   damageDealt: number
   actualDamage: number
@@ -49,6 +48,38 @@ const KIND_LABEL: Record<UnitKind, string> = {
   A: 'Artillerie',
 }
 
+const TEAM_LABEL: Record<Team, string> = {
+  blue: 'Bleus',
+  red: 'Rouges',
+}
+
+/**
+ * Notification de combat preparee pour le rendu UI. Contient toutes les infos
+ * derivees pour CombatResultPanel : labels, perspective, pertes asymetriques.
+ */
+export interface CombatNotification {
+  /** ID unique = action.id en BDD (stable, pas de doublon a la re-souscription Realtime). */
+  id: string
+  /** Type d'engagement. */
+  kind: 'melee' | 'ranged'
+  /** Camp de l'attaquant. */
+  attackerTeam: Team
+  /** Camp du defenseur (= adverse de l'attaquant). */
+  defenderTeam: Team
+  /** Le viewer est-il l'attaquant ? */
+  isMyAttack: boolean
+  /** Le viewer est-il le defenseur ? */
+  isMyDefense: boolean
+  /** Label kind attacker (resolu meilleur effort, "Unite" si DELETE deja arrive). */
+  attackerKindLabel: string
+  /** Label kind defender. */
+  defenderKindLabel: string
+  /** Pertes infligees au defenseur lors de l'attaque initiale. */
+  defenderLosses: { killed: number; woundedAdd: number; hpAfter: number; isKilled: boolean; isRouted: boolean }
+  /** Pertes infligees a l'attaquant si riposte melee (null sinon). */
+  attackerLosses: { killed: number; woundedAdd: number; hpAfter: number; isKilled: boolean; isRouted: boolean } | null
+}
+
 interface UseCombatNotificationsOptions {
   gameId: string | null
   viewerTeam: Team | null
@@ -59,14 +90,28 @@ interface UseCombatNotificationsOptions {
   units: ReadonlyArray<UnitState>
 }
 
+interface UseCombatNotificationsResult {
+  /** Tete de la queue (combat en cours d'affichage). null si aucun en attente. */
+  current: CombatNotification | null
+  /** Nombre total en queue (ex: "1 / 3"). */
+  pendingCount: number
+  /** Ferme la notif courante et passe a la suivante (si pending > 1). */
+  dismiss: () => void
+  /** Vide toute la queue (utile au changement de tour ou de partie). */
+  clear: () => void
+}
+
 /**
- * Toasts asymetriques sur INSERT game_actions :
- *   - Attaquant (moi) : voit kills uniquement (fog of war sur defenseur).
- *   - Defenseur (moi) : voit kills + blessés + soldats actifs restants (info propre complète).
- *   - Observateur tiers (ni mon attaque, ni ma defense) : silencieux.
+ * Realtime listener game_actions → queue de notifications combat.
+ *  - Filtre attack_melee/attack_ranged.
+ *  - Ne pousse que si le viewer est attaquant OU defenseur (observateur tiers : silencieux).
+ *  - Construit la notification asymetrique selon perspective :
+ *      * Attaquant : kills uniquement sur defenseur (fog of war), pertes propres si riposte.
+ *      * Defenseur : kills + blessés + restants sur ses propres pertes, kills seuls sur l'ennemi en riposte.
  *
- * Ignore les actions move / end_turn / start_battle (le toast existant cote
- * Game.tsx couvre ces cas).
+ * Le composant `<CombatResultPanel>` consomme `current` + `dismiss` pour afficher
+ * une fenetre flottante non-bloquante avec X de fermeture. Plusieurs combats
+ * rapides s'empilent en queue ; le user les ferme un par un (cf piege #52).
  */
 export function useCombatNotifications({
   gameId,
@@ -74,8 +119,10 @@ export function useCombatNotifications({
   enabled = true,
   playerTeams,
   units,
-}: UseCombatNotificationsOptions): void {
-  // Refs pour acceder aux dernieres valeurs sans re-subscribe le channel a chaque render
+}: UseCombatNotificationsOptions): UseCombatNotificationsResult {
+  const [queue, setQueue] = useState<CombatNotification[]>([])
+
+  // Refs pour acceder aux dernieres valeurs sans re-subscribe a chaque render
   const viewerTeamRef = useRef(viewerTeam)
   viewerTeamRef.current = viewerTeam
   const playerTeamsRef = useRef(playerTeams)
@@ -93,91 +140,99 @@ export function useCombatNotifications({
             event: 'INSERT',
             filter: `game_id=eq.${gameId}`,
             onChange: payload => {
-              handleActionInsert(payload, viewerTeamRef.current, playerTeamsRef.current, unitsRef.current)
+              const notif = parseAction(payload, viewerTeamRef.current, playerTeamsRef.current, unitsRef.current)
+              if (notif) {
+                setQueue(prev => {
+                  // Anti-doublon : si l'id est deja en queue, ignore
+                  if (prev.some(n => n.id === notif.id)) return prev
+                  return [...prev, notif]
+                })
+              }
             },
           },
         ]
       : undefined,
   })
+
+  const dismiss = useCallback(() => {
+    setQueue(prev => prev.slice(1))
+  }, [])
+
+  const clear = useCallback(() => {
+    setQueue([])
+  }, [])
+
+  return {
+    current: queue[0] ?? null,
+    pendingCount: queue.length,
+    dismiss,
+    clear,
+  }
 }
 
-function handleActionInsert(
+function parseAction(
   payload: unknown,
   viewerTeam: Team | null,
   playerTeams: Map<string, Team>,
   units: ReadonlyArray<UnitState>,
-): void {
-  if (!viewerTeam) return
+): CombatNotification | null {
+  if (!viewerTeam) return null
   const newRow = (payload as { new?: GameActionRow }).new
-  if (!newRow) return
+  if (!newRow) return null
 
   const t = newRow.action_type
-  if (t !== 'attack_melee' && t !== 'attack_ranged') return
-  if (!newRow.actor_user_id) return
+  if (t !== 'attack_melee' && t !== 'attack_ranged') return null
+  if (!newRow.actor_user_id) return null
 
   const attackerTeam = playerTeams.get(newRow.actor_user_id)
-  if (!attackerTeam) return
+  if (!attackerTeam) return null
 
   const isMyAttack = attackerTeam === viewerTeam
   const defenderTeam: Team = attackerTeam === 'blue' ? 'red' : 'blue'
   const isMyDefense = defenderTeam === viewerTeam
-  if (!isMyAttack && !isMyDefense) return
+  if (!isMyAttack && !isMyDefense) return null
 
   const result = newRow.result as AttackResultSnapshot | null
-  if (!result || !result.combat) return
+  if (!result || !result.combat) return null
 
   const combat = result.combat
   const riposte = result.riposte
 
-  // Lookup unit kinds (best-effort, peut etre null si DELETE deja arrive)
   const attackerUnit = units.find(u => u.id === result.attacker_id)
   const defenderUnit = units.find(u => u.id === result.defender_id)
-  const attackerKind = attackerUnit ? KIND_LABEL[attackerUnit.kind] : 'Unité'
-  const defenderKind = defenderUnit ? KIND_LABEL[defenderUnit.kind] : 'Unité ennemie'
+  const attackerKindLabel = attackerUnit ? KIND_LABEL[attackerUnit.kind] : 'Unité'
+  const defenderKindLabel = defenderUnit ? KIND_LABEL[defenderUnit.kind] : 'Unité ennemie'
 
-  const actionLabel = t === 'attack_melee' ? 'Charge' : 'Tir'
+  const defenderLosses = {
+    killed: combat.killed ?? 0,
+    woundedAdd: combat.woundedAdd ?? 0,
+    hpAfter: result.defender_after?.hp ?? combat.defenderHpAfter ?? 0,
+    isKilled: result.defender_killed,
+    isRouted: combat.defenderRouted,
+  }
 
-  if (isMyAttack) {
-    // PERSPECTIVE ATTAQUANT — kills uniquement (fog of war)
-    if (combat.actualDamage === 0) {
-      toast.info(`${actionLabel} : aucune perte ennemie`, { duration: 4000 })
-    } else if (result.defender_killed) {
-      toast.success(`${defenderKind} défaite — ${combat.killed} morts au combat`, { duration: 5000 })
-    } else {
-      toast.success(`${actionLabel} : ${combat.killed} ennemi${combat.killed > 1 ? 's' : ''} abattu${combat.killed > 1 ? 's' : ''}`, { duration: 4000 })
-    }
-
-    // Riposte : c'est MON attaquant qui prend les coups → info complète sur mes pertes
-    if (riposte) {
-      if (result.attacker_killed) {
-        toast.error(`${attackerKind} décimée par la riposte`, { duration: 5000 })
-      } else if (riposte.actualDamage > 0) {
-        const after = result.attacker_after
-        const restants = after ? after.hp : 0
-        const blesses = after ? after.wounded : 0
-        toast.warning(`Riposte adverse — ${riposte.killed} morts, ${riposte.woundedAdd} blessés, ${restants} restants${blesses > 0 ? ` (${blesses} en infirmerie)` : ''}`, { duration: 5500 })
+  const attackerLosses = riposte
+    ? {
+        killed: riposte.killed ?? 0,
+        woundedAdd: riposte.woundedAdd ?? 0,
+        hpAfter: result.attacker_after?.hp ?? 0,
+        isKilled: result.attacker_killed,
+        isRouted: riposte.attackerRouted,
       }
-    }
-  } else if (isMyDefense) {
-    // PERSPECTIVE DEFENSEUR — info complete sur mes pertes (kills + blessés + restants)
-    if (combat.actualDamage === 0) {
-      toast.info(`${actionLabel} adverse : ${defenderKind} indemne`, { duration: 4000 })
-    } else if (result.defender_killed) {
-      toast.error(`${defenderKind} décimée — ${combat.killed} morts au combat`, { duration: 5500 })
-    } else {
-      const after = result.defender_after
-      const restants = after ? after.hp : combat.defenderHpAfter
-      const blesses = after ? after.wounded : combat.defenderWoundedAfter
-      toast.error(`${defenderKind} sous attaque — ${combat.killed} morts, ${combat.woundedAdd} blessés, ${restants} restants${blesses > 0 ? ` (${blesses} en infirmerie)` : ''}`, { duration: 5500 })
-    }
+    : null
 
-    // Riposte : c'est MOI qui ai riposte → kills uniquement sur l'ennemi (fog of war)
-    if (riposte) {
-      if (result.attacker_killed) {
-        toast.success(`Riposte mortelle — ennemi décimé (${riposte.killed} morts)`, { duration: 5000 })
-      } else if (riposte.actualDamage > 0) {
-        toast.success(`Riposte : ${riposte.killed} ennemi${riposte.killed > 1 ? 's' : ''} abattu${riposte.killed > 1 ? 's' : ''}`, { duration: 4000 })
-      }
-    }
+  return {
+    id: newRow.id,
+    kind: result.kind,
+    attackerTeam,
+    defenderTeam,
+    isMyAttack,
+    isMyDefense,
+    attackerKindLabel,
+    defenderKindLabel,
+    defenderLosses,
+    attackerLosses,
   }
 }
+
+export { TEAM_LABEL }

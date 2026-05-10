@@ -1,3 +1,4 @@
+// v1.2 (10/05/2026) — Phase 1.5 : MIN_DAMAGE = 1 dans bornes preview (aligne avec resolveMelee/Ranged)
 // v1.1 (10/05/2026) — Phase 1.5 : ajout bornes killed/woundedAdd dans CombatPreview
 // v1.0 (09/05/2026) — Phase 1 L1A.3 : preview combat (UI A5)
 // Source : PLAN-PHASE-1.md § 2.2 (engine/combat/preview.ts)
@@ -11,6 +12,8 @@ import { KILLED_RATIO, type CombatModifiers } from './types'
 const ROLL_RANGE_MELEE = 20
 const ROLL_RANGE_RANGED = 30
 const FLANK_BONUS = 10
+/** Plancher de degats : un combat reel cause toujours ≥ 1 perte (cf melee.ts/ranged.ts MIN_DAMAGE). */
+const MIN_DAMAGE = 1
 
 export interface CombatPreview {
   readonly damageMin: number
@@ -36,8 +39,8 @@ function buildPreview(
   const defEff = defBase + moraleCombatBonus(defender)
   const rollMin = -rollRange / 2
   const rollMax = rollRange / 2
-  const damageMin = Math.max(0, Math.round(atkEff - defEff + rollMin))
-  const damageMax = Math.max(0, Math.round(atkEff - defEff + rollMax))
+  const damageMin = Math.max(MIN_DAMAGE, Math.round(atkEff - defEff + rollMin))
+  const damageMax = Math.max(MIN_DAMAGE, Math.round(atkEff - defEff + rollMax))
 
   // Bornes effectives clamp sur defender.hp (un dead n'est blesse qu'une fois)
   const actualMin = Math.min(damageMin, defender.hp)

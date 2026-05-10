@@ -8,6 +8,7 @@ Format : 1-2 lignes par item, étiquettes entre crochets.
 
 ## Phase 1.5 — backlog enrichi
 
+- **[ux Phase 6]** Remplacer le `CombatResultPanel` actuel (panneau texte X-fermable) par une **animation messager** : un cavalier bleu/rouge traverse l'écran et délivre le rouleau de pertes (illustre le "porte-message" historique). Le contenu reste identique mais la présentation est plus immersive.
 - **[balance]** Rebalance ratio split killed/wounded par `UnitKind` : artillerie 0.7 (plus létal), cavalerie 0.65, infanterie 0.55-0.6, futurs siège 0.85 (massacre). Actuellement uniforme 0.6.
 - **[gameplay]** Unité Infirmier (Phase 3) : action `heal` qui transfère `wounded → hp` au taux X/tour avec portée 1 hex. Consomme un point d'ordre.
 - **[gameplay]** Récupération naturelle wounded en fin de tour : 5 % du `wounded` total transféré vers `hp` si l'unité n'a pas combattu et n'est pas en ZdC ennemie. Pré-requis Infirmier ou en complément.

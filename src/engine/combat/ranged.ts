@@ -1,3 +1,4 @@
+// v1.2 (10/05/2026) — Phase 1.5 : MIN_DAMAGE_RANGED = 1 (realisme combat, toujours ≥ 1 mort)
 // v1.1 (10/05/2026) — Phase 1.5 : split casualties killed/woundedAdd via splitCasualties()
 // v1.0 (09/05/2026) — Phase 1 L1A.3 : combat ranged
 // Source : PLAN-PHASE-1.md § 2.2 (engine/combat/ranged.ts)
@@ -10,6 +11,8 @@ import { splitCasualties, type CombatModifiers, type CombatResult } from './type
 
 const ROLL_RANGE_RANGED = 30  // roll = rng()*30 - 15 → [-15, +15)
 const ATTACKER_MORALE_DELTA_RANGED = 1
+/** Plancher de degats : meme une volee inefficace fait toujours au moins 1 victime. */
+const MIN_DAMAGE_RANGED = 1
 
 /**
  * Resolution combat distance. Le caller verifie distance + LoS avant d'appeler.
@@ -31,7 +34,8 @@ export function resolveRanged(
 
   const rollRaw = rng()
   const roll = rollRaw * ROLL_RANGE_RANGED - ROLL_RANGE_RANGED / 2
-  const damage = Math.max(0, Math.round(atkEff - defEff + roll))
+  // Plancher 1 : un tir touche toujours au moins 1 cible (realisme volee)
+  const damage = Math.max(MIN_DAMAGE_RANGED, Math.round(atkEff - defEff + roll))
 
   const split = splitCasualties(damage, defender.hp)
   const defenderKilled = split.defenderHpAfter === 0
