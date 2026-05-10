@@ -34,7 +34,7 @@ Source : `engine/units/stats.ts` `UNIT_STATS_V2`. Mirror BDD : `combat_config.co
 | Kind | effectiveMax | effectiveMin | attack | defense | rangedPower | range | minRange | movement |
 |------|-------------:|-------------:|-------:|--------:|------------:|------:|---------:|---------:|
 | I (Infanterie) | 800 | 100 | 1.0 | 1.0 | 0   | 1 | 0 | 3 |
-| C (Cavalerie)  | 180 |  25 | 1.5 | 0.7 | 0   | 1 | 0 | 6 |
+| C (Cavalerie)  | 180 |  25 | 1.1 | 0.9 | 0   | 1 | 0 | 6 |
 | A (Artillerie) | 120 |  30 | 0.5 | 0.3 | 4.0 | 7 | 2 | 2 |
 
 **SubKind 'archer'** sur A : override `range = 4`, `minRange = 0`, `rangedPower = 2.5`.
@@ -144,6 +144,8 @@ Le moral baisse cote defenseur de `round(damage / 4)` en melee/charge, `/ 6` en 
 **Plancher d'attrition (Phase 2.5)** : si l'attaque est theoriquement valide (attackPossible), le damage minimum n'est plus 1 mais `max(1, round(menEngagedAttacker * baseAttritionRate))`. `baseAttritionRate` est dans `CombatConfig` (default 0.08 = 8 %). Exemple : 200 hommes engages sur plaine_standard → 16 pertes minimum/tour, meme a forces parfaitement egales (power = resistance). Realisme : un combat 200 vs 200 en melee tue significativement plus qu'1 soldat. La variance ±15 % s'applique ensuite mais le plancher reste enforce.
 
 Avant Phase 2.5 : `power - resistance <= 0` donnait 1 degat, ce qui creait un equilibre figé peu lisible (bug reproduit le 10/05/2026 sur 800I vs 800I plaine_standard).
+
+**Nerf cav Phase 2.5** : les stats `C attack=1.5 / defense=0.7` (v2.0) donnaient un ratio offensif 2.14, soit `power - resistance ≈ 150` sur 180 hommes engages (bug reproduit le 10/05/2026 sur 180 C vs 180 C plaine_standard → defenseur one-shot apres variance haute). Stats corrigees a `attack=1.1 / defense=0.9` (ratio 1.22) → `power - resistance ≈ 38` sur le meme matchup → ~30-45 morts/tour. La cavalerie reste dominante via le matchup `C vs I` melee (0.9) + la **charge** (matchup 1.5 × multiplicateur 1.3-1.5).
 
 ---
 

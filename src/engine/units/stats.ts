@@ -1,3 +1,4 @@
+// v2.1 (10/05/2026) — Phase 2.5 balance : nerf cav (1.5/0.7 → 1.1/0.9) — bug one-shot C vs C
 // v2.0 (10/05/2026) — Phase 2 2A.2 : UNIT_STATS_V2 (effectif + facteurs unitaires + range/minRange + archerOverride)
 // v1.0 (09/05/2026) — Phase 1 L1A.1 : stats de base par UnitKind (legacy v1, conserve 1 phase)
 // Source : PLAN-PHASE-2-COMBAT-V2.md § 2A.2
@@ -80,8 +81,12 @@ export const UNIT_STATS_V2: Readonly<Record<UnitKind, UnitStatsV2>> = Object.fre
   C: Object.freeze({
     effectiveMax: 180,
     effectiveMin: 25,
-    attack: 1.5,
-    defense: 0.7,
+    // Phase 2.5 balance (10/05/2026) : 1.5/0.7 donnait power-resistance ≈ 150 sur
+    // C 180 vs C 180 plaine → one-shot. Nerf vers 1.1/0.9 pour duels cav vs cav
+    // soutenables (~30-40 morts/tour). La domination cav reste forte via la
+    // charge (matchupCoef C→I = 1.5 + multiplicateur charge 1.3-1.5).
+    attack: 1.1,
+    defense: 0.9,
     rangedPower: 0,
     range: 1,
     minRange: 0,

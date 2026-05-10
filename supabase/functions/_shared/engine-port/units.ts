@@ -59,7 +59,8 @@ export const UNIT_STATS_V2: Record<UnitKind, UnitStatsV2> = Object.freeze({
   }),
   C: Object.freeze({
     effectiveMax: 180, effectiveMin: 25,
-    attack: 1.5, defense: 0.7, rangedPower: 0,
+    // Phase 2.5 balance : nerf attack/defense (cf. src v2.1)
+    attack: 1.1, defense: 0.9, rangedPower: 0,
     range: 1, minRange: 0, movement: 6, moraleMax: 100,
   }),
   A: Object.freeze({
