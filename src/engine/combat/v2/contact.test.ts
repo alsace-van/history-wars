@@ -337,4 +337,22 @@ describe('engine/combat/v2/contact — invariants', () => {
     expect(r.menEngagedAttacker).toBe(50)
     expect(r.damageDealt).toBeGreaterThanOrEqual(4)
   })
+
+  it('regression: 180 C vs 180 C plaine ne one-shot pas (defender survit, pertes raisonnables)', () => {
+    // Bug user 10/05/2026 : avec stats C 1.5/0.7, power-resistance ~150 sur 180 hommes
+    // → variance haute → effectiveAfter <= effectiveMin → unit killed en 1 coup.
+    // Nerf vers 1.1/0.9 : power-resistance ~38 → ~30-45 morts/tour, défenseur survit.
+    const r = runContact({
+      attacker: { kind: 'C', effective: 180, effectiveMax: 180, effectiveMin: 25, morale: 75 },
+      defender: { kind: 'C', effective: 180, effectiveMax: 180, effectiveMin: 25, morale: 75 },
+      attackerTerrain: 'plaine_standard',
+      defenderTerrain: 'plaine_standard',
+      phase: 'melee',
+      seed: 13,
+    })
+    expect(r.defenderKilled).toBe(false)
+    expect(r.defenderEffectiveAfter).toBeGreaterThan(25)  // au-dessus de effectiveMin
+    expect(r.damageDealt).toBeLessThan(100)  // pas un massacre
+    expect(r.damageDealt).toBeGreaterThan(15)  // mais combat significatif
+  })
 })

@@ -2,6 +2,65 @@
 
 ---
 
+## Session 16 &mdash; 10/05/2026 &mdash; Phase 2 closure : polish 2.5 + 2 fix balance + déploiement prod complet
+
+**Phase 2 + Phase 2.5 = COMPLÈTES côté code/prod.** Reste pour officiellement clore :
+- Test humain 2 navigateurs (partie complète split/merge/charge/attrition).
+- `npm run build` PWA + Lighthouse ≥ 90.
+- Tag git `phase-2-complete` après validation.
+
+### 2.5 — Polish (PR #24, mergée)
+- `hooks/useSettings.ts` (NEW) v1.0 : préférence `animationSpeed` persistée `localStorage`.
+- `render/effects/DamageFloater.tsx` (NEW) v1.0 : Billboard 3D `-N` tués (rouge) / `+N` blessés (orange), montée Y + shrink, auto-disparition.
+- `hooks/useCombatAnimator.ts` (NEW) v1.0 : queue de floaters branchée sur `useCombatNotifications`, **skip Espace** global.
+- `render/scenes/TacticalScene.tsx` v1.6 : props `damageFloaters` + `damageFloaterDurationMs` + `onDamageFloaterDone`.
+- `ui/pages/Game.tsx` v3.16 : câblage useSettings + useCombatAnimator + transmission queue.
+
+### 2.6 — Split UX (PR #22 puis #23)
+- `ui/game/UnitInspector.tsx` v2.1 : remplace grille 6 boutons q/r par bouton CTA "Sélectionner la case →" + panneau pulsant.
+- `render/types.ts` + `render/colors.ts` + `render/hex/HexTile.tsx` : nouveau state `'split-target'` (ambre vif).
+- `hooks/useTacticalSelection.ts` v1.3 : param `splitMode`, calcul `splitTargetKeys` (6 voisins libres in-board).
+- `hooks/useSplitMode` puis inlining dans Game.tsx (cycle hooks).
+- `ui/game/Bracket.tsx` (extracted from Game.tsx pour rester sous 600 lignes).
+
+### Fix balance #1 — plancher attrition (PR #25, déployé EF v6)
+- Bug user 10/05/2026 : 800I vs 800I plaine → 1 dégât (égalité parfaite).
+- `engine/combat/v2/types.ts` : `CombatConfig.baseAttritionRate?` + `DEFAULT_BASE_ATTRITION_RATE = 0.08`.
+- `engine/combat/v2/contact.ts` v1.1 + `preview.ts` v1.1 : plancher `max(menEngaged × 0.08, power-resistance)`. À égalité 200 hommes engagés → 16 morts minimum.
+- Mirror Deno + `UPDATE combat_config SET config = jsonb_set(...)` BDD.
+- 2 tests régression `contact.test.ts`.
+
+### Fix balance #2 — nerf cav (commit 89499fa, déployé EF v7)
+- Bug user 10/05/2026 : 180 C vs 180 C plaine → one-shot (variance haute).
+- `engine/units/stats.ts` v2.1 : `C attack=1.5/defense=0.7 → 1.1/0.9` (ratio 1.22 au lieu de 2.14).
+- Power-resistance passe de ~150 à ~38 → ~30-45 morts/tour, 4-5 tours pour anéantir.
+- Cavalerie reste dominante via charge (matchup 1.5 × multi 1.3-1.5).
+- 1 test régression `contact.test.ts`.
+- Mirror Deno + redéploiement EF.
+
+### Déploiements prod EF
+- `resolve_action` v4 (Phase 1.5) → v5 (handlers Phase 2) → v6 (plancher attrition) → **v7** (nerf cav).
+- `start_battle` v1 → **v2** (seed effective + terrain_tiles).
+- `resolve_turn` v1 → **v2** (reset last_move_path début tour).
+- `combat_config` BDD updated : `baseAttritionRate: 0.08` explicit.
+
+### Vérifs finales
+- `npx tsc --noEmit` : 0 erreur.
+- `npx vitest run` : **205/205** tests verts.
+- `wc -l src/ui/pages/Game.tsx` : 599 < 600 (CLAUDE.md §4 respecté via extraction Bracket).
+
+### Reste à faire (côté humain)
+- Test humain 2 navigateurs : split/merge/charge cav/saturation terrain/attrition I vs I.
+- `npm run build` + audit Lighthouse PWA ≥ 90.
+- Tag git `phase-2-complete` après validation.
+
+### Reportés explicitement Phase 3+
+- Settings panel UI pour `animationSpeed` (pour l'instant : localStorage manuel + raccourci Espace).
+- Projectile 3D ranged + courbe d'approche cav animée.
+- Lock interactif pendant l'anim combat (overlay HTML 2s skippable).
+
+---
+
 ## Session 15 &mdash; 10/05/2026 &mdash; Phase 2 refonte combat (sessions 1-7 + closure docs)
 
 **Contexte** : audit + plan Phase 2 livres `AUDIT-PHASE-2-COMBAT-V2.md` + `PLAN-PHASE-2-COMBAT-V2.md` + `02-PLAN-MASTER-V2.md`.
