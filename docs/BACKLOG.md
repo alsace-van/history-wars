@@ -6,14 +6,14 @@ Format : 1-2 lignes par item, étiquettes entre crochets.
 
 ---
 
-## Phase 3 — moral / cohésion / soutien (design figé)
+## Phase 2.5 — moral / cohésion / soutien (design figé)
 
 - **[design figé]** Refonte routed binaire → 3 états (Nominal / Ébranlé / Brisé) avec score de cohésion `0.5×moral + 0.3×effectif + 0.2×soutien`. Soutien = alliés rayon 1+2 (plafond 3). Voir [`PLAN-MORAL-COHESION.md`](./PLAN-MORAL-COHESION.md). Origine : soft-lock Session 16 (PR #27). ~4 jours.
 - **[ux]** Modale confirmation attaque pour Ébranlé (skipable via `useSettings`).
-- **[ux]** Panneau "État critique" pour Brisé : Retraite / Reddition.
+- **[ux]** Panneau "État critique" pour Brisé : Retraite / Reddition / Combat suicide (selon encerclement et effectif global camp).
 - **[render]** Anneau état multi-couleurs (vert/jaune/orange clair/orange foncé) + anneau bleu soutien superposé.
-- **[gameplay]** Action `retreat` (move 1 hex vers bord) + action `surrender` (élimination + bonus moral adversaire).
-- **[gameplay]** Reconstitution Brisé conditionnée à effectif ≥ 25% kind, sinon merge ou soin Infirmier (Phase 3 unité).
+- **[gameplay]** Actions `retreat` (move 1 hex direction choisie + désertion si pertes ≥ 50%), `surrender` (élimination + bonus moral adverse +10 / malus camp -10), `suicide_attack` (×1.5 dégâts, pas de riposte, unité éliminée).
+- **[gameplay]** Reconstitution Brisé conditionnée à effectif ≥ 25% kind, sinon merge ou soin Infirmier (Phase 5 unité).
 
 ## Phase 1.5 — backlog enrichi
 

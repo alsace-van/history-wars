@@ -1,6 +1,7 @@
 # PLAN-MORAL-COHESION.md
 
-> Refonte Phase 3 — moral, cohésion, soutien, états gradués (Nominal / Ébranlé / Brisé).
+> **Phase 2.5** — moral, cohésion, soutien, états gradués (Nominal / Ébranlé / Brisé).
+> Polish/correction du système combat livré en Phase 2 (effectif élastique + 3 phases + saturation terrain).
 > Origine : soft-lock Session 16 (PR #27) — routed binaire trop brutal, pas de mécanique de soutien.
 
 ---
@@ -44,7 +45,7 @@ Sortie automatique de Brisé possible **uniquement si** :
 
 Sinon → reste Brisé jusqu'à action explicite :
 - **Merge** avec autre unité (Phase 2 sizing existant) — recombine effectifs
-- **Soin Infirmier** (Phase 3 à concevoir) — restaure effective wounded → effective
+- **Soin Infirmier** (unité à concevoir Phase 4+ profondeur tactique) — restaure effective wounded → effective
 - **Retrait volontaire** (retreat hors-board) ou Reddition
 
 ```
@@ -239,7 +240,7 @@ Optionnel : colonne calculée `cohesion_state text` pour debug/admin, mais pas n
 - Vague C : 1.5 jour (UI + render anneaux)
 - Vague D : 0.5 jour (calibrage + ajustements)
 
-**Total : ~4 jours** (1 phase Phase 3 sous-lot, après audit Phase 3 global).
+**Total : ~4 jours** (Phase 2.5 polish complet, indépendant de la Phase 3 moteur de tour à venir).
 
 ## 10. Décisions actées
 

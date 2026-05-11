@@ -1,7 +1,7 @@
 # PLAN MASTER CHECKLIST — TACTICA
 
-Mise à jour : 10/05/2026 (session 14 — corrections fin Phase 1.5).
-Phase 0 ✅ — Phase 1 ✅ 13/13 — Phase 1.5 ✅ polish wounded + visuels + toasts + corrections dette.
+Mise à jour : 11/05/2026 (session 17 — alignement phases après refonte combat Phase 2 + ajout Phase 2.5 moral-cohésion).
+Phase 0 ✅ — Phase 1 ✅ 13/13 — Phase 1.5 ✅ — **Phase 2 ✅ refonte combat v2 (effectif élastique + 3 phases + saturation terrain + charge + sizing + balance) — sessions 15-16.**
 
 ---
 
@@ -12,20 +12,25 @@ Phase 0 ✅ — Phase 1 ✅ 13/13 — Phase 1.5 ✅ polish wounded + visuels + t
 | 0 | **Foundations** | Vite/TS strict, Tailwind, Auth Supabase, Lobby CRUD, hex flat-top cubique, `SCALE_CONFIG` 3 échelles, R3F + drei, caméra orbitale contrainte, placeholders unités, Realtime sync, PWA installable, skill `tactica`. | ✅ 13/13 |
 | 1 | **Combat MVP tactique** | Engine pur (units/movement/zoc/los/combat/morale + Mulberry32). Migrations 007-010. 3 EF Deno. UI selection + reachable + targetable + dangerous (ZoC), preview combat tooltip, lerp + path step animation, GameHUD bandeau bas, EndGameModal stats, idempotence, snapshot result. | ✅ 13/13 |
 | 1.5 | **Polish post-combat** | Modèle wounded (split killed/wounded 60/40), visuels asymétriques (UnitHealthBar own-only + scale par effectiveRatio), toasts combat asymétriques via Realtime INSERT game_actions, CombatResultPanel persistant en onglets + highlight unités + bouton Centrer caméra + fog of war highlight (LoS observateurs). Migration 011. Refactor `useGameRealtime` câblé + extraction GameTopBar. | ✅ |
-| 2 | **IA solo** | IA tactique heuristique (`scoreAction = damage_max − risk_max`), profils difficulté (easy/normal/hard), simulation Web Worker, bots ajoutables au lobby (`game_players.is_bot`). | ⬜ |
-| 3 | **Profondeur tactique** | Terrain typé, formations, fatigue, ravitaillement, aura général, propagation panique, **unité Infirmier** (`heal` transfère wounded → hp). | ⬜ |
-| 4 | **Rôles asymétriques** | Rôles commandant/scout/artilleur, ordres limités par rôle, brouillard de guerre (RLS units vue filtrée), points d'ordre. | ⬜ |
-| 5 | **Relief 3D** | Heightmap par scenario, normales calculées, post-processing, eau et végétation low-poly, cycle jour/nuit. | ⬜ |
-| 6 | **Polish esthétique** | Animations unités, particules combat, bannières flottantes, sons, ambiance période, **animation messager** (cavalier traverse l'écran avec rouleau de pertes). | ⬜ |
-| 7 | **Tablette** | Touch events, layout responsive, gestures, orientation lock paysage, safe area iPad. | ⬜ |
-| 8 | **Niveau opérationnel** | Hex × 50, journées, logistique, corps d'armée, `ScalingTransition` tactique↔opérationnel. | ⬜ |
-| 9 | **Niveau stratégique** | Hex × 500, semaines/tour, économie nationale, diplomatie, événements historiques. | ⬜ |
-| 10 | **Asynchrone** | Tour différé 24-48h, notifications push PWA, Background Sync API, ELO async. | ⬜ |
-| 11 | **Tournois / replays** | Bracket, ladder ELO sync, replays sérialisés depuis `game_actions`, partage URL `/replay/{id}`. | ⬜ |
-| 12 | **Mode siège** | Cartes urbaines, fortifications, brèches dynamiques, machines de siège. | ⬜ |
-| 13 | **Open source** | Licence, docs publiques, modabilité via JSONB, modding pack. | ⬜ |
+| 2 | **Refonte combat v2** | Effectif élastique (`effective/effectiveMax/effectiveMin/killed/wounded`), 3 phases combat (melee/ranged/charge), saturation terrain (`contactCap`), charge cavalerie avec multiplicateur path, sizing (split/merge unités), `UNIT_STATS_V2` (I 800 / C 180 / A 120 + facteurs unitaires), terrain typé 6 types, `combat_config` BDD, breakdown UI lisible, balance fix attrition + nerf cav. Migrations 012-014. EF refacturée en handlers. | ✅ |
+| **2.5** | **Moral / cohésion / soutien** ([voir plan](docs/PLAN-MORAL-COHESION.md)) | États gradués (Nominal / Ébranlé / Brisé) basés sur score cohésion `0.5×moral + 0.3×effectif + 0.2×soutien`. Soutien = alliés rayon 1+2 (plafond 3). Modale confirmation Ébranlé, panneau Retraite/Reddition/Combat suicide Brisé. Désertion retraite seuil 50% pertes. Anneaux multi-couches (état + soutien). Cohésion temps réel. | ⬜ |
+| 3 | **Moteur de tour** | Brouillard de guerre évolué, détection (LoS + portée vision par unité), pré-postures (ordres conditionnels du type "tiens position si X attaque, charge si Y avance"), résolution simultanée des ordres en début de tour. | ⬜ |
+| 4 | **IA solo** | IA tactique heuristique (`scoreAction = damage_max − risk_max`), profils difficulté (easy/normal/hard), simulation Web Worker, bots ajoutables au lobby (`game_players.is_bot`). | ⬜ |
+| 5 | **Profondeur tactique** | Formations, fatigue, ravitaillement, aura général, **unité Infirmier** (`heal` transfère wounded → effective). Météo (impact moral/visibilité). Terrain typé déjà livré Phase 2. Propagation panique déjà livrée Phase 2.5. | ⬜ |
+| 6 | **Rôles asymétriques** | Rôles commandant/scout/artilleur, ordres limités par rôle, RLS units vue filtrée pour brouillard évolué, points d'ordre. | ⬜ |
+| 7 | **Relief 3D** | Heightmap par scenario, normales calculées, post-processing, eau et végétation low-poly, cycle jour/nuit. | ⬜ |
+| 8 | **Polish esthétique** | Animations unités, particules combat, bannières flottantes, sons, ambiance période, **animation messager** (cavalier traverse l'écran avec rouleau de pertes). | ⬜ |
+| 9 | **Tablette** | Touch events, layout responsive, gestures, orientation lock paysage, safe area iPad. | ⬜ |
+| 10 | **Niveau opérationnel** | Hex × 50, journées, logistique, corps d'armée, `ScalingTransition` tactique↔opérationnel. | ⬜ |
+| 11 | **Niveau stratégique** | Hex × 500, semaines/tour, économie nationale, diplomatie, événements historiques. | ⬜ |
+| 12 | **Asynchrone** | Tour différé 24-48h, notifications push PWA, Background Sync API, ELO async. | ⬜ |
+| 13 | **Tournois / replays** | Bracket, ladder ELO sync, replays sérialisés depuis `game_actions`, partage URL `/replay/{id}`. | ⬜ |
+| 14 | **Mode siège** | Cartes urbaines, fortifications, brèches dynamiques, machines de siège. | ⬜ |
+| 15 | **Open source** | Licence, docs publiques, modabilité via JSONB, modding pack. | ⬜ |
 
 Légende : ✅ validée et finalisée · 🟡 en cours · ⬜ pas commencée.
+
+**Note décalages 11/05/2026** : Phase 2 a basculé d'"IA solo" à "Refonte combat" pendant les sessions 15-16. L'IA solo est repoussée en Phase 4. Profondeur tactique passe en Phase 5. Toutes les phases suivantes décalent d'un cran (+1). Phase 2.5 (nouveau) = polish moral-cohésion.
 
 ---
 
@@ -278,10 +283,16 @@ Convention : à chaque démarrage de phase N, on produit en bloc :
 
 ---
 
-**État courant** : Phase 0 ✅ — Phase 1 ✅ 13/13 — **Phase 1.5 ✅ complète** (16 sous-tâches livrées, 110/110 tests, Game.tsx 588 lignes, useGameRealtime câblé, fog of war LoS) — prochaine étape **Phase 2 IA solo** (audit + plan détaillé à produire en début de session 15).
+**État courant (11/05/2026 — session 17)** :
+- Phase 0 ✅ — Phase 1 ✅ — Phase 1.5 ✅
+- **Phase 2 ✅** refonte combat v2 livrée (sessions 15-16, 205+ tests, migrations 012-014 prod, balance fix attrition + nerf cav, hotfix soft-lock routed PR #27)
+- **Phase 2.5 🟡** moral-cohésion : design figé (5 PRs docs #28-#31), Vague A engine à attaquer
+- Phase 3 ⬜ moteur de tour (brouillard évolué, détection, pré-postures) — audit à produire après Phase 2.5
+- Phases 4-15 ⬜
 
-À faire côté utilisateur avant tag `phase-1-complete` :
-1. Tester manuellement une partie complète 2 navigateurs (lobby → bataille → combat → fin tour → victoire).
+Prochaine étape : **Vague A engine moral-cohésion** (`engine/cohesion/*` + maj `engine/morale/morale.ts` + `engine/combat/v2/contact.ts` + tests, ~1 jour).
+
+À faire côté utilisateur (clôture Phase 2) :
+1. Tester manuellement une partie complète 2 navigateurs (split/merge/charge cav/saturation terrain/coup de grâce routed).
 2. `npm run build` PWA + Lighthouse score ≥ 90.
-3. Merger PR #17 sur main.
-4. Pousser le tag git `phase-1-complete`.
+3. Tag git `phase-2-complete` après validation.

@@ -86,22 +86,34 @@ Exception : confiance < 95 % AVANT de coder → plan détaillé + questions auto
 
 Ne jamais demander un re-upload si le fichier est accessible via une de ces sources.
 
-## 7. État courant (10/05/2026 — clôture session 13, Phase 1.5)
+## 7. État courant (11/05/2026 — session 17)
 
 - Phase 0 ✅ 13/13
-- **Phase 1 ✅ 13/13** — combat MVP tactique complet
-- **Phase 1.5 ✅** polish wounded + visuels asymétriques + toasts combat
-- **Phase 2 🟡 MVP code livré (session 15)** — refonte combat (effectif élastique, 3 phases, saturation terrain, charge, sizing, breakdown UI)
-  - Engine pur v2 + 93 tests Vitest (203 total)
-  - Migrations 012/013/014 livrées (à appliquer prod)
-  - Engine-port Deno miroir complet
-  - resolve_action refacturé en handlers (move v2, attack v2, split, merge)
+- Phase 1 ✅ 13/13 — combat MVP tactique complet
+- Phase 1.5 ✅ polish wounded + visuels asymétriques + toasts combat
+- **Phase 2 ✅** refonte combat v2 livrée (sessions 15-16) :
+  - Engine pur v2 + 205+ tests Vitest (24 fichiers verts)
+  - Migrations 012/013/014 appliquées prod (vérif 10/05)
+  - Engine-port Deno miroir complet, `resolve_action` refacturée en handlers
   - UI : UnitInspector v2, Tooltip v2 breakdown, ResultPanel v3 charge, Sidebar v1.1 effectifs
-  - Render : UnitPlaceholder v2 + HealthBar v2 (effective)
-  - Doc : `docs/COMBAT-V2.md` (référence règles complètes)
-  - **Reportés Session 2.5 polish** : CombatAnimator (2s skippable), DamageFloater, animationSpeed setting, application migrations prod, test humain, build PWA, tag git
-- **Phase 3** (refonte moteur de tour : brouillard, détection, pré-postures) → audit + plan à produire
-- Phases 4-15 ⬜
+  - Render : UnitPlaceholder v2 + HealthBar v2 + DamageFloater 3D + skip Espace
+  - Balance : plancher attrition × 0.08, nerf cav 1.1/0.9
+  - Hotfix soft-lock routed (PR #27) — coup de grâce autorisé
+  - Doc : `docs/COMBAT-V2.md`
+- **Phase 2.5 🟡** moral / cohésion / soutien (en cours) — voir `docs/PLAN-MORAL-COHESION.md` :
+  - États gradués Nominal/Ébranlé/Brisé, cohésion `0.5×moral + 0.3×effectif + 0.2×soutien`
+  - Soutien rayon 1+2 (plafond 3), modale Ébranlé, panneau Retraite/Reddition/Suicide pour Brisé
+  - Désertion retraite seuil 50% pertes, cohésion temps réel
+  - Design figé via PRs #28-#31 ; **Vague A engine à attaquer** (~1 jour)
+- Phase 3 ⬜ moteur de tour : brouillard évolué, détection, pré-postures
+- Phase 4 ⬜ IA solo (déplacée de Phase 2 après refonte combat)
+- Phase 5 ⬜ Profondeur tactique (formations, fatigue, ravitaillement, Infirmier, météo)
+- Phases 6-15 ⬜
+
+Prochaine action :
+1. Vague A engine moral-cohésion : `engine/cohesion/*`, MAJ `morale.ts` v1.1, `contact.ts` v1.2 + tests.
+2. Vagues B (EF), C (UI/Render), D (calibrage tests humain).
+3. Test humain partie complète Phase 2 (split/merge/charge cav/coup de grâce routed) puis tag `phase-2-complete`.
 
 Prochaine action :
 1. Appliquer migrations 012/013/014 en prod via `mcp_supabase__apply_migration`.
