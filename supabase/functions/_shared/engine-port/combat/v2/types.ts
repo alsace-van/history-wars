@@ -69,7 +69,8 @@ export const DEFAULT_COMBAT_CONFIG: CombatConfig = Object.freeze({
     }),
     charge: Object.freeze({
       I: Object.freeze({ I: 1.0, C: 1.0, A: 1.0 }),
-      C: Object.freeze({ I: 1.5, C: 1.1, A: 1.5 }),
+      // Phase 2.5 balance 11/05/2026 — nerf C→I charge 1.5 → 1.2 (cf src/engine/combat/v2/types.ts).
+      C: Object.freeze({ I: 1.2, C: 1.1, A: 1.5 }),
       A: Object.freeze({ I: 1.0, C: 1.0, A: 1.0 }),
     }),
   }),

@@ -113,7 +113,11 @@ export const DEFAULT_COMBAT_CONFIG: CombatConfig = Object.freeze({
     }),
     charge: Object.freeze({
       I: Object.freeze({ I: 1.0, C: 1.0, A: 1.0 }),
-      C: Object.freeze({ I: 1.5, C: 1.1, A: 1.5 }),
+      // Phase 2.5 balance (11/05/2026) : C→I 1.5 → 1.2. Combiné au chargeMult
+      // 1.3-1.5 et au cap terrain 200, l'ancien 1.5 donnait power-resistance
+      // ≈ 215 → 200+ pertes inf en un coup + défenseur souvent routed = pas
+      // de riposte = "god mode" cav signalé user 11/05.
+      C: Object.freeze({ I: 1.2, C: 1.1, A: 1.5 }),
       A: Object.freeze({ I: 1.0, C: 1.0, A: 1.0 }),
     }),
   }),

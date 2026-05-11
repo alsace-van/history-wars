@@ -18,7 +18,8 @@ describe('engine/combat/v2/matchup', () => {
   })
 
   it('valeurs alignees sur le brainstorm en charge', () => {
-    expect(getMatchupCoef('C', 'I', 'charge')).toBe(1.5)
+    // Phase 2.5 balance (11/05/2026) : C→I charge 1.5 → 1.2 (nerf god mode cav).
+    expect(getMatchupCoef('C', 'I', 'charge')).toBe(1.2)
     expect(getMatchupCoef('C', 'C', 'charge')).toBe(1.1)
     expect(getMatchupCoef('C', 'A', 'charge')).toBe(1.5)
     // I et A en charge : neutre (placeholder, ils ne chargent pas en realite)
