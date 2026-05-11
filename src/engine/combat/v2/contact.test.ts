@@ -1,7 +1,8 @@
+// v1.1 (11/05/2026) — Phase 2.5 : tests modulation defenderSupport sur perte moral
 // v1.0 (10/05/2026) — Phase 2 2A.6 : tests pipeline contact (effectif, charge, terrain, saturation)
-// Cible : 14 tests (PLAN-PHASE-2-COMBAT-V2.md § 2A.11)
 
 import { describe, it, expect } from 'vitest'
+import type { SupportCount } from '../../cohesion/types'
 import { cube } from '../../hex'
 import { seededRng } from '../rng'
 import type { UnitState, UnitSubKind } from '../../units/types'
@@ -42,6 +43,7 @@ interface ContactRunOpts {
   seed?: number
   subKindAtt?: UnitSubKind
   subKindDef?: UnitSubKind
+  defenderSupport?: SupportCount
 }
 
 function runContact(opts: ContactRunOpts = {}) {
@@ -62,6 +64,7 @@ function runContact(opts: ContactRunOpts = {}) {
     distance: opts.distance ?? 1,
     chargeMult: opts.chargeMult ?? 1.0,
     rng: seededRng(opts.seed ?? 1),
+    defenderSupport: opts.defenderSupport,
   })
 }
 
@@ -354,5 +357,69 @@ describe('engine/combat/v2/contact — invariants', () => {
     expect(r.defenderEffectiveAfter).toBeGreaterThan(25)  // au-dessus de effectiveMin
     expect(r.damageDealt).toBeLessThan(100)  // pas un massacre
     expect(r.damageDealt).toBeGreaterThan(15)  // mais combat significatif
+  })
+})
+
+describe('engine/combat/v2/contact — Phase 2.5 modulation moral via soutien', () => {
+  it('sans soutien (défaut) : perte de moral defender = baseline', () => {
+    const r = runContact({
+      attacker: { effective: 200 },
+      defender: { effective: 200, morale: 75 },
+      seed: 42,
+    })
+    // baseline doit être négatif (le défenseur perd du moral)
+    expect(r.defenderMoraleDelta).toBeLessThan(0)
+  })
+
+  it('avec 1 allié adjacent défenseur : perte ×0.9 (atténuée)', () => {
+    const baseline = runContact({
+      attacker: { effective: 200 },
+      defender: { effective: 200, morale: 75 },
+      seed: 42,
+    })
+    const supported = runContact({
+      attacker: { effective: 200 },
+      defender: { effective: 200, morale: 75 },
+      seed: 42,
+      defenderSupport: { adjacent: 1, nearby: 0, total: 1 },
+    })
+    // La perte (négative) est plus proche de 0 avec soutien → moralAfter > baseline
+    expect(supported.defenderMoraleAfter).toBeGreaterThanOrEqual(baseline.defenderMoraleAfter)
+    // Et le delta absolu est plus faible
+    expect(Math.abs(supported.defenderMoraleDelta)).toBeLessThanOrEqual(Math.abs(baseline.defenderMoraleDelta))
+  })
+
+  it('avec 3 alliés adjacents : perte clampée à ×0.7', () => {
+    const baseline = runContact({
+      attacker: { effective: 400 }, // plus gros pour avoir un delta non-zéro visible
+      defender: { effective: 400, morale: 80 },
+      seed: 42,
+    })
+    const supported = runContact({
+      attacker: { effective: 400 },
+      defender: { effective: 400, morale: 80 },
+      seed: 42,
+      defenderSupport: { adjacent: 3, nearby: 0, total: 3 },
+    })
+    // Réduction nette : delta absolu < 0.75 × baseline
+    if (baseline.defenderMoraleDelta < 0) {
+      const ratio = Math.abs(supported.defenderMoraleDelta) / Math.abs(baseline.defenderMoraleDelta)
+      expect(ratio).toBeLessThanOrEqual(0.75)
+    }
+  })
+
+  it('le gain de moral attaquant n est PAS modifié par le soutien (seule la perte défenseur l est)', () => {
+    const baseline = runContact({
+      attacker: { effective: 200 },
+      defender: { effective: 200 },
+      seed: 42,
+    })
+    const supported = runContact({
+      attacker: { effective: 200 },
+      defender: { effective: 200 },
+      seed: 42,
+      defenderSupport: { adjacent: 3, nearby: 0, total: 3 },
+    })
+    expect(supported.attackerMoraleDelta).toBe(baseline.attackerMoraleDelta)
   })
 })
