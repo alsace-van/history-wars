@@ -2,7 +2,134 @@
 
 ---
 
-## Session 17 &mdash; 11/05/2026 &mdash; Hotfix soft-lock routed (PR #27) + design Phase 2.5 moral-cohésion + alignement master
+## Session 17 (fin) &mdash; 11/05/2026 &mdash; Phase 2.5 livrée prod (cohésion + soutien + retreat/surrender/suicide) + design Phase 2.6 + balance cav
+
+**Récap final de la session 17** : la Phase 2.5 (moral-cohésion-soutien) est livrée à 100% côté code + prod. La Phase 2.6 (engagement persistant) a son plan figé pour démarrer en session 18.
+
+### PRs livrées dans cette session (15 PRs)
+
+| # | Sujet | État |
+|---|---|---|
+| #27 | Hotfix soft-lock routed (coup de grâce) | ✅ mergée |
+| #28-#31 | Design plan moral-cohésion (4 itérations Q1-Q4) | ✅ mergées |
+| #32 | Alignement master (Phase 2 = ✅ refonte combat, Phase 2.5/2.6 ajoutées) | ✅ mergée |
+| #33 | **Vague A engine cohésion** (cohesion/, morale v1.1, contact v1.2, +34 tests) | ✅ mergée |
+| #34 | **Vague B EF Deno** (engine-port mirror + handleRetreat/Surrender/Suicide + check broken) | ✅ mergée |
+| #35 | **Vague C UI** (UnitInspector panneau critique + modale Ébranlé + useUnitCriticalActions) | ✅ mergée |
+| #36 | Fix rapport combat : effectiveAfter (absolu) au lieu de hpAfter (% legacy) | ✅ mergée |
+| #37 | Fix refresh manuel après endTurn + actions critiques (UI sync sans Realtime) | ✅ mergée |
+| #38 | **Design Phase 2.6 engagement persistant** (PLAN-ENGAGEMENT-PERSISTENT.md) | ✅ mergée |
+| #39 | **Vague C.2 anneaux 3D** (UnitStatusRing + UnitSupportRing) | ✅ mergée |
+| #40 | Balance : nerf charge C→I 1.5→1.2 + migration 015 | ✅ mergée |
+| #41 | Inspector cohésion temps réel + nerf charge C→C 1.1→0.9 + migration 016 | 🟡 ouverte (à merger) |
+
+### Déploiements prod (11/05/2026 PM)
+
+- **Migrations BDD** : 015 (charge C→I 1.2) + 016 (charge C→C 0.9) appliquées via MCP. `combat_config.version` bumped.
+- **Edge Functions** : `resolve_action` v7 → v8 (3 nouveaux handlers retreat/surrender/suicide + check cohesionState 'broken'). `resolve_turn` v2 → v3 (recoverMoraleEndTurnV2 modulé par soutien).
+- **Advisors** : 0 nouveau warning. Les 4 warnings pré-existants (SECURITY DEFINER `is_*` + Auth leaked password) restent — non bloquants.
+
+### Fichiers clés Phase 2.5
+
+**Engine** (client + Deno port miroir) :
+- `src/engine/cohesion/{types,compute,index}.ts` (NEW)
+- `src/engine/morale/morale.ts` v1.1 — `recoverMoraleEndTurnV2`, `moraleCombatLossMultiplier`
+- `src/engine/combat/v2/contact.ts` v1.2 — `defenderMoraleDelta` modulé par support
+- `src/engine/combat/v2/types.ts` — `matchupMatrix.charge.C.I=1.2`, `charge.C.C=0.9`
+
+**EF Deno** :
+- `supabase/functions/resolve_action/_handlers/handleRetreat.ts` (NEW)
+- `supabase/functions/resolve_action/_handlers/handleSurrender.ts` (NEW)
+- `supabase/functions/resolve_action/_handlers/handleSuicide.ts` (NEW)
+- `supabase/functions/resolve_action/_handlers/handleAttack.ts` v1.1 (check broken)
+- `supabase/functions/resolve_action/_handlers/_common.ts` v1.1 (computeCohesionFor, getCampEffectiveRatio)
+- `supabase/functions/resolve_turn/index.ts` v1.2 (récup moral modulée)
+
+**Hooks UI** :
+- `src/hooks/useTacticalSelection.ts` v1.5 — `cohesionStateMap`, `supportMap`, `retreatTargetKeys`, `suicideTargetIds`
+- `src/hooks/useUnitCriticalActions.ts` (NEW) — `canRetreat`, `canSuicide`, `performXxx`
+- `src/hooks/useBattleClickHandlers.ts` (NEW) — extraction handlers Game.tsx
+- `src/hooks/useSettings.ts` v1.1 — `skipShakenWarning`
+- `src/hooks/useCombatActions.ts` v2.1 — actions retreat/surrender/suicide_attack + codes erreur
+
+**UI** :
+- `src/ui/game/UnitInspector.tsx` v2.3 — section État critique Brisé + section Cohésion temps réel
+- `src/ui/game/BattleSidebar.tsx` v1.4 — propagation cohésion + support
+- `src/ui/game/ShakenAttackConfirm.tsx` (NEW) — modale confirmation Ébranlé
+- `src/ui/game/BattleModals.tsx` (NEW) — regroupement EndGameModal + ShakenAttackConfirm
+- `src/ui/game/CombatResultPanel.tsx` v3.1 — Soldats restants = effectiveAfter
+- `src/ui/pages/Game.tsx` v3.20 — câblage complet (591/600 lignes)
+
+**Render** :
+- `src/render/units/UnitStatusRing.tsx` (NEW) — anneau état vert/jaune/orange (+clignotement Brisé)
+- `src/render/units/UnitSupportRing.tsx` (NEW) — cercles bleus soutien
+- `src/render/units/UnitPlaceholder.tsx` v2.1 — intégration des 2 anneaux
+- `src/render/scenes/TacticalScene.tsx` v1.7 — propagation maps
+
+**Migrations** :
+- 015 `combat_config_nerf_cav_charge.sql` (UPDATE jsonb_set matchup C→I 1.2)
+- 016 `combat_config_nerf_cav_charge_cvc.sql` (UPDATE jsonb_set matchup C→C 0.9)
+
+### Tests
+
+- `npx vitest run` : **240/240 verts** (25 fichiers, +34 vs baseline 206 Phase 2)
+- `npx tsc --noEmit` : 0 erreur
+- Tous fichiers < 600 lignes (Game.tsx 591, UnitInspector 549)
+
+### À tester côté humain (Vague D — pas fait, session 18)
+
+Scénarios issus de docs/PLAN-MORAL-COHESION.md § 7 :
+1. **Reproduction soft-lock Session 16** : I 354/800 moral 22 routée + I 709/800 → vérifier que retreat/surrender/suicide sont dispos, modale Ébranlé sur attaque
+2. **Encerclement** : I 800 entourée 3×I 400 → Brisée en 7-10 tours
+3. **Ligne stable** : 3 I bleues vs 3 I rouges alignées
+4. **Charge cav profonde** : C bleue charge → encerclée → Brisée → Reddition
+5. **Reconstitution merge** : I 100/800 Brisée + I 600/800 saine adjacentes → merge → I 700/800 Ébranlée
+
+### Bugs/observations user pendant la session
+
+| # | Bug | Statut |
+|---|---|---|
+| 1 | "Ce n'est pas ton tour" stale après fin de tour | ✅ Fix #37 (refresh manuel) |
+| 2 | Rapport combat "Soldats restants 98" au lieu de 784 (lecture hp legacy) | ✅ Fix #36 |
+| 3 | Charge C 180 vs I 800 → 0 mort cav (god mode) | ✅ Fix #40 + migration 015 |
+| 4 | Charge C 180 vs C 180 → one-shot dissolution | ✅ Fix #41 + migration 016 |
+| 5 | Cohésion remonte mais user ne voit pas (chiffre moral statique) | ✅ Fix #41 (inspector section Cohésion %) |
+| 6 | Realtime "channel issue" répété en console | 🟡 Mitigé via refresh manuel #37. Cause racine reportée Phase 3+ (latence Supabase Free tier suspect) |
+| 7 | Workbox bruyant en console dev (différence Opera vs Chrome) | ℹ️ Sans impact. Service Worker installé Opera persiste — désinscription via DevTools si gêne |
+
+### Reportés Phase 3+ (backlog)
+
+- **[ux/communication]** Afficher "Hommes engagés au contact: X/Y" dans rapport combat (saturation Thermopyles peu intuitive — feedback user)
+- **[balance]** Calibrage `baseAttritionRate` 0.08 à valider (tester 0.06 / 0.10)
+- **[dette tech]** Realtime auto-reconnect avec exponential backoff (le `useRealtime` actuel ne reconnecte pas après CHANNEL_ERROR)
+- **[ux]** Indicateur visuel "Hors ligne" prominent quand Realtime décroche
+- **[ux]** Polling fallback toutes les 10s si canal CLOSED persiste
+
+### Prochaine étape (session 18) — Phase 2.6 engagement persistant
+
+Plan figé dans `docs/PLAN-ENGAGEMENT-PERSISTENT.md` (PR #38 mergée). Découpage :
+- **Vague A** Engine (~1.5j) : `engine/engagement/{types,tick,index}.ts` + tests (~15 tests)
+- **Vague B** BDD + EF (~2j) : Migration 017 `engagements` table + `handleEngage` + `handleBreakCombat` + `resolve_turn` v1.3 tick attrition
+- **Vague C** UI/Render (~1j) : anneau pulsant rouge + ligne 3D + bouton Rompre dans Inspector
+- **Vague D** Test humain (~0.5j) : 5 scénarios calibrage
+
+Décisions actées (cf plan) :
+- Initiation engagement : **volontaire** (clic) — pas d'auto, permet contournement
+- Relève réserves : **10%** par tour
+- Rompre le combat : **coût fixe 10% effective**
+- Cavalerie : charge ponctuelle inchangée. Après impact : menu Rester (malus def×0.8 + attrition ×1.3) / Replier (gratuit)
+- Tir ranged : pas d'engagement auto. Mêlée forcée si attaquant adjacent clique "Engager"
+
+### À faire avant Phase 3 (clôture Phase 2 complète)
+
+1. Merger PR #41 (l'ouvrir et valider)
+2. Tests humain Vague D Phase 2.5 sur les 5 scénarios
+3. `npm run build` PWA + Lighthouse ≥ 90
+4. Tag git **`phase-2-complete`** (englobe Phase 2 + Phase 2.5)
+
+---
+
+## Session 17 (début) &mdash; 11/05/2026 &mdash; Hotfix soft-lock routed (PR #27) + design Phase 2.5 moral-cohésion + alignement master
 
 **Bug remonté par user 11/05/2026** : 2 infanteries adjacentes (rouge 354/800 moral 22 routée + bleue 709/800 saine) sur partie 2 vs 2 joueurs → personne ne peut rien faire. Soft-lock par triangulation :
 - Routed ne peut ni bouger ni attaquer (`useTacticalSelection.ts` lignes 87, 110).
