@@ -92,19 +92,32 @@ UnitInspector remplace "Ordres disponibles" par **"État critique"** :
                         (effet "chaîne de redditions" historique — Sedan 1870, Stalingrad)
 ```
 
-#### Calcul désertion retraite
+#### Calcul désertion retraite (v2 — seuil pertes 50%)
+
+Distinction **repli stratégique** (pertes < 50% → pas de désertion, c'est un mouvement tactique propre dans un plan de bataille) vs **repli panique** (pertes ≥ 50% → désertion progressive).
 
 ```
 tauxPertes  = (effectiveMax - effective) / effectiveMax
-desertion   = round(effective × tauxPertes × 0.2)
+seuilPanique = 0.5
+
+si tauxPertes < seuilPanique → desertion = 0
+sinon                        → desertion = round(effective × (tauxPertes - seuilPanique))
+
 nouvelEffectif = effective - desertion
 si nouvelEffectif < effectiveMin → unité dissoute (les déserteurs emportent l'unité)
 ```
 
-Exemples :
-- I 700/800 (12% pertes) retraite → −17 hommes (683 restants, intact)
-- I 354/800 (56% pertes) retraite → −40 hommes (314 restants, ébranlé)
-- I 100/800 (87% pertes) retraite → −17 hommes → 83 < effectiveMin (100) → **unité dissoute**
+Exemples (kind I, effectiveMin=100) :
+
+| Effectif | Pertes | Type repli | Désertion | Restant |
+|---|---|---|---|---|
+| 700/800 | 12% | stratégique | 0 | 700 |
+| 500/800 | 37% | stratégique | 0 | 500 |
+| 400/800 | 50% | limite (juste sous seuil) | 0 | 400 |
+| 354/800 | 56% | panique légère | 21 (6%) | 333 |
+| 200/800 | 75% | panique sévère | 50 (25%) | 150 |
+| 150/800 | 81% | panique sévère | 47 (31%) | 103 (frôle min) |
+| 100/800 | 87% | panique totale | 37 (37%) | 63 < 100 → **unité dissoute** |
 
 ## 5. Système visuel (anneaux multi-couches)
 
@@ -213,11 +226,14 @@ Optionnel : colonne calculée `cohesion_state text` pour debug/admin, mais pas n
 
 ### 11/05/2026 — second tour de questions
 6. Reddition : **+10 moral camp adverse (toutes unités) ET −10 moral camp qui se rend** (toutes autres unités). Effet "chaîne d'effondrement" dramatique et historique.
-7. Retraite : **direction choisie par le joueur** (1 hex parmi voisins libres). Pénalité désertion proportionnelle aux pertes (× 0.2). Si désertion fait passer sous `effectiveMin` → unité dissoute.
+7. Retraite : **direction choisie par le joueur** (1 hex parmi voisins libres). Pénalité désertion appliquée seulement si **pertes ≥ 50%** (repli panique). Sinon pas de désertion (repli stratégique).
 8. Recalcul cohésion : **temps réel** (à chaque action), pas en fin de tour. Permet le sauvetage tactique : un renfort déplacé à côté d'une unité Ébranlée la rend immédiatement Nominal et utilisable dans le même tour. Côté code : cohésion dérivée via `useMemo`/recompute serveur, jamais stockée.
+
+### 11/05/2026 — troisième tour (raffinement désertion)
+9. **Désertion à la retraite** : seuil 50% pertes déclenche la désertion. Formule linéaire `effective × max(0, tauxPertes - 0.5)`. Sous 50% pertes = repli stratégique propre (aucune désertion). Au-dessus = panique progressive. Si désertion fait passer sous `effectiveMin` → unité dissoute pendant la retraite.
 
 ## 11. Open questions restantes
 
-- [ ] **Calibrage final 50/30/20** vs alternatives — à valider Vague D tests humain. Mécaniques futures qui devront s'aligner : météo (Phase ?), fatigue, ravitaillement (Phase 9-10?).
-- [ ] Plafond cumul désertion : faut-il un cap minimum (au moins 5 hommes même si tauxPertes très bas) ou pas de désertion si pertes < 10% ?
-- [ ] Reddition forcée (tous voisins ennemis) : déclencher l'effet "chaîne d'effondrement" automatiquement ou modale "Acceptez-vous de capituler ?" pour donner choix entre dernier combat suicide et reddition ?
+- [ ] **Calibrage final 50/30/20** vs alternatives — à valider Vague D tests humain. Mécaniques futures qui devront s'aligner : météo, fatigue, ravitaillement.
+- [ ] **Reddition forcée** (tous voisins ennemis) : auto, ou modale "Capituler / Combat suicide" ? Le combat suicide serait une dernière attaque sans riposte possible (effet Thermopyle — peut quand même infliger des pertes).
+- [ ] **Calibrage seuil 50%** : tester d'autres seuils (40% plus dur ? 60% plus tolérant ?) Vague D.
