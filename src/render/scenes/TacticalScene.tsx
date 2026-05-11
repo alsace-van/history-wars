@@ -1,12 +1,13 @@
+// v1.7 (11/05/2026) — Phase 2.5 C.2 : props cohesionStateMap + supportMap pour anneaux 3D état/soutien
 // v1.6 (10/05/2026) — Phase 2 2.5 : prop damageFloaters (queue DamageFloater rendue en 3D au-dessus des unités)
 // v1.5 (10/05/2026) — Phase 1.5 : prop cameraFocusCube (centrer la vue sur une unité depuis CombatResultPanel)
 // v1.4 (10/05/2026) — Phase 1.5 : prop highlightedUnitIds (halo jaune unités du rapport combat actif)
-// v1.3 (10/05/2026) — Phase 1.5 : prop viewerTeam pour barre PV asymetrique (own only)
 import { useMemo } from 'react'
 import { cubeToWorld, type Cube } from '@engine/hex'
 import type { Scale, Team } from '@/types/game'
 import { SCALE_CONFIG } from '@engine/scales'
 import { HexGrid } from '../hex/HexGrid'
+import type { CohesionState, SupportCount } from '@engine/cohesion'
 import { UnitPlaceholder } from '../units/UnitPlaceholder'
 import { CameraController } from '../camera/CameraController'
 import { SceneLighting } from '../lighting/SceneLighting'
@@ -40,6 +41,10 @@ interface TacticalSceneProps {
   /** Durée d'un floater en ms (depuis useSettings). */
   damageFloaterDurationMs?: number
   onDamageFloaterDone?: (id: string) => void
+  /** Phase 2.5 C.2 : Map<unitId, CohesionState> pour l'anneau d'état (vert/jaune/orange). */
+  cohesionStateMap?: Map<string, CohesionState>
+  /** Phase 2.5 C.2 : Map<unitId, SupportCount> pour les cercles bleus de soutien. */
+  supportMap?: Map<string, SupportCount>
   className?: string
 }
 
@@ -63,6 +68,8 @@ export function TacticalScene({
   damageFloaters,
   damageFloaterDurationMs = 1800,
   onDamageFloaterDone,
+  cohesionStateMap,
+  supportMap,
   className,
 }: TacticalSceneProps) {
   const { hexSize } = SCALE_CONFIG[scale]
@@ -84,6 +91,8 @@ export function TacticalScene({
           onClick={onUnitClick}
           onPointerOver={onUnitPointerOver}
           onPointerOut={onUnitPointerOut}
+          cohesionState={cohesionStateMap?.get(u.id)}
+          support={supportMap?.get(u.id)}
         />
       )),
     [
@@ -99,6 +108,8 @@ export function TacticalScene({
       onUnitClick,
       onUnitPointerOver,
       onUnitPointerOut,
+      cohesionStateMap,
+      supportMap,
     ]
   )
 
