@@ -2,6 +2,73 @@
 
 ---
 
+## Session 18 &mdash; 11/05/2026 &mdash; Phase 2.6 Vague A engine engagement persistant (4 fichiers, 32 tests, 272 verts)
+
+**Vague A engine livrée** côté client. Pas de migration ni d'EF pour cette vague (Vague B). Pas de UI (Vague C).
+
+### Fichiers livrés
+
+| Fichier | Contenu | Lignes |
+|---|---|---|
+| `src/engine/engagement/types.ts` (NEW) | `EngagementState`, `EngagementSideResult`, `EngagementTickInput/Result`, `BreakCombatResult`, constantes (`RESERVE_RELIEF_RATE=0.1`, `BREAK_COMBAT_COST_RATIO=0.1`, `ENGAGEMENT_VARIANCE_LOW/RANGE=0.95/0.10`, `ENGAGEMENT_MORALE_DELTA_PER_TURN=-2`) | 141 |
+| `src/engine/engagement/tick.ts` (NEW) | `resolveEngagementTick(input)` : dégâts bilatéraux symétriques + relève 10% (absorbtion `menEngaged + reserve × 0.1`) + variance ±5% + delta moral fatigue -2 + check dissolution mutuelle | 184 |
+| `src/engine/engagement/index.ts` (NEW) | Barrel + `startEngagement(unitA, unitB, turn, gameId)` (factory validée), `breakCombat(unit)` (10% effective, plancher 1, plafond `effectiveMin`, consomme `hasMoved/hasAttacked`), `isEngagedWith(unitId, engagements)` (multi), `getEngagementOpponent` | 134 |
+| `src/engine/engagement/engagement.test.ts` (NEW) | 32 tests Vitest (tick, factory, breakCombat, lookup, constantes plan figé) | 309 |
+
+### Pattern miroir Phase 2.5 cohesion/
+
+- Frontière engine/ stricte : zéro Three/Supabase/React
+- Réutilise `splitCasualties` (combat/types), `resolveUnitStatsV2` (units/stats), `getMatchupCoef` (combat/v2/matchup), `TERRAIN_CAPS` (terrain/caps), `applyMoraleDelta` + `moraleCombatBonus` + `moraleCombatLossMultiplier` (morale/morale)
+- Pas de cycle : engagement → combat/v2 → cohesion → hex/units (sans retour)
+- Variance combat continu ±5% (vs ±15% Phase 2) cohérent plan § 2
+
+### Décisions implémentation
+
+- **Symétrie d'un tick** : dégâts calculés sur snapshot d'avant tick, A et B frappent simultanément (pas de séquentialité). 2 rolls RNG consommés (aToB puis bToA).
+- **Absorbtion réserves** : `adjustedDamage = min(damageRaw, menEngaged + round(reserve × 0.1))`. Plafonne les pertes max/tour à menEngaged + 10% réserve.
+- **breakCombat** : ne descend jamais sous `effectiveMin` (sinon rompre serait suicide), plancher 1 perte si `effective > 0`.
+- **Multi-engagement** : `isEngagedWith` retourne tous les engagements d'une unité (filtre sideA ou sideB). Le caller resolve_turn (vague B) appliquera N ticks indépendants par paire.
+- **Pas d'`adjacency check`** dans `startEngagement` : c'est le rôle du caller (EF + hook UI) vague B/C.
+
+### Tests (272/272 verts, +32 vs baseline 240)
+
+```
+resolveEngagementTick : 12 tests (équilibre, asymétrie, déterminisme, relève, sans réserve,
+                       forêt cap, variance bornée, dissolution unilatérale/mutuelle, moral,
+                       soutien, rollUsed propagé)
+startEngagement       : 4 tests (factory OK, id vide BDD-driven, throw self / same team)
+breakCombat           : 7 tests (10% pertes, plancher 1, plafond effectiveMin, hasMoved/hasAttacked,
+                       split 60/40, cumul killed, constante)
+isEngagedWith         : 3 tests (multi, vide, filtre A/B)
+getEngagementOpponent : 3 tests (sideA, sideB, null si absent)
+Constantes plan figé  : 3 tests (RESERVE_RELIEF_RATE, BREAK_COMBAT_COST_RATIO, MORALE_DELTA)
+```
+
+### Prochaines étapes
+
+**Vague B** (~2j) — BDD + EF Deno :
+1. Migration 017 : table `engagements (id, game_id, unit_a_id, unit_b_id, started_turn, created_at)` + RLS membre + Realtime
+2. EF `_handlers/handleEngage.ts` (INSERT engagement après attaque mêlée)
+3. EF `_handlers/handleBreakCombat.ts` (action `break_combat` → DELETE + 10% pertes)
+4. `resolve_turn` v1.3 : tick engagements actifs avant récup moral
+5. Engine-port Deno miroir `_shared/engine-port/engagement/*`
+
+**Vague C** (~1j) — UI/Render :
+- `useEngagement` hook + `UnitInspector` v2.4 section "Engagé en mêlée" + bouton Rompre
+- `useTacticalSelection` v1.6 : bloque mouvement standard si engagé
+- `EngagementOverlay` 3D : ligne rouge + anneau pulsant
+- `CombatResultPanel` v3.2 : type `'attrition'`
+
+**Vague D** (~0.5j) — 5 scénarios test humain.
+
+### Ouvert sans réponse (plan § 12)
+
+- Multi-engagement rupture : coût cumulé ? plafond 20-30 % ?
+- Variance attrition à valider en humain (±5% vs ±15%)
+- Tireur engagé qui veut rompre : règles spécifiques ?
+
+---
+
 ## Session 17 (fin) &mdash; 11/05/2026 &mdash; Phase 2.5 livrée prod (cohésion + soutien + retreat/surrender/suicide) + design Phase 2.6 + balance cav
 
 **Récap final de la session 17** : la Phase 2.5 (moral-cohésion-soutien) est livrée à 100% côté code + prod. La Phase 2.6 (engagement persistant) a son plan figé pour démarrer en session 18.
