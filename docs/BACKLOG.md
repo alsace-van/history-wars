@@ -8,6 +8,8 @@ Format : 1-2 lignes par item, étiquettes entre crochets.
 
 ## Phase 2.5 — moral / cohésion / soutien (design figé)
 
+- **[ux/communication]** Afficher "Hommes engagés au contact: X / Y" + cap terrain dans le `CombatResultPanel` et `CombatPreviewTooltip`. Aujourd'hui peu intuitif : 750 vs 450 hommes I vs I sur plaine_standard font les mêmes dégâts (~16) car les 2 sont limités à 200 hommes engagés. C'est le design Thermopyles voulu, mais l'UI ne le dit pas. Origine : feedback user 11/05 "dégâts toujours 10-11 peu importe l'effectif".
+- **[balance]** Pondération `baseAttritionRate` (0.08) à revoir selon retour humain. Actuellement à égalité parfaite = 8% des hommes engagés morts/tour. Tester 0.06 (plus lent) ou 0.10 (plus dynamique).
 - **[design figé]** Refonte routed binaire → 3 états (Nominal / Ébranlé / Brisé) avec score de cohésion `0.5×moral + 0.3×effectif + 0.2×soutien`. Soutien = alliés rayon 1+2 (plafond 3). Voir [`PLAN-MORAL-COHESION.md`](./PLAN-MORAL-COHESION.md). Origine : soft-lock Session 16 (PR #27). ~4 jours.
 - **[ux]** Modale confirmation attaque pour Ébranlé (skipable via `useSettings`).
 - **[ux]** Panneau "État critique" pour Brisé : Retraite / Reddition / Combat suicide (selon encerclement et effectif global camp).

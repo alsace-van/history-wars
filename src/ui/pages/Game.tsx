@@ -1,7 +1,7 @@
+// v3.18 (11/05/2026) — Phase 2.5 fix : refresh manuel après endTurn + actions critiques (UI sync sans Realtime)
 // v3.17 (11/05/2026) — Phase 2.5 C : actions critiques Brisé (retraite/reddition/suicide) + modale Ébranlé
 // v3.16 (10/05/2026) — Phase 2 2.5 : useSettings + useCombatAnimator (DamageFloater 3D + skip Espace)
 // v3.15 (10/05/2026) — Phase 2 2D.6 : splitMode state + case cible split via highlight grille
-// v3.14 (10/05/2026) — câble useGameRealtime à la place du useRealtime inline
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -203,6 +203,8 @@ export function Game() {
       setSuicideMode(false)
       setPendingShakenAttack(null)
       clearSelection()
+      // Phase 2.5 fix : refresh manuel après action critique (Realtime peut décrocher).
+      void refresh()
     },
   })
 
@@ -377,6 +379,9 @@ export function Game() {
     const res = await endTurn(gameId)
     if (res.ok) {
       clearSelection()
+      // Phase 2.5 fix : ne pas dépendre uniquement de Realtime (qui peut décrocher).
+      // Refresh manuel garantit que activeTeam UI suit la BDD immédiatement.
+      void refresh()
       toast.success('Tour terminé.')
     }
   }
