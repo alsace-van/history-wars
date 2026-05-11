@@ -80,12 +80,31 @@ UnitInspector remplace "Ordres disponibles" par **"État critique"** :
 ```
 🏳️ UNITÉ BRISÉE — discipline rompue
 
-• Battre en retraite  → fuir 1-2 hex vers bord du board (hors action standard)
+• Battre en retraite  → choisir direction (1 hex parmi voisins libres)
+                        Désertion = round(effective × tauxPertes × 0.2) hommes
+                        Si après désertion effective < effectiveMin → unité dissoute
+                        Si tous voisins libres pointent vers l'intérieur → choix au joueur
                         Si tous voisins occupés ennemis → reddition forcée
 
-• Se rendre           → unité éliminée + bonus moral à l'adversaire
-                        (+20 moral × nb unités adverses survivantes)
+• Se rendre           → unité éliminée
+                        +10 moral sur toutes les unités du camp adverse
+                        -10 moral sur toutes les autres unités du camp qui se rend
+                        (effet "chaîne de redditions" historique — Sedan 1870, Stalingrad)
 ```
+
+#### Calcul désertion retraite
+
+```
+tauxPertes  = (effectiveMax - effective) / effectiveMax
+desertion   = round(effective × tauxPertes × 0.2)
+nouvelEffectif = effective - desertion
+si nouvelEffectif < effectiveMin → unité dissoute (les déserteurs emportent l'unité)
+```
+
+Exemples :
+- I 700/800 (12% pertes) retraite → −17 hommes (683 restants, intact)
+- I 354/800 (56% pertes) retraite → −40 hommes (314 restants, ébranlé)
+- I 100/800 (87% pertes) retraite → −17 hommes → 83 < effectiveMin (100) → **unité dissoute**
 
 ## 5. Système visuel (anneaux multi-couches)
 
@@ -183,17 +202,22 @@ Optionnel : colonne calculée `cohesion_state text` pour debug/admin, mais pas n
 
 **Total : ~4 jours** (1 phase Phase 3 sous-lot, après audit Phase 3 global).
 
-## 10. Décisions actées (10/05/2026 user)
+## 10. Décisions actées
 
+### 10/05/2026 — premier tour de questions
 1. Rayon soutien : **1 + 2**
 2. Plafond bonus : **3 alliés**
 3. Pondération cohésion : **50/30/20** (moral/effectif/soutien)
 4. Sortie Brisé : **conditionnée à l'effectif** (seuil reformThreshold 25%)
 5. Anneau état : **vert/jaune/orange clair/orange foncé** + cercle bleu soutien superposé
 
-## 11. Open questions (à trancher avant code)
+### 11/05/2026 — second tour de questions
+6. Reddition : **+10 moral camp adverse (toutes unités) ET −10 moral camp qui se rend** (toutes autres unités). Effet "chaîne d'effondrement" dramatique et historique.
+7. Retraite : **direction choisie par le joueur** (1 hex parmi voisins libres). Pénalité désertion proportionnelle aux pertes (× 0.2). Si désertion fait passer sous `effectiveMin` → unité dissoute.
+8. Recalcul cohésion : **temps réel** (à chaque action), pas en fin de tour. Permet le sauvetage tactique : un renfort déplacé à côté d'une unité Ébranlée la rend immédiatement Nominal et utilisable dans le même tour. Côté code : cohésion dérivée via `useMemo`/recompute serveur, jamais stockée.
 
-- [ ] Reddition : bonus exact moral adversaire (+20 × nb unités survivantes proposé, à valider)
-- [ ] Retraite : si tous voisins libres mais aucun ne va vers le bord → choisir direction ?
-- [ ] Effet cascade : briser une unité au milieu d'une ligne → recalcul instantané ou fin de tour ?
-- [ ] Calibrage 50/30/20 vs alternatives (60/30/10 plus tolérant ? 40/40/20 plus offensif ?) — décider via Vague D tests humain
+## 11. Open questions restantes
+
+- [ ] **Calibrage final 50/30/20** vs alternatives — à valider Vague D tests humain. Mécaniques futures qui devront s'aligner : météo (Phase ?), fatigue, ravitaillement (Phase 9-10?).
+- [ ] Plafond cumul désertion : faut-il un cap minimum (au moins 5 hommes même si tauxPertes très bas) ou pas de désertion si pertes < 10% ?
+- [ ] Reddition forcée (tous voisins ennemis) : déclencher l'effet "chaîne d'effondrement" automatiquement ou modale "Acceptez-vous de capituler ?" pour donner choix entre dernier combat suicide et reddition ?
