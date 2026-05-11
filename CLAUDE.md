@@ -93,19 +93,24 @@ Ne jamais demander un re-upload si le fichier est accessible via une de ces sour
 - Phase 1.5 ✅ polish wounded + visuels asymétriques + toasts combat
 - **Phase 2 ✅** refonte combat v2 livrée (sessions 15-16)
 - **Phase 2.5 ✅** moral / cohésion / soutien livrée prod (session 17) — 4 vagues A→C, Vague D (test humain) en attente
-- **Phase 2.6 🟡** engagement persistant (session 18 en cours) — voir `docs/PLAN-ENGAGEMENT-PERSISTENT.md` :
-  - **Vague A engine ✅ livrée session 18** : `engine/engagement/{types,tick,index}.ts` + 32 tests (272/272 verts)
-  - **Vague B BDD + EF ✅ livrée session 18 (côté code)** : migration 017 `engagements` (RLS + Realtime + CHECK pair_order), engine-port Deno miroir, `handleAttack` v1.2 (INSERT engagement post-mêlée idempotent), `handleBreakCombat` (action `break_combat` + 10% pertes + DELETE multi), `resolve_turn` v1.3 (tick engagements séquentiel avant récup moral)
-  - Constantes : `RESERVE_RELIEF_RATE=0.1`, `BREAK_COMBAT_COST_RATIO=0.1`, variance ±5%, fatigue moral -2/tour
-  - **À appliquer prod** : migration 017 + redeploy `resolve_action` v2.2 + `resolve_turn` v1.3
-  - Vague C UI/Render (~1j) : useEngagement, UnitInspector v2.4, EngagementOverlay 3D, CombatResultPanel attrition
-  - Vague D tests humain (~0.5j) : 5 scénarios calibrage
+- **Phase 2.6 🟡** engagement persistant (session 18 clôturée) — voir `docs/PLAN-ENGAGEMENT-PERSISTENT.md` :
+  - **Vague A engine ✅ mergée** (PR #43) : `engine/engagement/{types,tick,index}.ts` + 32 tests
+  - **Vague B BDD + EF ✅ mergée + prod** (PR #44) : migration 017 + engine-port Deno + handleEngage + handleBreakCombat + handleAttack v1.2 + resolve_turn v1.3. EF resolve_action v9 + resolve_turn v4 prod.
+  - **Migration 018 fix ✅ appliquée prod** : CHECK constraint `game_actions.action_type` étendue (6 nouveaux types Phase 2.5+2.6 étaient silencieusement bloqués)
+  - **Vague C UI ✅ livrée** (PR #45 🟡 ouverte) : `useEngagement` + `UnitInspector` v2.4 + bouton Rompre + `EngagementOverlay` 3D ligne rouge pulsante + bloque mouvement engagé
+  - **Session 19 à faire** :
+    1. Sprint UX rapide ~1h (bug auto-select CombatResultPanel + textes 9-10px → 12-14px + effectif avant rapport)
+    2. Merger PR #45 puis test humain Vague D (5 scénarios)
+    3. Sprint UX large esthétique si toujours frustrant
 - Phase 3 ⬜ moteur de tour : brouillard évolué, détection, pré-postures
-- Phase 4 ⬜ IA solo (déplacée de Phase 2 après refonte combat)
+- Phase 4 ⬜ IA solo
 - Phase 5 ⬜ Profondeur tactique (formations, fatigue, ravitaillement, Infirmier, météo)
 - Phases 6-15 ⬜
 
-Prochaine action :
-1. Décider Vague B Phase 2.6 (migration 017 + EF) OU Vague D Phase 2.5 test humain (clôt Phase 2 officiel)
-2. Tag `phase-2-complete` après Vague D 2.5 OK
-3. Bug Realtime auto-reconnect en backlog Phase 3
+Prochaine action session 19 :
+1. **Sprint UX rapide** (~1h) sur la branche `claude/p26-vague-c-ui` (PR #45) : `useRef` pour fix auto-select CombatResultPanel + ajouter effectif avant dans `ReportContent` + grossir tailles texte Inspector/Sidebar/Panel
+2. Push update PR #45 puis merger
+3. Test humain Vague D (5 scénarios)
+4. Tag `phase-2-complete` (englobe Phase 2 + 2.5 + 2.6)
+
+Feedback UX user sauvegardé en mémoire : `~/.claude/projects/.../memory/ux_tactica_lisibilite.md`
