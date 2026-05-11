@@ -95,8 +95,9 @@ Ne jamais demander un re-upload si le fichier est accessible via une de ces sour
 - **Phase 2.5 ✅** moral / cohésion / soutien livrée prod (session 17) — 4 vagues A→C, Vague D (test humain) en attente
 - **Phase 2.6 🟡** engagement persistant (session 18 en cours) — voir `docs/PLAN-ENGAGEMENT-PERSISTENT.md` :
   - **Vague A engine ✅ livrée session 18** : `engine/engagement/{types,tick,index}.ts` + 32 tests (272/272 verts)
+  - **Vague B BDD + EF ✅ livrée session 18 (côté code)** : migration 017 `engagements` (RLS + Realtime + CHECK pair_order), engine-port Deno miroir, `handleAttack` v1.2 (INSERT engagement post-mêlée idempotent), `handleBreakCombat` (action `break_combat` + 10% pertes + DELETE multi), `resolve_turn` v1.3 (tick engagements séquentiel avant récup moral)
   - Constantes : `RESERVE_RELIEF_RATE=0.1`, `BREAK_COMBAT_COST_RATIO=0.1`, variance ±5%, fatigue moral -2/tour
-  - Vague B BDD+EF (~2j) à faire : migration 017 `engagements` + handleEngage/handleBreakCombat + resolve_turn v1.3
+  - **À appliquer prod** : migration 017 + redeploy `resolve_action` v2.2 + `resolve_turn` v1.3
   - Vague C UI/Render (~1j) : useEngagement, UnitInspector v2.4, EngagementOverlay 3D, CombatResultPanel attrition
   - Vague D tests humain (~0.5j) : 5 scénarios calibrage
 - Phase 3 ⬜ moteur de tour : brouillard évolué, détection, pré-postures
