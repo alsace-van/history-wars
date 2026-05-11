@@ -1,7 +1,7 @@
+// v1.4 (11/05/2026) — Phase 2 hotfix soft-lock : autoriser l'attaque sur ennemi routé (coup de grâce)
 // v1.3 (10/05/2026) — Phase 2 2D.6 : param splitMode → tileStates 'split-target' sur hex adjacents libres
 // v1.2 (10/05/2026) — Phase 1.5 : ajout visibleEnemyIds (fog of war via LoS depuis toutes mes unités)
 // v1.1 (10/05/2026) — P1-L1C4-02 : ajout targetableUnitIds + dangerousZocKeys + tileStates 'dangerous'
-// v1.0 (10/05/2026) — P1-REFACTOR-02 : extraction de la logique selection/reachable/tileStates depuis Game.tsx
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { cubeKey, cubeDistance, neighbors } from '@engine/hex'
 import { bfsReachable } from '@engine/movement'
@@ -112,7 +112,10 @@ export function useTacticalSelection(
     const range = stats.range
     for (const enemy of unitStates) {
       if (enemy.team === selectedUnit.team) continue
-      if (enemy.routed) continue
+      // Hotfix v1.4 : on N'EXCLUT PAS les unités routées de la liste des cibles.
+      // Sinon, une routed adjacente bloque indéfiniment la partie (récup moral
+      // impossible en ZdC ennemie cf. morale.ts:53 → soft-lock total).
+      // Permettre le « coup de grâce » est aussi historiquement réaliste.
       const dist = cubeDistance(selectedUnit.position, enemy.position)
       if (dist === 0 || dist > range) continue
       if (range > 1) {
