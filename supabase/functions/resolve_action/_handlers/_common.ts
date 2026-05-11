@@ -1,5 +1,5 @@
+// v1.1 (11/05/2026) — Phase 2.5 : helpers cohésion (computeCohesionFor, getCampEffectiveRatio)
 // v1.0 (10/05/2026) — Phase 2 2C.2 : helpers communs aux handlers (UnitRow v2 + buildUnitState v2 + terrain map + combat_config loader)
-// Source : PLAN-PHASE-2-COMBAT-V2.md § 2C.2
 
 import type { Cube } from '../../_shared/engine-port/hex/index.ts'
 import { cube, cubeKey } from '../../_shared/engine-port/hex/index.ts'
@@ -10,6 +10,12 @@ import type { UnitState, UnitSubKind } from '../../_shared/engine-port/units.ts'
 import type { CombatConfig } from '../../_shared/engine-port/combat/v2/types.ts'
 import { DEFAULT_COMBAT_CONFIG } from '../../_shared/engine-port/combat/v2/types.ts'
 import { UNIT_STATS_V2 } from '../../_shared/engine-port/units.ts'
+import {
+  computeCohesion,
+  computeSupport,
+  type CohesionScore,
+  type SupportCount,
+} from '../../_shared/engine-port/cohesion/index.ts'
 
 /**
  * Forme brute d'une ligne `units` apres migrations 007 + 011 + 012.
@@ -129,4 +135,55 @@ export async function loadCombatConfig(admin: any): Promise<CombatConfig> {
     return DEFAULT_COMBAT_CONFIG
   }
   return data.config as CombatConfig
+}
+
+// ----------------------------------------------------------------------------
+// Phase 2.5 — Helpers cohésion (état + soutien + effectif global camp)
+// ----------------------------------------------------------------------------
+
+/**
+ * Convertit toutes les UnitRow en UnitState (engine-port). Pratique pour
+ * calculer support/cohésion sur la totalité du board en 1 passe.
+ */
+export function buildAllUnitStates(units: UnitRow[]): UnitState[] {
+  return units.map(buildUnitState)
+}
+
+/**
+ * Calcule le support + cohésion d'une unité parmi un set complet d'unités.
+ * Retourne null si l'unité n'est pas trouvée (sécurité).
+ */
+export function computeCohesionFor(
+  unitId: string,
+  units: UnitRow[],
+): { support: SupportCount; cohesion: CohesionScore } | null {
+  const target = units.find(u => u.id === unitId)
+  if (!target) return null
+  const allStates = buildAllUnitStates(units)
+  const targetState = allStates.find(u => u.id === unitId)!
+  const support = computeSupport(targetState, allStates)
+  const cohesion = computeCohesion(targetState, support)
+  return { support, cohesion }
+}
+
+/**
+ * Ratio effectif d'un camp = sum(effective) / sum(effectiveMax) sur unités vivantes du camp.
+ * MVP : `effectiveMax` cumulé sert de proxy de "force initiale du camp" (i.e.
+ * suppose que toutes les unités étaient à plein effectif au début).
+ *
+ * Utilisé par handleSuicide pour décider si le combat suicide est autorisé
+ * (ratio ≥ 25% = guerre encore jouable, voir docs/PLAN-MORAL-COHESION.md § 4).
+ *
+ * Retourne 0 si aucune unité du camp.
+ */
+export function getCampEffectiveRatio(team: Team, units: UnitRow[]): number {
+  let alive = 0
+  let max = 0
+  for (const u of units) {
+    if (u.team !== team) continue
+    alive += u.effective ?? u.hp ?? 0
+    max += u.effective_max ?? UNIT_STATS_V2[u.kind].effectiveMax
+  }
+  if (max === 0) return 0
+  return alive / max
 }

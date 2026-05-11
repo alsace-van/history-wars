@@ -1,7 +1,9 @@
+// v1.2 (11/05/2026) — Phase 2.5 : defenderSupport module la perte de moral du défenseur
 // v1.0 (10/05/2026) — Phase 2 2C.1 : port combat/v2/contact pour Deno
 // Source de verite : src/engine/combat/v2/contact.ts. Duplication controlee (piege #12).
 
-import { applyMoraleDelta, moraleCombatBonus } from '../../morale/morale.ts'
+import type { SupportCount } from '../../cohesion/types.ts'
+import { applyMoraleDelta, moraleCombatBonus, moraleCombatLossMultiplier } from '../../morale/morale.ts'
 import { TERRAIN_CAPS } from '../../terrain/caps.ts'
 import type { TerrainType } from '../../terrain/types.ts'
 import { resolveUnitStatsV2, type UnitState } from '../../units.ts'
@@ -10,6 +12,8 @@ import { distancePrecision } from './distance.ts'
 import { describeMatchup, getMatchupCoef } from './matchup.ts'
 import type { AttackPhase, BonusBreakdownEntry, CombatConfig, CombatResultV2 } from './types.ts'
 import { DEFAULT_BASE_ATTRITION_RATE, DEFAULT_COMBAT_CONFIG } from './types.ts'
+
+const NO_SUPPORT: SupportCount = Object.freeze({ adjacent: 0, nearby: 0, total: 0 })
 
 export interface ContactInput {
   attacker: UnitState
@@ -21,6 +25,7 @@ export interface ContactInput {
   chargeMult: number
   rng: () => number
   config?: CombatConfig
+  defenderSupport?: SupportCount
 }
 
 export function resolveContact(input: ContactInput): CombatResultV2 {
@@ -74,8 +79,12 @@ export function resolveContact(input: ContactInput): CombatResultV2 {
   const ratioAfter = defender.effectiveMax > 0 ? defenderEffectiveAfter / defender.effectiveMax : 0
   const defenderHpAfter = Math.max(0, Math.round(ratioAfter * defender.hpMax))
 
+  // Phase 2.5 : perte moral defender modulée par soutien (cf src/engine/combat/v2/contact.ts v1.2)
   const attackerMoraleDelta = phase === 'ranged' ? 1 : 2
-  const defenderMoraleDelta = -Math.round(split.actualDamage / (phase === 'ranged' ? 6 : 4))
+  const rawDefenderMoraleDelta = -Math.round(split.actualDamage / (phase === 'ranged' ? 6 : 4))
+  const defenderSupport = input.defenderSupport ?? NO_SUPPORT
+  const defenderMoraleLossMult = moraleCombatLossMultiplier(defenderSupport)
+  const defenderMoraleDelta = Math.round(rawDefenderMoraleDelta * defenderMoraleLossMult)
 
   const attackerAfter = applyMoraleDelta(attacker, attackerMoraleDelta)
   const defenderAfter = applyMoraleDelta(defender, defenderMoraleDelta)

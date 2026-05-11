@@ -1,6 +1,6 @@
+// v1.2 (11/05/2026) — Phase 2.5 B : recoverMoraleEndTurnV2 modulée par soutien (alliés rayon 1+2)
 // v1.1 (10/05/2026) — Phase 2 2C.6 : reset last_move_path en debut de tour (detection charge cav)
 // v1.0 (09/05/2026) — Phase 1 L1B.4c : EF resolve_turn (bascule activeTeam, recup morale, end-condition)
-// Source : PLAN-PHASE-1.md § 3.5
 //
 // Logique :
 // 1. CORS / POST only
@@ -30,12 +30,13 @@ import {
   type EndTurnResult,
   type Scale,
 } from '../_shared/types.ts'
-import { type UnitState } from '../_shared/engine-port/units.ts'
+import { UNIT_STATS_V2, type UnitState, type UnitSubKind } from '../_shared/engine-port/units.ts'
 import { cube, cubeKey } from '../_shared/engine-port/hex/index.ts'
 import { computeEnemyZoc, type UnitForZoc } from '../_shared/engine-port/zoc/index.ts'
-import { recoverMoraleEndTurn } from '../_shared/engine-port/morale/index.ts'
+import { recoverMoraleEndTurnV2 } from '../_shared/engine-port/morale/index.ts'
+import { computeSupport } from '../_shared/engine-port/cohesion/index.ts'
 
-const TAG = '[resolve_turn v1.0]'
+const TAG = '[resolve_turn v1.2]'
 
 interface UnitRow {
   id: string
@@ -46,14 +47,26 @@ interface UnitRow {
   r: number
   hp: number
   hp_max: number
+  wounded: number
   morale: number
   morale_max: number
   routed: boolean
   has_moved: boolean
   has_attacked: boolean
+  // Phase 2 (migration 012) — peuvent être NULL si pas encore migrées
+  effective: number | null
+  effective_max: number | null
+  effective_min: number | null
+  killed: number | null
+  sub_kind: UnitSubKind | null
 }
 
 function buildUnitState(row: UnitRow): UnitState {
+  const stats = UNIT_STATS_V2[row.kind]
+  const ratio = row.hp_max > 0 ? row.hp / row.hp_max : 1
+  const effective = row.effective ?? Math.round(ratio * stats.effectiveMax)
+  const effectiveMax = row.effective_max ?? stats.effectiveMax
+  const effectiveMin = row.effective_min ?? stats.effectiveMin
   return {
     id: row.id,
     kind: row.kind,
@@ -61,11 +74,17 @@ function buildUnitState(row: UnitRow): UnitState {
     position: cube(row.q, row.r),
     hp: row.hp,
     hpMax: row.hp_max,
+    wounded: row.wounded ?? 0,
     morale: row.morale,
     moraleMax: row.morale_max,
     hasMoved: row.has_moved,
     hasAttacked: row.has_attacked,
     routed: row.routed,
+    effective,
+    effectiveMax,
+    effectiveMin,
+    killed: row.killed ?? 0,
+    subKind: row.sub_kind ?? undefined,
   }
 }
 
@@ -147,10 +166,13 @@ Deno.serve(async (req: Request) => {
       return errorResponse(ERROR_CODES.NOT_IMPLEMENTED, `scale ${scale} not implemented`, 501)
     }
 
-    // 7. Charger units
+    // 7. Charger units (SELECT colonnes Phase 2 nécessaires au computeSupport)
     const { data: unitsRaw, error: unitsErr } = await admin
       .from('units')
-      .select('id, game_id, team, kind, q, r, hp, hp_max, morale, morale_max, routed, has_moved, has_attacked')
+      .select(
+        'id, game_id, team, kind, q, r, hp, hp_max, wounded, morale, morale_max, routed, ' +
+        'has_moved, has_attacked, effective, effective_max, effective_min, killed, sub_kind',
+      )
       .eq('game_id', gameId)
     if (unitsErr || !unitsRaw) return errorResponse(ERROR_CODES.INTERNAL, 'units fetch failed', 500)
     const units = unitsRaw as UnitRow[]
@@ -174,19 +196,23 @@ Deno.serve(async (req: Request) => {
     }
 
     // 10. Recup morale pour toTeam (hors ZdC ennemie, hadCombat=false MVP)
+    // Phase 2.5 : récupération modulée par soutien (alliés rayon 1+2 non-Brisés).
     const unitsForZoc: UnitForZoc[] = units.map(u => ({
       team: u.team,
       position: cube(u.q, u.r),
       routed: u.routed,
     }))
     const enemyZocFromToTeamPerspective = computeEnemyZoc(unitsForZoc, toTeam)
+    // Construire tous les UnitState (besoin alliés pour computeSupport)
+    const allStates: UnitState[] = units.map(buildUnitState)
 
     let unitsRecoveredCount = 0
     for (const row of units) {
       if (row.team !== toTeam) continue
-      const before = buildUnitState(row)
+      const before = allStates.find(s => s.id === row.id)!
       const inZoc = enemyZocFromToTeamPerspective.has(cubeKey(before.position))
-      const after = recoverMoraleEndTurn(before, false, inZoc)
+      const support = computeSupport(before, allStates)
+      const after = recoverMoraleEndTurnV2(before, false, inZoc, support)
       if (after.morale === before.morale && after.routed === before.routed) continue
       unitsRecoveredCount++
       const { error: moraleErr } = await admin
