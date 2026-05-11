@@ -1,3 +1,4 @@
+// v2.1 (11/05/2026) — Phase 2.5 fix : losses.effectiveAfter (absolu) au lieu de hpAfter (% legacy)
 // v2.0 (10/05/2026) — Phase 2 2D.3 : kind etendu 'charge' + lit effective si dispo (fallback hp legacy)
 // v1.2 (10/05/2026) — Phase 1.5 : tabs (notifications array + removeNotification) + attackerId/defenderId pour highlight
 // v1.0 (10/05/2026) — Phase 1.5 P1.5-NOTIF-01 : Realtime listener game_actions → toasts asymétriques
@@ -91,10 +92,10 @@ export interface CombatNotification {
   attackerKindLabel: string
   /** Label kind defender. */
   defenderKindLabel: string
-  /** Pertes infligees au defenseur lors de l'attaque initiale. */
-  defenderLosses: { killed: number; woundedAdd: number; hpAfter: number; isKilled: boolean; isRouted: boolean }
-  /** Pertes infligees a l'attaquant si riposte melee (null sinon). */
-  attackerLosses: { killed: number; woundedAdd: number; hpAfter: number; isKilled: boolean; isRouted: boolean } | null
+  /** Pertes infligees au defenseur lors de l'attaque initiale. effectiveAfter = nb soldats absolus restants (Phase 2). */
+  defenderLosses: { killed: number; woundedAdd: number; effectiveAfter: number; isKilled: boolean; isRouted: boolean }
+  /** Pertes infligees a l'attaquant si riposte melee (null sinon). effectiveAfter = nb soldats absolus restants. */
+  attackerLosses: { killed: number; woundedAdd: number; effectiveAfter: number; isKilled: boolean; isRouted: boolean } | null
 }
 
 interface UseCombatNotificationsOptions {
@@ -213,10 +214,13 @@ function parseAction(
   const attackerKindLabel = attackerUnit ? KIND_LABEL[attackerUnit.kind] : 'Unité'
   const defenderKindLabel = defenderUnit ? KIND_LABEL[defenderUnit.kind] : 'Unité ennemie'
 
+  // Phase 2.5 fix : "Soldats restants" doit afficher l'effective absolu (sur effectiveMax),
+  // pas le hp legacy v1 (sur 100 = pourcentage). Fallback en cascade :
+  // result.defender_after.effective (post-EF) → combat.defenderEffectiveAfter (snapshot v2).
   const defenderLosses = {
     killed: combat.killed ?? 0,
     woundedAdd: combat.woundedAdd ?? 0,
-    hpAfter: result.defender_after?.hp ?? combat.defenderHpAfter ?? 0,
+    effectiveAfter: result.defender_after?.effective ?? combat.defenderEffectiveAfter ?? 0,
     isKilled: result.defender_killed,
     isRouted: combat.defenderRouted,
   }
@@ -225,7 +229,7 @@ function parseAction(
     ? {
         killed: riposte.killed ?? 0,
         woundedAdd: riposte.woundedAdd ?? 0,
-        hpAfter: result.attacker_after?.hp ?? 0,
+        effectiveAfter: result.attacker_after?.effective ?? riposte.defenderEffectiveAfter ?? 0,
         isKilled: result.attacker_killed,
         isRouted: riposte.attackerRouted,
       }
