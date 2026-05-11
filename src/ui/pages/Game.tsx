@@ -1,7 +1,7 @@
+// v3.21 (11/05/2026) — Phase 2.6 C : useEngagement + ligne 3D + bouton Rompre + bloque mouvement standard
 // v3.20 (11/05/2026) — Phase 2.5 fix UX : passe support à BattleSidebar (affichage cohésion temps réel dans Inspector)
 // v3.19 (11/05/2026) — Phase 2.5 C.2 : transmission cohesionStateMap + supportMap à TacticalScene (anneaux 3D)
 // v3.18 (11/05/2026) — Phase 2.5 fix : refresh manuel après endTurn + actions critiques (UI sync sans Realtime)
-// v3.17 (11/05/2026) — Phase 2.5 C : actions critiques Brisé (retraite/reddition/suicide) + modale Ébranlé
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -17,6 +17,8 @@ import { useCombatAnimator } from '@hooks/useCombatAnimator'
 import { useSettings } from '@hooks/useSettings'
 import { useUnitCriticalActions } from '@hooks/useUnitCriticalActions'
 import { useBattleClickHandlers } from '@hooks/useBattleClickHandlers'
+import { useEngagement } from '@hooks/useEngagement'
+import type { EngagementPair } from '@render/effects/EngagementOverlay'
 import {
   isHost,
   isPlayerInGame,
@@ -171,6 +173,9 @@ export function Game() {
   const [suicideMode, setSuicideMode] = useState(false)
   const [pendingShakenAttack, setPendingShakenAttack] = useState<{ targetId: string } | null>(null)
 
+  // Phase 2.6 C — engagements actifs (table engagements migration 017 + Realtime).
+  const { engagements: engagementRows, engagedUnitIds, engagementsByUnit } = useEngagement(gameId, showBattle)
+
   const {
     selectedUnitId,
     selectedUnit,
@@ -192,6 +197,7 @@ export function Game() {
     splitMode: splitMode !== null,
     retreatMode,
     suicideMode,
+    engagedUnitIds,
   })
 
   const critical = useUnitCriticalActions({
@@ -218,6 +224,44 @@ export function Game() {
 
   const selectedCohesionState = selectedUnit ? cohesionStateMap.get(selectedUnit.id) : undefined
   const selectedSupport = selectedUnit ? supportMap.get(selectedUnit.id) : undefined
+
+  // Phase 2.6 C — Lookup unitId → UnitState pour récupérer positions + kind/team des opponents.
+  const unitById = useMemo<Map<string, UnitState>>(() => {
+    const m = new Map<string, UnitState>()
+    for (const u of unitStates) m.set(u.id, u)
+    return m
+  }, [unitStates])
+
+  // EngagementPair[] pour TacticalScene (ligne 3D rouge entre les 2 pions).
+  const enginePairs = useMemo<EngagementPair[]>(() => {
+    const out: EngagementPair[] = []
+    for (const e of engagementRows) {
+      const a = unitById.get(e.unit_a_id)
+      const b = unitById.get(e.unit_b_id)
+      if (!a || !b) continue
+      out.push({ id: e.id, positionA: a.position, positionB: b.position })
+    }
+    return out
+  }, [engagementRows, unitById])
+
+  // Engagements de l'unité sélectionnée (pour la section "Engagement" du Inspector).
+  const engagementsForSelected = useMemo(() => {
+    if (!selectedUnit) return undefined
+    const list = engagementsByUnit.get(selectedUnit.id)
+    if (!list || list.length === 0) return undefined
+    return list.flatMap(e => {
+      const opponentId = e.unit_a_id === selectedUnit.id ? e.unit_b_id : e.unit_a_id
+      const opp = unitById.get(opponentId)
+      if (!opp) return []
+      return [{
+        id: e.id,
+        opponentId,
+        opponentKind: opp.kind as string,
+        opponentTeam: opp.team,
+        startedTurn: e.started_turn,
+      }]
+    })
+  }, [selectedUnit, engagementsByUnit, unitById])
 
   // ---- Notifications combat en onglets (cf piège #52) ----
   const { notifications: combatNotifs, removeNotification: removeCombatNotif, clear: clearCombatNotifs } =
@@ -388,6 +432,21 @@ export function Game() {
     }
   }
 
+  // Phase 2.6 C — rupture volontaire d'engagement(s) pour l'unité sélectionnée.
+  // Coût 10 % effective + consomme hasMoved/hasAttacked. DELETE tous les engagements.
+  async function handleBreakCombat() {
+    if (!gameId || !selectedUnit || !isMyTurn || actionsBusy) return
+    if (!engagedUnitIds.has(selectedUnit.id)) return
+    const res = await submitAction(gameId, {
+      type: 'break_combat',
+      payload: { unit_id: selectedUnit.id },
+    })
+    if (res.ok) {
+      void refresh()
+      toast.success('Combat rompu.')
+    }
+  }
+
   // Modal de fin : ouverte automatiquement sur status='finished',
   // refermable une fois (l'utilisateur peut rester sur le plateau pour debriefer).
   const [endModalDismissed, setEndModalDismissed] = useState(false)
@@ -480,6 +539,7 @@ export function Game() {
               onDamageFloaterDone={removeFloater}
               cohesionStateMap={showBattle ? cohesionStateMap : undefined}
               supportMap={showBattle ? supportMap : undefined}
+              engagements={showBattle ? enginePairs : undefined}
             />
             <CombatResultPanel
               notifications={combatNotifs}
@@ -540,6 +600,10 @@ export function Game() {
                 onEnterSuicideMode={() => { setRetreatMode(false); setSuicideMode(true) }}
                 onExitSuicideMode={() => setSuicideMode(false)}
                 onSurrender={() => void critical.performSurrender()}
+                engagements={engagementsForSelected}
+                currentTurn={tactical?.currentTurn ?? game.turn_number}
+                onBreakCombat={() => void handleBreakCombat()}
+                breakCombatDisabled={actionsBusy}
                 blueSlots={blueSlots}
                 redSlots={redSlots}
                 hostUserId={hostUserId}

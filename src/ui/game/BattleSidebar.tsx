@@ -1,7 +1,7 @@
+// v1.4 (11/05/2026) — Phase 2.6 C : propage engagements + currentTurn + onBreakCombat à Inspector
 // v1.3 (11/05/2026) — Phase 2.5 C : propage cohesionState + actions critiques (retraite/reddition/suicide) à Inspector
 // v1.2 (10/05/2026) — Phase 2 2D.6 : propagation splitActive/onEnterSplitMode/onExitSplitMode a Inspector
 // v1.1 (10/05/2026) — Phase 2 2D.4 : effectif total par camp + propagation gameId/allUnits a Inspector
-// v1.0 (10/05/2026) — P1-REFACTOR-01 : extraction depuis Game.tsx (panneau lateral en bataille)
 import type { Team } from '@/types/game'
 import type { CohesionState, SupportCount } from '@engine/cohesion'
 import type { UnitState, SplitRatio } from '@engine/units'
@@ -37,6 +37,18 @@ export interface BattleSidebarProps {
   onEnterSuicideMode?: () => void
   onExitSuicideMode?: () => void
   onSurrender?: () => void
+  // -------- Phase 2.6 C : engagement persistant --------
+  engagements?: ReadonlyArray<{
+    id: string
+    opponentId: string
+    opponentKind: string
+    opponentTeam: Team
+    startedTurn: number
+  }>
+  /** Phase 2.6 : utilisé pour calculer "Engagé depuis T<N>". */
+  currentTurn?: number
+  onBreakCombat?: () => void
+  breakCombatDisabled?: boolean
   blueSlots: SlotData[]
   redSlots: SlotData[]
   hostUserId: string
@@ -65,6 +77,10 @@ export function BattleSidebar({
   onEnterSuicideMode,
   onExitSuicideMode,
   onSurrender,
+  engagements,
+  currentTurn,
+  onBreakCombat,
+  breakCombatDisabled,
   blueSlots,
   redSlots,
   hostUserId,
@@ -136,6 +152,10 @@ export function BattleSidebar({
           onEnterSuicideMode={onEnterSuicideMode}
           onExitSuicideMode={onExitSuicideMode}
           onSurrender={onSurrender}
+          engagements={engagements}
+          currentTurn={currentTurn}
+          onBreakCombat={onBreakCombat}
+          breakCombatDisabled={breakCombatDisabled}
         />
       ) : (
         <div className="px-3 py-3 text-[10px] uppercase tracking-[0.08em] text-muted-foreground border border-[rgba(226,232,240,0.10)] rounded-[2px]">

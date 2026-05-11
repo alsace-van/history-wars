@@ -1,12 +1,13 @@
+// v2.4 (11/05/2026) — Phase 2.6 C : section "Engagé en mêlée" + bouton "Rompre le combat"
 // v2.3 (11/05/2026) — Phase 2.5 fix UX : affiche cohésion + soutien en permanence (lisibilité temps réel)
 // v2.2 (11/05/2026) — Phase 2.5 C : section "État critique" pour Brisé (Retraite / Reddition / Suicide)
 // v2.1 (10/05/2026) — Phase 2 2D.6 : choix case split via highlight grille
-// v2.0a (10/05/2026) — split/merge UX : direction (flèches + N/S/E/O)
 import { useEffect, useMemo, useState } from 'react'
 import { computeCohesion, type CohesionState, type SupportCount } from '@engine/cohesion'
 import type { UnitState, SplitRatio } from '@engine/units'
 import { resolveUnitStatsV2 } from '@engine/units'
 import { useUnitSizing } from '@hooks/useUnitSizing'
+import type { Team } from '@/types/game'
 
 interface UnitInspectorProps {
   unit: UnitState
@@ -43,6 +44,25 @@ interface UnitInspectorProps {
   onEnterSuicideMode?: () => void
   onExitSuicideMode?: () => void
   onSurrender?: () => void
+  // -------- Phase 2.6 C : engagement persistant --------
+  /**
+   * Engagements actifs impliquant cette unité (multi-engagement possible).
+   * Chaque entrée pointe vers l'opponent (ennemi de l'autre côté de la paire).
+   * Si tableau vide ou undefined → unité non engagée, section masquée.
+   */
+  engagements?: ReadonlyArray<{
+    id: string
+    opponentId: string
+    opponentKind: string
+    opponentTeam: Team
+    startedTurn: number
+  }>
+  /** Numéro du tour courant (pour calculer "Engagé depuis T<N>"). */
+  currentTurn?: number
+  /** Handler "Rompre le combat" (coût 10% effective, action consommée). */
+  onBreakCombat?: () => void
+  /** Désactive le bouton Rompre (busy ou action en cours). */
+  breakCombatDisabled?: boolean
 }
 
 const KIND_LABEL: Record<string, string> = {
@@ -79,6 +99,10 @@ export function UnitInspector({
   onEnterSuicideMode,
   onExitSuicideMode,
   onSurrender,
+  engagements,
+  currentTurn,
+  onBreakCombat,
+  breakCombatDisabled = false,
 }: UnitInspectorProps) {
   const stats = resolveUnitStatsV2(unit.kind, unit.subKind)
   const sizing = useUnitSizing({ gameId, unit, allUnits, isMyUnit, isMyTurn })
@@ -397,6 +421,49 @@ export function UnitInspector({
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Phase 2.6 C : section "Engagé en mêlée" + bouton "Rompre le combat" */}
+      {isMyUnit && isMyTurn && engagements && engagements.length > 0 && cohesionState !== 'broken' && (
+        <div className="border-t border-red-500/30 pt-3 mt-2">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-[14px]" role="img" aria-label="épées croisées">⚔</span>
+            <div className="text-[10px] uppercase tracking-[0.16em] font-bold text-red-300">
+              Engagement{engagements.length > 1 ? 's' : ''} de mêlée
+            </div>
+          </div>
+          <ul className="space-y-1 mb-3">
+            {engagements.map(e => {
+              const turnsElapsed = currentTurn != null ? currentTurn - e.startedTurn + 1 : null
+              const opLabel = KIND_LABEL[e.opponentKind] ?? e.opponentKind
+              const opTeam = e.opponentTeam === 'blue' ? 'Bleus' : 'Rouges'
+              return (
+                <li key={e.id} className="flex items-center justify-between text-[10px] text-red-300/90 px-2 py-1 bg-red-500/10 rounded-[2px]">
+                  <span>vs {opLabel} {opTeam}</span>
+                  {turnsElapsed != null && (
+                    <span className="text-[9px] text-red-300/60 tabular-nums">
+                      T{e.startedTurn} (×{turnsElapsed} tour{turnsElapsed > 1 ? 's' : ''})
+                    </span>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+          <button
+            type="button"
+            disabled={breakCombatDisabled}
+            onClick={onBreakCombat}
+            className="w-full text-[11px] font-semibold uppercase tracking-[0.08em] px-3 py-2 border-2 rounded-[2px] transition border-red-500 text-red-300 enabled:hover:bg-red-500/20 disabled:opacity-30 disabled:cursor-not-allowed"
+          >
+            ⚠ Rompre le combat
+          </button>
+          <div className="text-[9px] text-muted-foreground italic text-center mt-1 leading-relaxed">
+            Coût : ≈ {Math.max(1, Math.round(unit.effective * 0.1))} hommes laissés au front
+            {engagements.length > 1 && ' · libère les '}{engagements.length > 1 && engagements.length}{engagements.length > 1 && ' engagements'}
+            <br />
+            Action consommée pour ce tour.
+          </div>
         </div>
       )}
 
