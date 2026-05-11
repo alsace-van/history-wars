@@ -113,11 +113,12 @@ export const DEFAULT_COMBAT_CONFIG: CombatConfig = Object.freeze({
     }),
     charge: Object.freeze({
       I: Object.freeze({ I: 1.0, C: 1.0, A: 1.0 }),
-      // Phase 2.5 balance (11/05/2026) : C→I 1.5 → 1.2. Combiné au chargeMult
-      // 1.3-1.5 et au cap terrain 200, l'ancien 1.5 donnait power-resistance
-      // ≈ 215 → 200+ pertes inf en un coup + défenseur souvent routed = pas
-      // de riposte = "god mode" cav signalé user 11/05.
-      C: Object.freeze({ I: 1.2, C: 1.1, A: 1.5 }),
+      // Phase 2.5 balance (11/05/2026 v2) : C→C 1.1 → 0.9. Cav vs cav qui se
+      // chargent : les chevaux s'entrechoquent / esquivent, l'impact est moins
+      // décisif qu'une charge sur ligne infanterie. 1.1 donnait 143 pertes
+      // sur 180, variance haute → dissolution = one-shot (user 11/05).
+      // C→I 1.5 → 1.2 (cf v1) : nerf god mode cav initial.
+      C: Object.freeze({ I: 1.2, C: 0.9, A: 1.5 }),
       A: Object.freeze({ I: 1.0, C: 1.0, A: 1.0 }),
     }),
   }),

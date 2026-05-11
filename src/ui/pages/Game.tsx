@@ -1,7 +1,7 @@
+// v3.20 (11/05/2026) — Phase 2.5 fix UX : passe support à BattleSidebar (affichage cohésion temps réel dans Inspector)
 // v3.19 (11/05/2026) — Phase 2.5 C.2 : transmission cohesionStateMap + supportMap à TacticalScene (anneaux 3D)
 // v3.18 (11/05/2026) — Phase 2.5 fix : refresh manuel après endTurn + actions critiques (UI sync sans Realtime)
 // v3.17 (11/05/2026) — Phase 2.5 C : actions critiques Brisé (retraite/reddition/suicide) + modale Ébranlé
-// v3.16 (10/05/2026) — Phase 2 2.5 : useSettings + useCombatAnimator (DamageFloater 3D + skip Espace)
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -217,6 +217,7 @@ export function Game() {
   }, [selectedUnitId, isMyTurn])
 
   const selectedCohesionState = selectedUnit ? cohesionStateMap.get(selectedUnit.id) : undefined
+  const selectedSupport = selectedUnit ? supportMap.get(selectedUnit.id) : undefined
 
   // ---- Notifications combat en onglets (cf piège #52) ----
   const { notifications: combatNotifs, removeNotification: removeCombatNotif, clear: clearCombatNotifs } =
@@ -529,6 +530,7 @@ export function Game() {
                 onEnterSplitMode={ratio => setSplitMode(ratio)}
                 onExitSplitMode={() => setSplitMode(null)}
                 cohesionState={selectedCohesionState}
+                support={selectedSupport}
                 canRetreat={critical.canRetreat}
                 canSuicide={critical.canSuicide}
                 retreatActive={retreatMode}

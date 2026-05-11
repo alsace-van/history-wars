@@ -3,7 +3,7 @@
 // v1.1 (10/05/2026) — Phase 2 2D.4 : effectif total par camp + propagation gameId/allUnits a Inspector
 // v1.0 (10/05/2026) — P1-REFACTOR-01 : extraction depuis Game.tsx (panneau lateral en bataille)
 import type { Team } from '@/types/game'
-import type { CohesionState } from '@engine/cohesion'
+import type { CohesionState, SupportCount } from '@engine/cohesion'
 import type { UnitState, SplitRatio } from '@engine/units'
 import { TeamPanel, type SlotData } from '@ui/game/TeamPanel'
 import { UnitInspector } from '@ui/game/UnitInspector'
@@ -26,6 +26,8 @@ export interface BattleSidebarProps {
   onExitSplitMode: () => void
   // -------- Phase 2.5 C : panneau État critique (cohésion broken) --------
   cohesionState?: CohesionState
+  /** Phase 2.5 v2.3 : décompte soutien pour affichage temps réel. */
+  support?: SupportCount
   canRetreat?: boolean
   canSuicide?: boolean
   retreatActive?: boolean
@@ -53,6 +55,7 @@ export function BattleSidebar({
   onEnterSplitMode,
   onExitSplitMode,
   cohesionState,
+  support,
   canRetreat,
   canSuicide,
   retreatActive,
@@ -123,6 +126,7 @@ export function BattleSidebar({
           onEnterSplitMode={onEnterSplitMode}
           onExitSplitMode={onExitSplitMode}
           cohesionState={cohesionState}
+          support={support}
           canRetreat={canRetreat}
           canSuicide={canSuicide}
           retreatActive={retreatActive}
