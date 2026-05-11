@@ -1,7 +1,9 @@
+// v1.3 (11/05/2026) — Phase 2.5 C : propage cohesionState + actions critiques (retraite/reddition/suicide) à Inspector
 // v1.2 (10/05/2026) — Phase 2 2D.6 : propagation splitActive/onEnterSplitMode/onExitSplitMode a Inspector
 // v1.1 (10/05/2026) — Phase 2 2D.4 : effectif total par camp + propagation gameId/allUnits a Inspector
 // v1.0 (10/05/2026) — P1-REFACTOR-01 : extraction depuis Game.tsx (panneau lateral en bataille)
 import type { Team } from '@/types/game'
+import type { CohesionState } from '@engine/cohesion'
 import type { UnitState, SplitRatio } from '@engine/units'
 import { TeamPanel, type SlotData } from '@ui/game/TeamPanel'
 import { UnitInspector } from '@ui/game/UnitInspector'
@@ -22,6 +24,17 @@ export interface BattleSidebarProps {
   onEnterSplitMode: (ratio: SplitRatio) => void
   /** Phase 2 2D.6 : sort du mode split (parent éteint highlight). */
   onExitSplitMode: () => void
+  // -------- Phase 2.5 C : panneau État critique (cohésion broken) --------
+  cohesionState?: CohesionState
+  canRetreat?: boolean
+  canSuicide?: boolean
+  retreatActive?: boolean
+  suicideActive?: boolean
+  onEnterRetreatMode?: () => void
+  onExitRetreatMode?: () => void
+  onEnterSuicideMode?: () => void
+  onExitSuicideMode?: () => void
+  onSurrender?: () => void
   blueSlots: SlotData[]
   redSlots: SlotData[]
   hostUserId: string
@@ -39,6 +52,16 @@ export function BattleSidebar({
   splitActive,
   onEnterSplitMode,
   onExitSplitMode,
+  cohesionState,
+  canRetreat,
+  canSuicide,
+  retreatActive,
+  suicideActive,
+  onEnterRetreatMode,
+  onExitRetreatMode,
+  onEnterSuicideMode,
+  onExitSuicideMode,
+  onSurrender,
   blueSlots,
   redSlots,
   hostUserId,
@@ -99,6 +122,16 @@ export function BattleSidebar({
           splitActive={splitActive}
           onEnterSplitMode={onEnterSplitMode}
           onExitSplitMode={onExitSplitMode}
+          cohesionState={cohesionState}
+          canRetreat={canRetreat}
+          canSuicide={canSuicide}
+          retreatActive={retreatActive}
+          suicideActive={suicideActive}
+          onEnterRetreatMode={onEnterRetreatMode}
+          onExitRetreatMode={onExitRetreatMode}
+          onEnterSuicideMode={onEnterSuicideMode}
+          onExitSuicideMode={onExitSuicideMode}
+          onSurrender={onSurrender}
         />
       ) : (
         <div className="px-3 py-3 text-[10px] uppercase tracking-[0.08em] text-muted-foreground border border-[rgba(226,232,240,0.10)] rounded-[2px]">

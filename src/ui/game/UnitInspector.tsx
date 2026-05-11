@@ -1,8 +1,9 @@
-// v2.1 (10/05/2026) — Phase 2 2D.6 : choix case split via highlight grille (au lieu de boutons q/r dans la modale)
-// v2.0a (10/05/2026) — split/merge UX : direction (flèches + N/S/E/O) au lieu de q/r bruts
-// v2.0 (10/05/2026) — Phase 2 2D.1 : effectif elastique + boutons split/merge + selection ratio/case adjacente
-// v1.1 (10/05/2026) — Phase 1.5 P1.5-INSP-01 : barre HP multi-segment vert/orange + ligne blessés
+// v2.2 (11/05/2026) — Phase 2.5 C : section "État critique" pour Brisé (Retraite / Reddition / Suicide)
+// v2.1 (10/05/2026) — Phase 2 2D.6 : choix case split via highlight grille
+// v2.0a (10/05/2026) — split/merge UX : direction (flèches + N/S/E/O)
+// v2.0 (10/05/2026) — Phase 2 2D.1 : effectif elastique + boutons split/merge
 import { useEffect, useState } from 'react'
+import type { CohesionState } from '@engine/cohesion'
 import type { UnitState, SplitRatio } from '@engine/units'
 import { resolveUnitStatsV2 } from '@engine/units'
 import { useUnitSizing } from '@hooks/useUnitSizing'
@@ -24,6 +25,22 @@ interface UnitInspectorProps {
   onEnterSplitMode: (ratio: SplitRatio) => void
   /** Phase 2 2D.6 : annuler le mode sélection grille (revient à l'inspector normal). */
   onExitSplitMode: () => void
+  // -------- Phase 2.5 C : état critique unité Brisée --------
+  /** État de cohésion calculé par useTacticalSelection. Si 'broken' → panneau "État critique". */
+  cohesionState?: CohesionState
+  /** True si au moins 1 voisin libre adjacent (sinon retraite désactivée). */
+  canRetreat?: boolean
+  /** True si encerclée totalement ET ratio camp ≥ 25% (sinon suicide désactivé). */
+  canSuicide?: boolean
+  /** True si on est en mode "choisir la direction retraite". */
+  retreatActive?: boolean
+  /** True si on est en mode "choisir la cible suicide". */
+  suicideActive?: boolean
+  onEnterRetreatMode?: () => void
+  onExitRetreatMode?: () => void
+  onEnterSuicideMode?: () => void
+  onExitSuicideMode?: () => void
+  onSurrender?: () => void
 }
 
 const KIND_LABEL: Record<string, string> = {
@@ -49,6 +66,16 @@ export function UnitInspector({
   splitActive,
   onEnterSplitMode,
   onExitSplitMode,
+  cohesionState,
+  canRetreat = false,
+  canSuicide = false,
+  retreatActive = false,
+  suicideActive = false,
+  onEnterRetreatMode,
+  onExitRetreatMode,
+  onEnterSuicideMode,
+  onExitSuicideMode,
+  onSurrender,
 }: UnitInspectorProps) {
   const stats = resolveUnitStatsV2(unit.kind, unit.subKind)
   const sizing = useUnitSizing({ gameId, unit, allUnits, isMyUnit, isMyTurn })
@@ -323,6 +350,85 @@ export function UnitInspector({
                     </button>
                   )
                 })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Phase 2.5 C : section "État critique" pour unité Brisée */}
+      {isMyUnit && isMyTurn && cohesionState === 'broken' && (
+        <div className="border-t border-red-500/40 pt-3 mt-2">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="text-[14px]" role="img" aria-label="drapeau blanc">🏳️</span>
+            <div className="text-[10px] uppercase tracking-[0.16em] font-bold text-red-300">
+              État critique — discipline rompue
+            </div>
+          </div>
+          <p className="text-[10px] text-muted-foreground leading-relaxed mb-3">
+            Cette unité ne peut plus attaquer en standard. Choisis une action critique.
+          </p>
+          <div className="space-y-2">
+            {/* Retraite */}
+            <button
+              type="button"
+              disabled={!canRetreat || retreatActive || suicideActive}
+              onClick={retreatActive ? onExitRetreatMode : onEnterRetreatMode}
+              className="w-full text-[11px] font-semibold uppercase tracking-[0.08em] px-3 py-2 border-2 rounded-[2px] transition disabled:opacity-30 disabled:cursor-not-allowed"
+              style={{
+                borderColor: retreatActive ? '#eab308' : canRetreat ? '#eab308' : '#475569',
+                background: retreatActive ? 'rgba(234,179,8,0.20)' : 'transparent',
+                color: canRetreat || retreatActive ? '#eab308' : undefined,
+              }}
+            >
+              {retreatActive ? '✕ Annuler retraite' : '→ Battre en retraite'}
+            </button>
+            {!canRetreat && !retreatActive && (
+              <div className="text-[9px] text-muted-foreground italic px-1">
+                Aucune case adjacente libre. Capituler ou tenter un combat suicide.
+              </div>
+            )}
+
+            {/* Combat suicide */}
+            <button
+              type="button"
+              disabled={!canSuicide || retreatActive || suicideActive}
+              onClick={suicideActive ? onExitSuicideMode : onEnterSuicideMode}
+              className="w-full text-[11px] font-semibold uppercase tracking-[0.08em] px-3 py-2 border-2 rounded-[2px] transition disabled:opacity-30 disabled:cursor-not-allowed"
+              style={{
+                borderColor: suicideActive ? '#dc2626' : canSuicide ? '#dc2626' : '#475569',
+                background: suicideActive ? 'rgba(220,38,38,0.20)' : 'transparent',
+                color: canSuicide || suicideActive ? '#dc2626' : undefined,
+              }}
+            >
+              {suicideActive ? '✕ Annuler suicide' : '⚔ Combat suicide (×1.5)'}
+            </button>
+
+            {/* Reddition */}
+            <button
+              type="button"
+              disabled={retreatActive || suicideActive}
+              onClick={onSurrender}
+              className="w-full text-[11px] font-semibold uppercase tracking-[0.08em] px-3 py-2 border-2 rounded-[2px] transition disabled:opacity-30 disabled:cursor-not-allowed border-slate-500 text-slate-400 hover:bg-slate-500/10"
+            >
+              🏳 Se rendre
+            </button>
+          </div>
+
+          {retreatActive && (
+            <div className="mt-3 space-y-1 p-2 bg-amber-500/10 rounded-[2px] border-2 border-amber-500 animate-pulse">
+              <div className="text-[10px] text-amber-300 text-center">
+                Clique sur une case <span className="font-semibold">ambre</span> de la carte pour la direction de fuite.
+              </div>
+              <div className="text-[9px] text-muted-foreground italic text-center">
+                Désertion appliquée si pertes ≥ 50 %.
+              </div>
+            </div>
+          )}
+          {suicideActive && (
+            <div className="mt-3 space-y-1 p-2 bg-red-500/10 rounded-[2px] border-2 border-red-500 animate-pulse">
+              <div className="text-[10px] text-red-300 text-center">
+                Clique sur l'ennemi adjacent à attaquer. <span className="font-semibold">Sans retour.</span>
               </div>
             </div>
           )}
