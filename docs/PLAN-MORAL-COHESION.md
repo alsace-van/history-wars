@@ -75,22 +75,48 @@ Préférence persistée dans `useSettings` (localStorage `skipShakenWarning`).
 
 ### État Brisé — panneau action critique
 
-UnitInspector remplace "Ordres disponibles" par **"État critique"** :
+UnitInspector remplace "Ordres disponibles" par **"État critique"**. Actions disponibles dépendent du contexte tactique (voisins libres vs encerclement) et stratégique (effectif global du camp) :
 
 ```
 🏳️ UNITÉ BRISÉE — discipline rompue
 
-• Battre en retraite  → choisir direction (1 hex parmi voisins libres)
-                        Désertion = round(effective × tauxPertes × 0.2) hommes
-                        Si après désertion effective < effectiveMin → unité dissoute
-                        Si tous voisins libres pointent vers l'intérieur → choix au joueur
-                        Si tous voisins occupés ennemis → reddition forcée
+Cas 1 : au moins un voisin libre
+  • Battre en retraite     → choisir direction (1 hex)
+                             Désertion si pertes ≥ 50% (cf. formule v2 ci-dessous)
 
-• Se rendre           → unité éliminée
-                        +10 moral sur toutes les unités du camp adverse
-                        -10 moral sur toutes les autres unités du camp qui se rend
-                        (effet "chaîne de redditions" historique — Sedan 1870, Stalingrad)
+  • Se rendre              → unité éliminée
+                             +10 moral camp adverse (toutes unités)
+                             -10 moral camp qui se rend (toutes autres unités)
+
+Cas 2 : tous voisins ennemis (encerclement)
+  Branche selon effectifGlobalRatio = effectif total camp / effectif initial camp :
+
+  Si ratio < 25% (guerre perdue)
+    → CAPITULATION AUTO (les hommes refusent de mourir pour une cause perdue)
+       Mêmes effets que "Se rendre" volontaire ci-dessus.
+
+  Si ratio ≥ 25% (guerre encore jouable)
+    → Modale "Capituler / Combat suicide" au choix du joueur.
 ```
+
+#### Mécanique "Combat suicide" (exception cohésion)
+
+Action distincte dans le panneau État critique, contourne le filtre `cohesionState === 'broken'` qui interdit les attaques normales aux unités Brisées.
+
+| Aspect | Valeur |
+|---|---|
+| Cible | 1 voisin ennemi choisi par le joueur |
+| Dégâts | ×1.5 (effet Thermopyle — ils n'ont plus rien à perdre) |
+| Riposte adverse | ❌ Aucune (unité déjà condamnée) |
+| Après l'attaque | Unité **éliminée** (qu'elle ait tué la cible ou non) |
+| Bonus moral adverse capture | ❌ Aucun (contrairement à capitulation : pas de gloire à massacrer un suicide héroïque) |
+| Effet moral camp adverse | **−5 moral sur toutes unités adverses** (impressionnées par la résistance) |
+
+Effets stratégiques attendus :
+- **Sacrifice utile en début/milieu de partie** : si avantage encore préservé, sacrifier une unité encerclée pour blesser ennemi clé fait sens.
+- **Capitulation forcée fin de partie** : camp ruiné → unités encerclées capitulent → adversaire victorieux finalise.
+- Évite l'effet rage-quit où un joueur perdant userait le suicide juste pour frustrer.
+- Thématiquement juste : Thermopyle (Sparte forte) = sacrifice ; Sedan 1870 (France ruinée) = capitulation massive.
 
 #### Calcul désertion retraite (v2 — seuil pertes 50%)
 
@@ -232,8 +258,13 @@ Optionnel : colonne calculée `cohesion_state text` pour debug/admin, mais pas n
 ### 11/05/2026 — troisième tour (raffinement désertion)
 9. **Désertion à la retraite** : seuil 50% pertes déclenche la désertion. Formule linéaire `effective × max(0, tauxPertes - 0.5)`. Sous 50% pertes = repli stratégique propre (aucune désertion). Au-dessus = panique progressive. Si désertion fait passer sous `effectiveMin` → unité dissoute pendant la retraite.
 
-## 11. Open questions restantes
+### 11/05/2026 — quatrième tour (encerclement Brisé)
+10. **Encerclement Brisé** : la décision capitulation vs combat suicide dépend de **l'effectif global du camp**. Ratio < 25% (camp effondré) → capitulation auto (les hommes refusent). Ratio ≥ 25% (guerre jouable) → modale au choix joueur.
+11. **Combat suicide** = action distincte, exception au blocage cohésion Brisé. Dégâts ×1.5, pas de riposte, unité éliminée après. Pas de bonus capture adverse (pas de gloire à massacrer un suicide). Malus −5 moral toutes unités adverses (impressionnées par la résistance).
 
-- [ ] **Calibrage final 50/30/20** vs alternatives — à valider Vague D tests humain. Mécaniques futures qui devront s'aligner : météo, fatigue, ravitaillement.
-- [ ] **Reddition forcée** (tous voisins ennemis) : auto, ou modale "Capituler / Combat suicide" ? Le combat suicide serait une dernière attaque sans riposte possible (effet Thermopyle — peut quand même infliger des pertes).
-- [ ] **Calibrage seuil 50%** : tester d'autres seuils (40% plus dur ? 60% plus tolérant ?) Vague D.
+## 11. Open questions restantes (à valider Vague D tests humain)
+
+- [ ] **Calibrage pondération cohésion** 50/30/20 vs alternatives. Mécaniques futures qui devront s'aligner : météo, fatigue, ravitaillement.
+- [ ] **Calibrage seuil 50%** désertion : tester 40% (plus dur) ou 60% (plus tolérant).
+- [ ] **Calibrage seuil 25%** effectif global pour capitulation auto : tester 20% ou 30%.
+- [ ] **Calibrage multiplicateur suicide ×1.5** : tester ×1.3 ou ×2.
