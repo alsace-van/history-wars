@@ -1,7 +1,7 @@
+// v3.17 (11/05/2026) — Phase 2.5 C : actions critiques Brisé (retraite/reddition/suicide) + modale Ébranlé
 // v3.16 (10/05/2026) — Phase 2 2.5 : useSettings + useCombatAnimator (DamageFloater 3D + skip Espace)
-// v3.15 (10/05/2026) — Phase 2 2D.6 : splitMode state + case cible split via highlight grille (clic hex au lieu de bouton q/r)
-// v3.14 (10/05/2026) — câble useGameRealtime à la place du useRealtime inline (DRY + lignes < 600)
-// v3.13 (10/05/2026) — Phase 1.5 : highlight ennemi rapport combat filtré par visibleEnemyIds (fog of war)
+// v3.15 (10/05/2026) — Phase 2 2D.6 : splitMode state + case cible split via highlight grille
+// v3.14 (10/05/2026) — câble useGameRealtime à la place du useRealtime inline
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -15,6 +15,8 @@ import { useTacticalSelection } from '@hooks/useTacticalSelection'
 import { useCombatNotifications } from '@hooks/useCombatNotifications'
 import { useCombatAnimator } from '@hooks/useCombatAnimator'
 import { useSettings } from '@hooks/useSettings'
+import { useUnitCriticalActions } from '@hooks/useUnitCriticalActions'
+import { useBattleClickHandlers } from '@hooks/useBattleClickHandlers'
 import {
   isHost,
   isPlayerInGame,
@@ -27,7 +29,7 @@ import { BattleSidebar } from '@ui/game/BattleSidebar'
 import { GameHUD } from '@ui/game/GameHUD'
 import { GameTopBar } from '@ui/game/GameTopBar'
 import { Bracket } from '@ui/game/Bracket'
-import { EndGameModal } from '@ui/game/EndGameModal'
+import { BattleModals } from '@ui/game/BattleModals'
 import { CombatPreviewTooltip } from '@ui/game/CombatPreviewTooltip'
 import { CombatResultPanel } from '@ui/game/CombatResultPanel'
 import type { CombatNotification } from '@hooks/useCombatNotifications'
@@ -35,12 +37,8 @@ import { TacticalScene, buildMvpUnitPlacement } from '@/render'
 import { unitRowsToInstances, unitRowsToStates } from '@render/_data/unitAdapter'
 import type { UnitInstance } from '@render/types'
 import { spiral, cubeKey, type Cube } from '@engine/hex'
-import { getUnitStats, type UnitState, type SplitRatio } from '@engine/units'
-import { aStar } from '@engine/movement'
-import { computeEnemyZoc } from '@engine/zoc'
+import { type UnitState, type SplitRatio } from '@engine/units'
 import { cn } from '@lib/cn'
-
-const TAG = '[Game v3.16]'
 
 const MVP_CUBES: Cube[] = spiral({ q: 0, r: 0, s: 0 }, 5)
 const MVP_BOARD_KEYS = new Set(MVP_CUBES.map(cubeKey))
@@ -168,6 +166,10 @@ export function Game() {
   }, [players])
 
   const [splitMode, setSplitMode] = useState<SplitRatio | null>(null)
+  // Phase 2.5 C — modes UI actions critiques
+  const [retreatMode, setRetreatMode] = useState(false)
+  const [suicideMode, setSuicideMode] = useState(false)
+  const [pendingShakenAttack, setPendingShakenAttack] = useState<{ targetId: string } | null>(null)
 
   const {
     selectedUnitId,
@@ -178,14 +180,40 @@ export function Game() {
     tileStates,
     exhaustedUnitIds,
     splitTargetKeys,
+    cohesionStateMap,
+    retreatTargetKeys,
+    suicideTargetIds,
     handleUnitClick: hookHandleUnitClick,
     clearSelection,
   } = useTacticalSelection({
     inProgress, isMyTurn, myTeam, activeTeam, unitStates,
-    boardKeys: MVP_BOARD_KEYS, splitMode: splitMode !== null,
+    boardKeys: MVP_BOARD_KEYS,
+    splitMode: splitMode !== null,
+    retreatMode,
+    suicideMode,
   })
 
-  useEffect(() => { setSplitMode(null) }, [selectedUnitId, isMyTurn])
+  const critical = useUnitCriticalActions({
+    gameId: gameId ?? null,
+    selectedUnit,
+    unitStates,
+    boardKeys: MVP_BOARD_KEYS,
+    onActionCompleted: () => {
+      setRetreatMode(false)
+      setSuicideMode(false)
+      setPendingShakenAttack(null)
+      clearSelection()
+    },
+  })
+
+  useEffect(() => {
+    setSplitMode(null)
+    setRetreatMode(false)
+    setSuicideMode(false)
+    setPendingShakenAttack(null)
+  }, [selectedUnitId, isMyTurn])
+
+  const selectedCohesionState = selectedUnit ? cohesionStateMap.get(selectedUnit.id) : undefined
 
   // ---- Notifications combat en onglets (cf piège #52) ----
   const { notifications: combatNotifs, removeNotification: removeCombatNotif, clear: clearCombatNotifs } =
@@ -197,7 +225,7 @@ export function Game() {
       units: unitStates,
     })
 
-  const { animationDurationMs } = useSettings()
+  const { settings: uiSettings, setSkipShakenWarning, animationDurationMs } = useSettings()
   const { floaters: damageFloaters, removeFloater } = useCombatAnimator({ notifications: combatNotifs, unitStates, animationDurationMs, enabled: showBattle })
 
   // Highlight unitéIds = mon unité + ennemi du rapport actif (ennemi filtré par fog of war : LoS depuis n'importe laquelle de mes unités).
@@ -267,94 +295,37 @@ export function Game() {
     })
   }, [])
 
-  // ---- Handler unit click (composite : attack si ennemi targetable, sinon toggle) ----
-  const handleUnitClick = useCallback(
-    async (unit: { id: string; team: Team }) => {
-      if (!gameId || !inProgress) return
-      // Click ennemi targetable → attack
-      if (selectedUnit && unit.team !== myTeam && targetableUnitIds.has(unit.id)) {
-        if (actionsBusy) return
-        const atkStats = getUnitStats(selectedUnit.kind)
-        const isRanged = atkStats.range > 1
-        const res = await submitAction(gameId, {
-          type: isRanged ? 'attack_ranged' : 'attack_melee',
-          payload: { unit_id: selectedUnit.id, target_unit_id: unit.id },
-        })
-        if (res.ok) {
-          clearSelection()
-          setHoveredEnemyId(null)
-          // Toast detaille gere par useCombatNotifications (Realtime INSERT game_actions)
-        }
-        return
-      }
-      // Sinon delegue au hook (toggle selection mes unites)
-      hookHandleUnitClick(unit)
-    },
-    [
-      gameId,
-      inProgress,
-      selectedUnit,
-      myTeam,
-      targetableUnitIds,
-      actionsBusy,
-      submitAction,
-      clearSelection,
-      hookHandleUnitClick,
-    ]
-  )
-
-  // ---- Handler tile click (move OU split selon splitMode) ----
-  const handleTileClick = useCallback(
-    async (cube: Cube) => {
-      if (!gameId || !inProgress) return
-      if (!selectedUnit) return
-      const key = cubeKey(cube)
-
-      if (splitMode !== null) {
-        if (!splitTargetKeys.has(key)) { setSplitMode(null); return }
-        if (actionsBusy) return
-        const res = await submitAction(gameId, { type: 'split_unit',
-          payload: { unit_id: selectedUnit.id, target_q: cube.q, target_r: cube.r, ratio: splitMode } })
-        if (res.ok) { setSplitMode(null); clearSelection() }
-        return
-      }
-
-      if (!reachableMap.has(key)) {
-        clearSelection()
-        return
-      }
-      if (actionsBusy) return
-
-      // Calculer le path A* avant submit pour animation case par case (piege #34)
-      const others = unitStates.filter(u => u.id !== selectedUnit.id)
-      const blockers = new Set(others.map(u => cubeKey(u.position)))
-      const enemyZoc = computeEnemyZoc(unitStates, selectedUnit.team)
-      const path = aStar({
-        start: selectedUnit.position,
-        goal: cube,
-        blockers,
-        enemyZocCubes: enemyZoc,
-      })
-
-      // eslint-disable-next-line no-console
-      console.log(TAG, 'submitAction move', { unit: selectedUnit.id, dest: cube, pathLen: path?.length })
-
-      const res = await submitAction(gameId, {
-        type: 'move',
-        payload: { unit_id: selectedUnit.id, dest_q: cube.q, dest_r: cube.r },
-      })
-
-      if (res.ok && path && path.length >= 2) {
-        // Stocker le path → UnitPlaceholder anime case par case
-        setUnitPaths(prev => {
-          const next = new Map(prev)
-          next.set(selectedUnit.id, path)
-          return next
-        })
-      }
-    },
-    [gameId, inProgress, selectedUnit, splitMode, splitTargetKeys, reachableMap, actionsBusy, submitAction, unitStates, clearSelection]
-  )
+  // Phase 2.5 C — handlers click extraits dans useBattleClickHandlers (alléger Game.tsx)
+  const { handleUnitClick, handleTileClick, handleShakenConfirm } = useBattleClickHandlers({
+    gameId: gameId ?? null,
+    inProgress,
+    selectedUnit,
+    myTeam,
+    unitStates,
+    reachableMap,
+    targetableUnitIds,
+    splitMode,
+    splitTargetKeys,
+    retreatMode,
+    retreatTargetKeys,
+    suicideMode,
+    suicideTargetIds,
+    selectedCohesionState,
+    skipShakenWarning: uiSettings.skipShakenWarning,
+    actionsBusy,
+    submitAction,
+    performRetreat: critical.performRetreat,
+    performSuicide: critical.performSuicide,
+    hookHandleUnitClick,
+    clearSelection,
+    setHoveredEnemyId,
+    setSplitMode,
+    setRetreatMode,
+    setPendingShakenAttack,
+    setSkipShakenWarning,
+    setUnitPaths,
+    pendingShakenAttack,
+  })
 
   async function handleLeave() {
     if (!user || busy) return
@@ -549,6 +520,16 @@ export function Game() {
                 splitActive={splitMode !== null}
                 onEnterSplitMode={ratio => setSplitMode(ratio)}
                 onExitSplitMode={() => setSplitMode(null)}
+                cohesionState={selectedCohesionState}
+                canRetreat={critical.canRetreat}
+                canSuicide={critical.canSuicide}
+                retreatActive={retreatMode}
+                suicideActive={suicideMode}
+                onEnterRetreatMode={() => { setSuicideMode(false); setRetreatMode(true) }}
+                onExitRetreatMode={() => setRetreatMode(false)}
+                onEnterSuicideMode={() => { setRetreatMode(false); setSuicideMode(true) }}
+                onExitSuicideMode={() => setSuicideMode(false)}
+                onSurrender={() => void critical.performSurrender()}
                 blueSlots={blueSlots}
                 redSlots={redSlots}
                 hostUserId={hostUserId}
@@ -582,15 +563,16 @@ export function Game() {
       </div>
 
       {gameId && (
-        <EndGameModal
-          open={finished && !endModalDismissed}
-          onClose={() => {
-            setEndModalDismissed(true)
-            navigate('/lobby')
-          }}
+        <BattleModals
+          endGameOpen={finished && !endModalDismissed}
+          onEndGameClose={() => { setEndModalDismissed(true); navigate('/lobby') }}
           gameId={gameId}
           winner={tactical?.winner ?? null}
           totalTurns={tactical?.currentTurn ?? game.turn_number}
+          shakenSelectedUnit={selectedUnit}
+          pendingShakenAttack={pendingShakenAttack}
+          onShakenConfirm={(dontShowAgain) => void handleShakenConfirm(dontShowAgain)}
+          onShakenCancel={() => setPendingShakenAttack(null)}
         />
       )}
     </div>

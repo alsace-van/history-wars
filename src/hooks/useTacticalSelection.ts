@@ -1,8 +1,9 @@
+// v1.5 (11/05/2026) — Phase 2.5 C : cohesionStateMap + supportMap exposés + bloque attaque standard si Brisé
 // v1.4 (11/05/2026) — Phase 2 hotfix soft-lock : autoriser l'attaque sur ennemi routé (coup de grâce)
 // v1.3 (10/05/2026) — Phase 2 2D.6 : param splitMode → tileStates 'split-target' sur hex adjacents libres
 // v1.2 (10/05/2026) — Phase 1.5 : ajout visibleEnemyIds (fog of war via LoS depuis toutes mes unités)
-// v1.1 (10/05/2026) — P1-L1C4-02 : ajout targetableUnitIds + dangerousZocKeys + tileStates 'dangerous'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { computeCohesion, computeSupport, type CohesionState, type SupportCount } from '@engine/cohesion'
 import { cubeKey, cubeDistance, neighbors } from '@engine/hex'
 import { bfsReachable } from '@engine/movement'
 import { computeEnemyZoc } from '@engine/zoc'
@@ -26,6 +27,16 @@ interface UseTacticalSelectionParams {
    * cible pour scinder). Le click sur ces tiles déclenche split_unit dans Game.tsx.
    */
   splitMode: boolean
+  /**
+   * Phase 2.5 C — mode "Retraite" : highlight des 6 voisins libres pour sortir une unité Brisée.
+   * Click sur ces tiles déclenche `retreat` dans Game.tsx.
+   */
+  retreatMode?: boolean
+  /**
+   * Phase 2.5 C — mode "Combat suicide" : highlight des ennemis adjacents.
+   * Click sur ces tiles/unités déclenche `suicide_attack` dans Game.tsx.
+   */
+  suicideMode?: boolean
 }
 
 interface UseTacticalSelectionResult {
@@ -46,6 +57,14 @@ interface UseTacticalSelectionResult {
   exhaustedUnitIds: Set<string>
   /** Phase 2 2D.6 : Set des cubeKey adjacentes libres en mode split (vide sinon). */
   splitTargetKeys: Set<string>
+  /** Phase 2.5 — état de cohésion par unité (nominal / shaken / broken). */
+  cohesionStateMap: Map<string, CohesionState>
+  /** Phase 2.5 — comptage soutien par unité (alliés rayon 1+2). */
+  supportMap: Map<string, SupportCount>
+  /** Phase 2.5 C — Set des cubeKey adjacentes libres en mode retreat (vide sinon). */
+  retreatTargetKeys: Set<string>
+  /** Phase 2.5 C — Set des unitId ennemis adjacents en mode suicide (vide sinon). */
+  suicideTargetIds: Set<string>
   handleUnitClick: (unit: { id: string; team: Team }) => void
   clearSelection: () => void
 }
@@ -53,7 +72,7 @@ interface UseTacticalSelectionResult {
 export function useTacticalSelection(
   params: UseTacticalSelectionParams
 ): UseTacticalSelectionResult {
-  const { inProgress, isMyTurn, myTeam, activeTeam, unitStates, boardKeys, splitMode } = params
+  const { inProgress, isMyTurn, myTeam, activeTeam, unitStates, boardKeys, splitMode, retreatMode = false, suicideMode = false } = params
 
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null)
 
@@ -104,18 +123,36 @@ export function useTacticalSelection(
     return out
   }, [selectedUnit, isSelectedMine, isMyTurn, unitStates, enemyZoc, boardKeys])
 
+  // Phase 2.5 — précalcule cohésion + support pour toutes les unités (single pass).
+  // Permet : (1) bloquer attaque standard si Brisé, (2) UI panneau critique,
+  // (3) anneaux 3D, (4) modale Ébranlé. Recalcul à chaque changement unitStates
+  // → cohésion en temps réel (cf décision 8 plan moral-cohésion).
+  const cohesionData = useMemo<{
+    supportMap: Map<string, SupportCount>
+    cohesionStateMap: Map<string, CohesionState>
+  }>(() => {
+    const supportMap = new Map<string, SupportCount>()
+    const cohesionStateMap = new Map<string, CohesionState>()
+    for (const u of unitStates) {
+      const s = computeSupport(u, unitStates)
+      const c = computeCohesion(u, s)
+      supportMap.set(u.id, s)
+      cohesionStateMap.set(u.id, c.state)
+    }
+    return { supportMap, cohesionStateMap }
+  }, [unitStates])
+
   const targetableUnitIds = useMemo<Set<string>>(() => {
     const out = new Set<string>()
     if (!selectedUnit || !isSelectedMine || !isMyTurn) return out
     if (selectedUnit.hasAttacked || selectedUnit.routed) return out
+    // Phase 2.5 — Brisée ne peut pas attaquer en standard (uniquement actions critiques).
+    if (cohesionData.cohesionStateMap.get(selectedUnit.id) === 'broken') return out
     const stats = getUnitStats(selectedUnit.kind)
     const range = stats.range
     for (const enemy of unitStates) {
       if (enemy.team === selectedUnit.team) continue
-      // Hotfix v1.4 : on N'EXCLUT PAS les unités routées de la liste des cibles.
-      // Sinon, une routed adjacente bloque indéfiniment la partie (récup moral
-      // impossible en ZdC ennemie cf. morale.ts:53 → soft-lock total).
-      // Permettre le « coup de grâce » est aussi historiquement réaliste.
+      // Phase 2.5 — on attaque même les ennemis routed / Brisé (coup de grâce historique).
       const dist = cubeDistance(selectedUnit.position, enemy.position)
       if (dist === 0 || dist > range) continue
       if (range > 1) {
@@ -131,7 +168,7 @@ export function useTacticalSelection(
       out.add(enemy.id)
     }
     return out
-  }, [selectedUnit, isSelectedMine, isMyTurn, unitStates])
+  }, [selectedUnit, isSelectedMine, isMyTurn, unitStates, cohesionData])
 
   // Phase 1.5 fog of war : un ennemi est visible si AU MOINS une de mes unités non-routed a LoS sur lui.
   // Blockers LoS = tous les corps SAUF l'observateur et la cible (cohérent avec hasLineOfSight côté EF).
@@ -177,11 +214,52 @@ export function useTacticalSelection(
     return out
   }, [splitMode, selectedUnit, isSelectedMine, isMyTurn, unitStates, boardKeys])
 
+  // Phase 2.5 C — 6 voisins libres autour de la source en mode retreat (UX similaire split).
+  // L'unité doit être Brisée pour entrer en retreatMode (vérif côté Game.tsx).
+  const retreatTargetKeys = useMemo<Set<string>>(() => {
+    const out = new Set<string>()
+    if (!retreatMode || !selectedUnit || !isSelectedMine || !isMyTurn) return out
+    const occupied = new Set<string>()
+    for (const u of unitStates) {
+      if (u.id === selectedUnit.id) continue
+      occupied.add(cubeKey(u.position))
+    }
+    for (const n of neighbors(selectedUnit.position)) {
+      const k = cubeKey(n)
+      if (!boardKeys.has(k)) continue
+      if (occupied.has(k)) continue
+      out.add(k)
+    }
+    return out
+  }, [retreatMode, selectedUnit, isSelectedMine, isMyTurn, unitStates, boardKeys])
+
+  // Phase 2.5 C — ennemis adjacents quand suicideMode actif (cibles potentielles).
+  // Le check encerclement + ratio camp se fait côté EF.
+  const suicideTargetIds = useMemo<Set<string>>(() => {
+    const out = new Set<string>()
+    if (!suicideMode || !selectedUnit || !isSelectedMine || !isMyTurn) return out
+    for (const enemy of unitStates) {
+      if (enemy.team === selectedUnit.team) continue
+      if (cubeDistance(selectedUnit.position, enemy.position) !== 1) continue
+      out.add(enemy.id)
+    }
+    return out
+  }, [suicideMode, selectedUnit, isSelectedMine, isMyTurn, unitStates])
+
   const tileStates = useMemo<Map<string, HexTileState>>(() => {
     const map = new Map<string, HexTileState>()
-    // En mode split : on ignore reachable/dangerous, on ne montre QUE les 6 cibles split.
+    // Modes exclusifs : split / retreat / suicide n'affichent QUE leur sélection.
     if (splitMode) {
       for (const k of splitTargetKeys) map.set(k, 'split-target')
+      return map
+    }
+    if (retreatMode) {
+      // Réutilise le state 'split-target' (ambre) pour la sélection direction retraite.
+      for (const k of retreatTargetKeys) map.set(k, 'split-target')
+      return map
+    }
+    if (suicideMode) {
+      // Pas de tile state spécifique en mode suicide — les ennemis attaquables sont highlight via suicideTargetIds.
       return map
     }
     for (const k of reachableMap.keys()) {
@@ -189,7 +267,7 @@ export function useTacticalSelection(
       map.set(k, enemyZoc.has(k) ? 'dangerous' : 'reachable')
     }
     return map
-  }, [splitMode, splitTargetKeys, reachableMap, enemyZoc])
+  }, [splitMode, splitTargetKeys, retreatMode, retreatTargetKeys, suicideMode, reachableMap, enemyZoc])
 
   const exhaustedUnitIds = useMemo<Set<string>>(() => {
     const set = new Set<string>()
@@ -228,6 +306,10 @@ export function useTacticalSelection(
     tileStates,
     exhaustedUnitIds,
     splitTargetKeys,
+    cohesionStateMap: cohesionData.cohesionStateMap,
+    supportMap: cohesionData.supportMap,
+    retreatTargetKeys,
+    suicideTargetIds,
     handleUnitClick,
     clearSelection,
   }

@@ -1,3 +1,4 @@
+// v2.1 (11/05/2026) — Phase 2.5 C : RetreatAction + SurrenderAction + SuicideAction + codes erreur cohésion
 // v2.0 (10/05/2026) — Phase 2 2D.5 : ajout SplitAction + MergeAction + nouveaux error codes humanises
 // v1.0 (09/05/2026) — L1C.1 : wrappers EF start_battle / resolve_action / resolve_turn
 import { useCallback, useRef, useState } from 'react'
@@ -5,7 +6,7 @@ import { toast } from 'sonner'
 import { supabase } from '@lib/supabase'
 import { genUUID } from '@lib/uuid'
 
-const TAG = '[useCombatActions v1.0]'
+const TAG = '[useCombatActions v2.1]'
 
 // ----------------------------------------------------------------------------
 // Types payload UI (côté client). Identique aux MovePayload/AttackPayload des EF
@@ -39,7 +40,32 @@ export interface MergeAction {
   payload: { target_unit_id: string; source_unit_id: string }
 }
 
-export type GameAction = MoveAction | AttackAction | SplitAction | MergeAction
+/** Phase 2.5 C — retraite volontaire unité Brisée (1 hex voisin libre). */
+export interface RetreatAction {
+  type: 'retreat'
+  payload: { unit_id: string; dest_q: number; dest_r: number }
+}
+
+/** Phase 2.5 C — reddition unité Brisée (élimination + impact moral 2 camps). */
+export interface SurrenderAction {
+  type: 'surrender'
+  payload: { unit_id: string }
+}
+
+/** Phase 2.5 C — combat suicide unité Brisée encerclée (×1.5 dégâts, pas riposte, élimination). */
+export interface SuicideAction {
+  type: 'suicide_attack'
+  payload: { unit_id: string; target_unit_id: string }
+}
+
+export type GameAction =
+  | MoveAction
+  | AttackAction
+  | SplitAction
+  | MergeAction
+  | RetreatAction
+  | SurrenderAction
+  | SuicideAction
 
 /** Reponse normalisee : ok=true + data, OU ok=false + message UI (toast deja affiche). */
 export interface ActionResponse<T = unknown> {
@@ -145,6 +171,14 @@ function humanizeError(code: string | undefined, fallback: string | undefined): 
     UNITS_NOT_ADJACENT: 'Les 2 unites doivent etre adjacentes.',
     EFFECTIVE_OVERFLOW: 'Effectif total depasse la capacite max.',
     CHARGE_NOT_ALLOWED: 'Terrain n\'autorise pas la charge.',
+    // Phase 2.5 — cohésion / actions critiques
+    COHESION_BROKEN: 'Unite brisee, elle ne peut plus attaquer en standard. Choisis Retraite, Reddition ou Combat suicide.',
+    COHESION_NOT_BROKEN: 'Cette action est reservee aux unites brisees.',
+    RETREAT_NO_FREE_NEIGHBOR: 'Aucune case libre adjacente pour la retraite. Tu peux te rendre ou tenter un combat suicide.',
+    RETREAT_DEST_NOT_ADJACENT: 'La case de retraite doit etre adjacente.',
+    RETREAT_DEST_OCCUPIED: 'La case de retraite est occupee.',
+    SUICIDE_NOT_SURROUNDED: 'Combat suicide reserve aux unites totalement encerclees. Tu peux encore battre en retraite.',
+    SUICIDE_CAMP_TOO_LOW: 'Ton camp est trop affaibli pour un sacrifice utile. La capitulation s\'impose.',
     INTERNAL: 'Erreur serveur, reessaie.',
     NETWORK: 'Probleme reseau.',
   }
