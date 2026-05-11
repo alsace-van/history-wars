@@ -6,6 +6,15 @@ Format : 1-2 lignes par item, étiquettes entre crochets.
 
 ---
 
+## Phase 2.6 — engagement persistant (design figé)
+
+- **[design figé]** Combat continu : engagement entre 2 unités adjacentes = état persistant, attrition par tour, relève 10 % depuis les réserves arrière. Origine : feedback user 11/05 "une fois qu'un combat est entamé ça va jusqu'au bout". Voir [`PLAN-ENGAGEMENT-PERSISTENT.md`](./PLAN-ENGAGEMENT-PERSISTENT.md). ~5 jours.
+- **[gameplay]** Action `engage` (clic explicite — pas d'auto, permet contournement) + action `break_combat` (coût fixe 10 % effective).
+- **[gameplay]** Cavalerie : charge ponctuelle inchangée. Après impact, menu joueur : Rester en mêlée (malus def×0.8 + attrition ×1.3) OU Replier 1 hex (gratuit).
+- **[gameplay]** Tireurs : pas d'engagement auto. Si ennemi adjacent clique "Engager", bascule en mêlée forcée (tireur très vulnérable).
+- **[render]** Anneau pulsant rouge + ligne 3D entre les 2 pions engagés.
+- **[bdd]** Migration 015 : table `engagements (game_id, unit_a_id, unit_b_id, started_turn)` + RLS + Realtime.
+
 ## Phase 2.5 — moral / cohésion / soutien (design figé)
 
 - **[ux/communication]** Afficher "Hommes engagés au contact: X / Y" + cap terrain dans le `CombatResultPanel` et `CombatPreviewTooltip`. Aujourd'hui peu intuitif : 750 vs 450 hommes I vs I sur plaine_standard font les mêmes dégâts (~16) car les 2 sont limités à 200 hommes engagés. C'est le design Thermopyles voulu, mais l'UI ne le dit pas. Origine : feedback user 11/05 "dégâts toujours 10-11 peu importe l'effectif".
