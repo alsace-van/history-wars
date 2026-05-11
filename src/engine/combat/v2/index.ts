@@ -1,6 +1,8 @@
+// v1.1 (11/05/2026) — Phase 2.5 : propage attackerSupport / defenderSupport pour modulation moral
 // v1.0 (10/05/2026) — Phase 2 2A.9 : barrel + dispatch resolveCombat (attaque + riposte melee)
-// Source : PLAN-PHASE-2-COMBAT-V2.md § 2A.9
+// Source : docs/PLAN-MORAL-COHESION.md § 2 + PLAN-PHASE-2-COMBAT-V2.md § 2A.9
 
+import type { SupportCount } from '../../cohesion/types'
 import type { Cube } from '../../hex'
 import type { TerrainType } from '../../terrain/types'
 import type { UnitState } from '../../units/types'
@@ -32,6 +34,15 @@ export interface ResolveCombatInput {
   readonly attackerPathTerrain?: ReadonlyArray<TerrainType>
   readonly rng: () => number
   readonly config?: CombatConfig
+  /**
+   * Phase 2.5 — soutien tactique de l'attaquant et du défenseur.
+   *  - Lors de l'impact principal : `defenderSupport` module la perte de moral du défenseur.
+   *  - Lors de la riposte mêlée   : `attackerSupport` module la perte de moral de l'attaquant
+   *    initial (qui devient défenseur de la riposte).
+   * Si non fournis, aucun bonus appliqué (comportement Phase 2 d'origine).
+   */
+  readonly attackerSupport?: SupportCount
+  readonly defenderSupport?: SupportCount
 }
 
 export interface ResolveCombatResult {
@@ -71,6 +82,7 @@ export function resolveCombat(input: ResolveCombatInput): ResolveCombatResult {
     chargeMult,
     rng: input.rng,
     config: input.config,
+    defenderSupport: input.defenderSupport,
   }
   const result = resolveContact(attackInput)
 
@@ -96,6 +108,8 @@ export function resolveCombat(input: ResolveCombatInput): ResolveCombatResult {
       chargeMult: 1.0,                              // pas de charge en riposte
       rng: input.rng,
       config: input.config,
+      // Phase 2.5 : en riposte, l'attaquant initial est le défenseur → son support
+      defenderSupport: input.attackerSupport,
     }
     ripost = resolveContact(ripostInput)
   }

@@ -1,8 +1,10 @@
+// v1.2 (11/05/2026) — Phase 2.5 : defenderSupport module la perte de moral du défenseur
 // v1.1 (10/05/2026) — Phase 2 2.5 balance : plancher attrition proportionnel aux hommes engagés (au lieu de 1)
 // v1.0 (10/05/2026) — Phase 2 2A.6 : pipeline central calcul de degats par contact
-// Source : PLAN-PHASE-2-COMBAT-V2.md § 2A.6 + AUDIT § 3.6
+// Source : docs/PLAN-MORAL-COHESION.md § 2 + PLAN-PHASE-2-COMBAT-V2.md § 2A.6
 
-import { applyMoraleDelta, moraleCombatBonus } from '../../morale/morale'
+import type { SupportCount } from '../../cohesion/types'
+import { applyMoraleDelta, moraleCombatBonus, moraleCombatLossMultiplier } from '../../morale/morale'
 import { TERRAIN_CAPS } from '../../terrain/caps'
 import type { TerrainType } from '../../terrain/types'
 import { resolveUnitStatsV2 } from '../../units/stats'
@@ -12,6 +14,8 @@ import { distancePrecision } from './distance'
 import { describeMatchup, getMatchupCoef } from './matchup'
 import type { AttackPhase, BonusBreakdownEntry, CombatConfig, CombatResultV2 } from './types'
 import { DEFAULT_BASE_ATTRITION_RATE, DEFAULT_COMBAT_CONFIG } from './types'
+
+const NO_SUPPORT: SupportCount = Object.freeze({ adjacent: 0, nearby: 0, total: 0 })
 
 export interface ContactInput {
   readonly attacker: UnitState
@@ -25,6 +29,13 @@ export interface ContactInput {
   readonly chargeMult: number
   readonly rng: () => number
   readonly config?: CombatConfig
+  /**
+   * Phase 2.5 — soutien tactique du défenseur (alliés non-brisés rayon 1+2).
+   * Si présent, module à la baisse la perte de moral du défenseur via
+   * `moraleCombatLossMultiplier`. Par défaut : aucun soutien.
+   * Le caller (resolveCombat / handleAttack EF) calcule via computeSupport().
+   */
+  readonly defenderSupport?: SupportCount
 }
 
 /**
@@ -136,8 +147,13 @@ export function resolveContact(input: ContactInput): CombatResultV2 {
   const defenderHpAfter = Math.max(0, Math.round(ratioAfter * defender.hpMax))
 
   // Morale
+  // Phase 2.5 : la perte de moral du défenseur est atténuée par le soutien
+  // (alliés adjacents → discipline, panique contenue). Le gain attaquant reste fixe.
   const attackerMoraleDelta = phase === 'ranged' ? 1 : 2
-  const defenderMoraleDelta = -Math.round(split.actualDamage / (phase === 'ranged' ? 6 : 4))
+  const rawDefenderMoraleDelta = -Math.round(split.actualDamage / (phase === 'ranged' ? 6 : 4))
+  const defenderSupport = input.defenderSupport ?? NO_SUPPORT
+  const defenderMoraleLossMult = moraleCombatLossMultiplier(defenderSupport)
+  const defenderMoraleDelta = Math.round(rawDefenderMoraleDelta * defenderMoraleLossMult)
 
   const attackerAfter = applyMoraleDelta(attacker, attackerMoraleDelta)
   const defenderAfter = applyMoraleDelta(defender, defenderMoraleDelta)
