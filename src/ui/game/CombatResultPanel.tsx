@@ -1,7 +1,7 @@
+// v3.1 (11/05/2026) — Phase 2.5 fix : "Soldats restants" affiche effectiveAfter (absolu) au lieu de hpAfter (% legacy)
 // v3.0 (10/05/2026) — Phase 2 2D.3 : badge phase melee/ranged/charge + label tab "Charge" si applicable
 // v2.1 (10/05/2026) — Phase 1.5 : bouton "Centrer la vue" sur l'onglet actif (focus camera mon unité)
 // v2.0 (10/05/2026) — Phase 1.5 : refactor en onglets + clic sélectionne combat actif (highlight unités plateau)
-// v1.0 (10/05/2026) — Phase 1.5 fix UX : panneau resultat combat persistant (X close), libelles equipes explicites
 import { useEffect, useMemo, useState } from 'react'
 import type { Team } from '@/types/game'
 import type { CombatNotification } from '@hooks/useCombatNotifications'
@@ -204,7 +204,7 @@ function ReportContent({ notif, onFocusUnit }: { notif: CombatNotification; onFo
 interface LossesBlockProps {
   team: Team
   unitLabel: string
-  losses: { killed: number; woundedAdd: number; hpAfter: number; isKilled: boolean; isRouted: boolean }
+  losses: { killed: number; woundedAdd: number; effectiveAfter: number; isKilled: boolean; isRouted: boolean }
   showFullDetail: boolean
   isRiposte?: boolean
 }
@@ -247,7 +247,7 @@ function LossesBlock({ team, unitLabel, losses, showFullDetail, isRiposte }: Los
           <>
             <Row icon="🩹" label="Blessés (récupérables)" value={losses.woundedAdd} color="#fb923c" />
             {!losses.isKilled && (
-              <Row icon="◯" label="Soldats restants" value={losses.hpAfter} color="#22c55e" />
+              <Row icon="◯" label="Soldats restants" value={losses.effectiveAfter} color="#22c55e" />
             )}
           </>
         )}
