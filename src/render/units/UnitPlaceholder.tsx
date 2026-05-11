@@ -1,17 +1,20 @@
+// v2.1 (11/05/2026) — Phase 2.5 C.2 : ajout UnitStatusRing (état) + UnitSupportRing (soutien)
 // v2.0 (10/05/2026) — Phase 2 2E.1 : scale par effective/effectiveMax (Phase 2) + plage 0.35-1.0 amplifiee
 // v1.9 (10/05/2026) — Phase 1.5 : prop highlighted (halo jaune pulsant) pour unités du rapport combat actif
 // v1.8 (10/05/2026) — Phase 1.5 fix : effectif chiffre (count) cache aux equipes adverses
-// v1.6 (10/05/2026) — Glow naturel : 3 halos additifs + ring net + breathing pulse
 import { Suspense, useEffect, useMemo, useRef } from 'react'
 import { Billboard, Text } from '@react-three/drei'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
 import * as THREE from 'three'
+import type { CohesionState, SupportCount } from '@engine/cohesion'
 import { cubeToWorld, type Cube } from '@engine/hex'
 import type { Team } from '@/types/game'
 import type { UnitInstance } from '../types'
 import { COLORS } from '../colors'
 import { SoldierMesh } from './SoldierMesh'
 import { UnitHealthBar } from './UnitHealthBar'
+import { UnitStatusRing } from './UnitStatusRing'
+import { UnitSupportRing } from './UnitSupportRing'
 
 interface UnitPlaceholderProps {
   unit: UnitInstance
@@ -35,6 +38,10 @@ interface UnitPlaceholderProps {
   onClick?: (unit: UnitInstance) => void
   onPointerOver?: (unit: UnitInstance) => void
   onPointerOut?: (unit: UnitInstance) => void
+  /** Phase 2.5 C.2 : état cohésion (nominal/shaken/broken) — couleur anneau état. */
+  cohesionState?: CohesionState
+  /** Phase 2.5 C.2 : décompte soutien — cercles bleus superposés. */
+  support?: SupportCount
 }
 
 const SOLDIER_SCALE_RATIO = 0.5
@@ -68,6 +75,8 @@ export function UnitPlaceholder({
   onClick,
   onPointerOver,
   onPointerOut,
+  cohesionState,
+  support,
 }: UnitPlaceholderProps) {
   const targetPos = useMemo<[number, number, number]>(() => cubeWorld(unit.position, hexSize), [unit.position, hexSize])
 
@@ -216,8 +225,31 @@ export function UnitPlaceholder({
 
   const opacity = exhausted ? 0.55 : 1
 
+  // Phase 2.5 C.2 : ratio effective/effectiveMax pour la couleur du status ring
+  const cohesionRatio = effMax > 0 ? eff / effMax : 0
+  const statusRingLift = RING_LIFT - 0.003  // 3mm sous les anneaux d'action (anti z-fight)
+  const supportRingLift = RING_LIFT - 0.001 // 1mm sous (mais au-dessus du status)
+
   return (
     <group ref={groupRef}>
+      {/* Phase 2.5 C.2 — couche basse : anneau d'état permanent (vert/jaune/orange) */}
+      {cohesionState && (
+        <UnitStatusRing
+          radius={ringRadius}
+          liftY={statusRingLift}
+          effectiveRatio={cohesionRatio}
+          cohesionState={cohesionState}
+          prominent={selected || highlighted}
+        />
+      )}
+      {/* Phase 2.5 C.2 — couche bleue soutien (cercles concentriques selon alliés) */}
+      {support && (
+        <UnitSupportRing
+          radius={ringRadius}
+          liftY={supportRingLift}
+          support={support}
+        />
+      )}
       {/* Highlight rapport combat actif (Phase 1.5) : 3 halos jaunes additifs pulsants */}
       {highlighted && (
         <group ref={highlightGroupRef}>

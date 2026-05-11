@@ -1,7 +1,7 @@
+// v3.19 (11/05/2026) — Phase 2.5 C.2 : transmission cohesionStateMap + supportMap à TacticalScene (anneaux 3D)
 // v3.18 (11/05/2026) — Phase 2.5 fix : refresh manuel après endTurn + actions critiques (UI sync sans Realtime)
 // v3.17 (11/05/2026) — Phase 2.5 C : actions critiques Brisé (retraite/reddition/suicide) + modale Ébranlé
 // v3.16 (10/05/2026) — Phase 2 2.5 : useSettings + useCombatAnimator (DamageFloater 3D + skip Espace)
-// v3.15 (10/05/2026) — Phase 2 2D.6 : splitMode state + case cible split via highlight grille
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -181,6 +181,7 @@ export function Game() {
     exhaustedUnitIds,
     splitTargetKeys,
     cohesionStateMap,
+    supportMap,
     retreatTargetKeys,
     suicideTargetIds,
     handleUnitClick: hookHandleUnitClick,
@@ -476,6 +477,8 @@ export function Game() {
               damageFloaters={showBattle ? damageFloaters : undefined}
               damageFloaterDurationMs={animationDurationMs}
               onDamageFloaterDone={removeFloater}
+              cohesionStateMap={showBattle ? cohesionStateMap : undefined}
+              supportMap={showBattle ? supportMap : undefined}
             />
             <CombatResultPanel
               notifications={combatNotifs}
