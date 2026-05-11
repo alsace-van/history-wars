@@ -1,7 +1,7 @@
+// v2.2 (11/05/2026) — Phase 2.6 Vague B : dispatcher break_combat (rupture engagement)
 // v2.1 (11/05/2026) — Phase 2.5 B : dispatcher retreat / surrender / suicide_attack
 // v2.0 (10/05/2026) — Phase 2 2C.2 : refacto en handlers (move, attack v2, split, merge) — dispatcher seul
 // v1.2a (10/05/2026) — Phase 1.5 fix : SELECT incluait pas wounded → blessés écrasés à chaque round
-// v1.2 (10/05/2026) — Phase 1.5 : split casualties killed/woundedAdd, UPDATE units.wounded
 
 import { corsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
 import { extractUserFromJWT } from '../_shared/auth.ts'
@@ -18,6 +18,7 @@ import {
   type RetreatPayload,
   type SurrenderPayload,
   type SuicidePayload,
+  type BreakCombatPayload,
 } from '../_shared/types.ts'
 import { handleMove } from './_handlers/handleMove.ts'
 import { handleAttack } from './_handlers/handleAttack.ts'
@@ -26,6 +27,7 @@ import { handleMerge } from './_handlers/handleMerge.ts'
 import { handleRetreat } from './_handlers/handleRetreat.ts'
 import { handleSurrender } from './_handlers/handleSurrender.ts'
 import { handleSuicide } from './_handlers/handleSuicide.ts'
+import { handleBreakCombat } from './_handlers/handleBreakCombat.ts'
 import {
   loadCombatConfig,
   loadTerrainMap,
@@ -33,7 +35,7 @@ import {
   type UnitRow,
 } from './_handlers/_common.ts'
 
-const TAG = '[resolve_action v2.1]'
+const TAG = '[resolve_action v2.2]'
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
@@ -194,6 +196,15 @@ Deno.serve(async (req: Request) => {
         admin, gameId, userId: user.userId, userTeam, currentTurn, boardRadius,
         units, terrainMap, combatConfig, clientActionId,
         payload: body.action.payload as Partial<SuicidePayload> | null,
+      })
+    }
+
+    // Phase 2.6 — rupture volontaire d'engagement persistant (coût 10 % effective)
+    if (actionType === 'break_combat') {
+      return await handleBreakCombat({
+        admin, gameId, userId: user.userId, userTeam, currentTurn,
+        units, clientActionId,
+        payload: body.action.payload as Partial<BreakCombatPayload> | null,
       })
     }
 

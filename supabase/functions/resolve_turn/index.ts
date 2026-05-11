@@ -1,3 +1,4 @@
+// v1.3 (11/05/2026) — Phase 2.6 Vague B : tick engagements actifs avant récup moral (combat continu)
 // v1.2 (11/05/2026) — Phase 2.5 B : recoverMoraleEndTurnV2 modulée par soutien (alliés rayon 1+2)
 // v1.1 (10/05/2026) — Phase 2 2C.6 : reset last_move_path en debut de tour (detection charge cav)
 // v1.0 (09/05/2026) — Phase 1 L1B.4c : EF resolve_turn (bascule activeTeam, recup morale, end-condition)
@@ -10,13 +11,16 @@
 // 5. Charger game + state.tactical + check status='in_progress'
 // 6. Charger user team + check activeTeam=userTeam
 // 7. Si scale !== 'tactical' → 501 NOT_IMPLEMENTED
-// 8. Charger units
-// 9. Bascule activeTeam, increment turn si retour blue
-// 10. Reset has_moved/has_attacked pour toTeam (bulk)
-// 11. Recup morale pour toTeam (hors ZdC ennemie)
-// 12. End-condition (team count == 0 → finished + winner)
-// 13. UPDATE games
-// 14. INSERT game_actions
+// 8. Charger units + engagements actifs + terrain + combat_config
+// 9. Phase 2.6 — tick d'attrition par engagement actif (séquentiel)
+//    → cumule pertes par unité, applique morale fatigue -2/tour
+//    → DELETE engagements dont une unité dissoute
+// 10. Bascule activeTeam, increment turn si retour blue
+// 11. Reset has_moved/has_attacked pour toTeam (bulk)
+// 12. Recup morale pour toTeam (hors ZdC ennemie)
+// 13. End-condition (team count == 0 → finished + winner)
+// 14. UPDATE games
+// 15. INSERT game_actions
 
 import { corsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
 import { extractUserFromJWT } from '../_shared/auth.ts'
@@ -35,8 +39,26 @@ import { cube, cubeKey } from '../_shared/engine-port/hex/index.ts'
 import { computeEnemyZoc, type UnitForZoc } from '../_shared/engine-port/zoc/index.ts'
 import { recoverMoraleEndTurnV2 } from '../_shared/engine-port/morale/index.ts'
 import { computeSupport } from '../_shared/engine-port/cohesion/index.ts'
+import { resolveEngagementTick } from '../_shared/engine-port/engagement/index.ts'
+import {
+  DEFAULT_COMBAT_CONFIG,
+  type CombatConfig,
+} from '../_shared/engine-port/combat/v2/types.ts'
+import {
+  DEFAULT_TERRAIN,
+  type TerrainType,
+} from '../_shared/engine-port/terrain/index.ts'
+import { seededRng } from '../_shared/engine-port/combat/rng.ts'
 
-const TAG = '[resolve_turn v1.2]'
+const TAG = '[resolve_turn v1.3]'
+
+interface EngagementRow {
+  id: string
+  game_id: string
+  unit_a_id: string
+  unit_b_id: string
+  started_turn: number
+}
 
 interface UnitRow {
   id: string
@@ -177,6 +199,200 @@ Deno.serve(async (req: Request) => {
     if (unitsErr || !unitsRaw) return errorResponse(ERROR_CODES.INTERNAL, 'units fetch failed', 500)
     const units = unitsRaw as UnitRow[]
 
+    // 7.5. Phase 2.6 — Charger engagements actifs + terrain + combat_config (en //)
+    const [engagementsResp, terrainResp, configResp] = await Promise.all([
+      admin
+        .from('engagements')
+        .select('id, game_id, unit_a_id, unit_b_id, started_turn')
+        .eq('game_id', gameId),
+      admin
+        .from('terrain_tiles')
+        .select('q, r, type')
+        .eq('game_id', gameId),
+      admin
+        .from('combat_config')
+        .select('config')
+        .eq('scale', 'tactical')
+        .order('version', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ])
+    const engagements = (engagementsResp.data ?? []) as EngagementRow[]
+    const terrainMap = new Map<string, TerrainType>()
+    for (const row of (terrainResp.data ?? []) as Array<{ q: number; r: number; type: string }>) {
+      terrainMap.set(cubeKey(cube(row.q, row.r)), row.type as TerrainType)
+    }
+    const combatConfig: CombatConfig =
+      (configResp.data?.config as CombatConfig | undefined) ?? DEFAULT_COMBAT_CONFIG
+
+    // 7.6. Phase 2.6 — Tick d'attrition par engagement actif (séquentiel).
+    //
+    // Multi-engagement : la version MVP applique les ticks dans l'ordre BDD,
+    // chaque tick voit l'unité avec son effective déjà réduit par les ticks
+    // précédents. Différence vs spec § 6 "cumul absorption" : ici l'absorption
+    // se renouvelle à chaque tick. Calibrage vague D si trop punitif.
+    //
+    // Pour chaque engagement :
+    //  1. Snapshot units → UnitState
+    //  2. resolveEngagementTick(unitA, unitB, terrain, support, rng)
+    //  3. Update unitStates mémoire (cumul progressif)
+    //  4. Si dissolved : marquer pour DELETE (unit + engagement cascade)
+    const seedTick = Date.now()
+    const tickRng = seededRng(seedTick)
+    const engagementUpdates = new Map<string, {
+      effective: number
+      wounded: number
+      killed: number
+      morale: number
+      routed: boolean
+      hp: number
+    }>()
+    const dissolvedUnitIds = new Set<string>()
+    const engagementsToDelete: string[] = []
+    const liveUnitStates: Map<string, UnitState> = new Map(
+      units.map(u => [u.id, buildUnitState(u)]),
+    )
+
+    for (const eng of engagements) {
+      const a = liveUnitStates.get(eng.unit_a_id)
+      const b = liveUnitStates.get(eng.unit_b_id)
+      if (!a || !b) {
+        // Unité déjà dissoute par un tick précédent → engagement obsolète, DELETE.
+        engagementsToDelete.push(eng.id)
+        continue
+      }
+      // Terrain commun : on prend celui de sideA (les 2 unités sont sur des hex
+      // adjacents donc peu de différence ; cf. plan § 2 "même type de terrain").
+      const terrain = terrainMap.get(cubeKey(a.position)) ?? DEFAULT_TERRAIN
+      const allStates: UnitState[] = Array.from(liveUnitStates.values())
+      const supportA = computeSupport(a, allStates)
+      const supportB = computeSupport(b, allStates)
+
+      const tick = resolveEngagementTick({
+        sideA: a,
+        sideB: b,
+        terrain,
+        currentTurn: turnBefore,
+        rng: tickRng,
+        config: combatConfig,
+        supportA,
+        supportB,
+      })
+
+      // Mise à jour des snapshots mémoire (effective + morale + flags).
+      const aAfter: UnitState = {
+        ...a,
+        effective: tick.sideA.effectiveAfter,
+        wounded: a.wounded + tick.sideA.woundedAdd,
+        killed: a.killed + tick.sideA.killed,
+        morale: tick.sideA.moraleAfter,
+        routed: tick.sideA.routedAfter,
+        hp: a.effectiveMax > 0
+          ? Math.max(0, Math.round(tick.sideA.effectiveAfter / a.effectiveMax * a.hpMax))
+          : a.hp,
+      }
+      const bAfter: UnitState = {
+        ...b,
+        effective: tick.sideB.effectiveAfter,
+        wounded: b.wounded + tick.sideB.woundedAdd,
+        killed: b.killed + tick.sideB.killed,
+        morale: tick.sideB.moraleAfter,
+        routed: tick.sideB.routedAfter,
+        hp: b.effectiveMax > 0
+          ? Math.max(0, Math.round(tick.sideB.effectiveAfter / b.effectiveMax * b.hpMax))
+          : b.hp,
+      }
+      liveUnitStates.set(a.id, aAfter)
+      liveUnitStates.set(b.id, bAfter)
+
+      engagementUpdates.set(a.id, {
+        effective: aAfter.effective,
+        wounded: aAfter.wounded,
+        killed: aAfter.killed,
+        morale: aAfter.morale,
+        routed: aAfter.routed,
+        hp: aAfter.hp,
+      })
+      engagementUpdates.set(b.id, {
+        effective: bAfter.effective,
+        wounded: bAfter.wounded,
+        killed: bAfter.killed,
+        morale: bAfter.morale,
+        routed: bAfter.routed,
+        hp: bAfter.hp,
+      })
+
+      if (tick.sideA.dissolved) {
+        dissolvedUnitIds.add(a.id)
+        liveUnitStates.delete(a.id)
+      }
+      if (tick.sideB.dissolved) {
+        dissolvedUnitIds.add(b.id)
+        liveUnitStates.delete(b.id)
+      }
+      if (tick.dissolved) {
+        engagementsToDelete.push(eng.id)
+      }
+    }
+
+    // 7.7. Applique les UPDATE/DELETE units consécutifs aux ticks (séquentiel).
+    for (const [unitId, update] of engagementUpdates) {
+      if (dissolvedUnitIds.has(unitId)) {
+        // Dissolution : DELETE (les engagements cascade sont gérés par FK ON DELETE)
+        const { error } = await admin.from('units').delete().eq('id', unitId).eq('game_id', gameId)
+        if (error) {
+          console.warn(`${TAG} dissolved unit delete failed for ${unitId}:`, error.message)
+        }
+        continue
+      }
+      const { error } = await admin
+        .from('units')
+        .update({
+          effective: update.effective,
+          wounded: update.wounded,
+          killed: update.killed,
+          morale: update.morale,
+          routed: update.routed,
+          hp: update.hp,
+        })
+        .eq('id', unitId)
+        .eq('game_id', gameId)
+      if (error) {
+        console.warn(`${TAG} tick update failed for ${unitId}:`, error.message)
+      }
+    }
+
+    // 7.8. DELETE engagements terminés (ceux dont une unité a dissout).
+    // Les engagements dont la cascade FK a déjà supprimé ne se trouvent plus :
+    // c'est idempotent.
+    if (engagementsToDelete.length > 0) {
+      const { error } = await admin
+        .from('engagements')
+        .delete()
+        .in('id', engagementsToDelete)
+      if (error) {
+        console.warn(`${TAG} engagements delete failed:`, error.message)
+      }
+    }
+
+    // 7.9. Rafraîchir snapshot units pour la suite (récup moral, end-condition).
+    // Les units dissoutes sont retirées. Les autres ont leurs nouvelles valeurs.
+    const unitsAfterTick: UnitRow[] = units
+      .filter(u => !dissolvedUnitIds.has(u.id))
+      .map(u => {
+        const update = engagementUpdates.get(u.id)
+        if (!update) return u
+        return {
+          ...u,
+          effective: update.effective,
+          wounded: update.wounded,
+          killed: update.killed,
+          morale: update.morale,
+          routed: update.routed,
+          hp: update.hp,
+        }
+      })
+
     // 8. Bascule team + turn
     const toTeam: Team = fromTeam === 'blue' ? 'red' : 'blue'
     // Increment turn quand on revient sur blue (1 round = blue + red joues)
@@ -197,17 +413,18 @@ Deno.serve(async (req: Request) => {
 
     // 10. Recup morale pour toTeam (hors ZdC ennemie, hadCombat=false MVP)
     // Phase 2.5 : récupération modulée par soutien (alliés rayon 1+2 non-Brisés).
-    const unitsForZoc: UnitForZoc[] = units.map(u => ({
+    // Phase 2.6 : travaille sur le snapshot POST-tick engagements (unitsAfterTick).
+    const unitsForZoc: UnitForZoc[] = unitsAfterTick.map(u => ({
       team: u.team,
       position: cube(u.q, u.r),
       routed: u.routed,
     }))
     const enemyZocFromToTeamPerspective = computeEnemyZoc(unitsForZoc, toTeam)
     // Construire tous les UnitState (besoin alliés pour computeSupport)
-    const allStates: UnitState[] = units.map(buildUnitState)
+    const allStates: UnitState[] = unitsAfterTick.map(buildUnitState)
 
     let unitsRecoveredCount = 0
-    for (const row of units) {
+    for (const row of unitsAfterTick) {
       if (row.team !== toTeam) continue
       const before = allStates.find(s => s.id === row.id)!
       const inZoc = enemyZocFromToTeamPerspective.has(cubeKey(before.position))
@@ -225,10 +442,10 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // 11. End-condition (count units par team apres updates de morale, qui ne suppriment rien)
+    // 11. End-condition — basé sur le snapshot POST-tick (dissolutions appliquées).
     let blueCount = 0
     let redCount = 0
-    for (const u of units) {
+    for (const u of unitsAfterTick) {
       if (u.team === 'blue') blueCount++
       else if (u.team === 'red') redCount++
     }

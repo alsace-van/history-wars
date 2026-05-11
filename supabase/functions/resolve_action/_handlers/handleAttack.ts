@@ -1,3 +1,4 @@
+// v1.2 (11/05/2026) — Phase 2.6 Vague B : INSERT engagement après mêlée non-mortelle
 // v1.1 (11/05/2026) — Phase 2.5 : check cohésion 'broken' bloque attaque standard + propage support combat
 // v1.0 (10/05/2026) — Phase 2 2C.3 : handleAttack v2 (resolveCombat avec terrain + charge cav + breakdown)
 
@@ -16,11 +17,12 @@ import { resolveCombat } from '../../_shared/engine-port/combat/v2/index.ts'
 import { seededRng } from '../../_shared/engine-port/combat/index.ts'
 import { computeCohesion, computeSupport } from '../../_shared/engine-port/cohesion/index.ts'
 import { buildAllUnitStates, buildUnitState, terrainAt, type UnitRow } from './_common.ts'
+import { createEngagementAfterMelee } from './handleEngage.ts'
 import type { CombatConfig } from '../../_shared/engine-port/combat/v2/types.ts'
 import type { TerrainType } from '../../_shared/engine-port/terrain/index.ts'
 import type { Cube } from '../../_shared/engine-port/hex/index.ts'
 
-const TAG = '[handleAttack v1.1]'
+const TAG = '[handleAttack v1.2]'
 
 export interface HandleAttackArgs {
   // deno-lint-ignore no-explicit-any
@@ -276,6 +278,22 @@ export async function handleAttack(args: HandleAttackArgs): Promise<Response> {
       if (cached) return jsonResponse({ ok: true, idempotent: true, result: cached.result })
     }
     console.warn(`${TAG} game_actions insert failed:`, actionErr.message)
+  }
+
+  // Phase 2.6 — INSERT (idempotent) engagement après mêlée non-mortelle.
+  // Conditions cf. docs/PLAN-ENGAGEMENT-PERSISTENT.md § 1.2 :
+  //  - phase resolue == 'melee' (charge = ponctuelle, ranged = pas d'engagement)
+  //  - les 2 unités survivent (pas de dissolution unilatérale)
+  // L'appel est non-fatal : un échec ne casse pas le retour client. Realtime
+  // propage l'INSERT au client via la publication engagements (migration 017).
+  if (combat.attackPhase === 'melee' && !defenderKilled && !attackerKilled) {
+    await createEngagementAfterMelee({
+      admin,
+      gameId,
+      attackerId,
+      defenderId,
+      currentTurn,
+    })
   }
 
   return jsonResponse({ ok: true, result })

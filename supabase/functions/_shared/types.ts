@@ -1,7 +1,7 @@
+// v2.2 (11/05/2026) — Phase 2.6 Vague B : ActionType etendu break_combat + payload + error codes engagement
 // v2.1 (11/05/2026) — Phase 2.5 B : ActionType etendu retreat/surrender/suicide_attack + payloads + error codes cohésion
 // v2.0 (10/05/2026) — Phase 2 2C.2 : ActionType etendu split_unit/merge_unit + AttackResultV2 + payloads + error codes
 // v1.2 (09/05/2026) — Phase 1 L1B.4a : ajout AttackPayload/Result + EndTurn* + INVALID_TARGET, GAME_FINISHED
-// v1.1 (09/05/2026) — Phase 1 L1B.3 : ajout ActionPayload + ERROR_CODES resolve_action
 
 export type Team = 'blue' | 'red'
 export type UnitKind = 'I' | 'C' | 'A'
@@ -48,6 +48,8 @@ export type ActionType =
   | 'retreat'
   | 'surrender'
   | 'suicide_attack'
+  // Phase 2.6 — rupture volontaire d'engagement persistant
+  | 'break_combat'
 
 export interface MovePayload {
   unit_id: string
@@ -308,6 +310,52 @@ export interface SuicideResult {
 }
 
 // ----------------------------------------------------------------------------
+// Phase 2.6 — Engagement persistant (combat continu)
+// ----------------------------------------------------------------------------
+
+/**
+ * Rupture volontaire de tous les engagements d'une unité.
+ * Coût fixe 10 % effective (cf. docs/PLAN-ENGAGEMENT-PERSISTENT.md § 3, 11.3).
+ */
+export interface BreakCombatPayload {
+  unit_id: string
+}
+
+/** Snapshot D13 stocke dans game_actions.result pour break_combat. */
+export interface BreakCombatResultSnapshot {
+  unit_id: string
+  /** Ids des engagements supprimés (1 ou plus pour multi-engagement). */
+  engagements_removed: string[]
+  /** Pertes appliquées (cumul split 60/40 killed + woundedAdd). */
+  losses: {
+    actualDamage: number
+    killed: number
+    woundedAdd: number
+  }
+  /** État unité post-rupture (jamais null : l'unité ne dissout pas en rompant). */
+  unit_after: {
+    effective: number
+    wounded: number
+    killed: number
+    hp: number
+    has_moved: true
+    has_attacked: true
+  }
+}
+
+/**
+ * Snapshot léger d'un engagement (forme BDD), retourné par les EF qui en créent
+ * ou en suppriment. Utile pour replay D13 et debug.
+ */
+export interface EngagementSnapshot {
+  id: string
+  game_id: string
+  unit_a_id: string
+  unit_b_id: string
+  started_turn: number
+}
+
+// ----------------------------------------------------------------------------
 // Phase 1 L1B.4c — End turn
 // ----------------------------------------------------------------------------
 
@@ -383,6 +431,8 @@ export const ERROR_CODES = {
   RETREAT_DEST_OCCUPIED: 'RETREAT_DEST_OCCUPIED',
   SUICIDE_NOT_SURROUNDED: 'SUICIDE_NOT_SURROUNDED',
   SUICIDE_CAMP_TOO_LOW: 'SUICIDE_CAMP_TOO_LOW',
+  // Phase 2.6 — engagement persistant
+  NOT_ENGAGED: 'NOT_ENGAGED',
   // generique
   INTERNAL: 'INTERNAL',
 } as const
