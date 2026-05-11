@@ -1,9 +1,9 @@
+// v2.3 (11/05/2026) — Phase 2.5 fix UX : affiche cohésion + soutien en permanence (lisibilité temps réel)
 // v2.2 (11/05/2026) — Phase 2.5 C : section "État critique" pour Brisé (Retraite / Reddition / Suicide)
 // v2.1 (10/05/2026) — Phase 2 2D.6 : choix case split via highlight grille
 // v2.0a (10/05/2026) — split/merge UX : direction (flèches + N/S/E/O)
-// v2.0 (10/05/2026) — Phase 2 2D.1 : effectif elastique + boutons split/merge
-import { useEffect, useState } from 'react'
-import type { CohesionState } from '@engine/cohesion'
+import { useEffect, useMemo, useState } from 'react'
+import { computeCohesion, type CohesionState, type SupportCount } from '@engine/cohesion'
 import type { UnitState, SplitRatio } from '@engine/units'
 import { resolveUnitStatsV2 } from '@engine/units'
 import { useUnitSizing } from '@hooks/useUnitSizing'
@@ -28,6 +28,8 @@ interface UnitInspectorProps {
   // -------- Phase 2.5 C : état critique unité Brisée --------
   /** État de cohésion calculé par useTacticalSelection. Si 'broken' → panneau "État critique". */
   cohesionState?: CohesionState
+  /** Phase 2.5 v2.3 — décompte soutien (alliés rayon 1+2) pour affichage temps réel. */
+  support?: SupportCount
   /** True si au moins 1 voisin libre adjacent (sinon retraite désactivée). */
   canRetreat?: boolean
   /** True si encerclée totalement ET ratio camp ≥ 25% (sinon suicide désactivé). */
@@ -67,6 +69,7 @@ export function UnitInspector({
   onEnterSplitMode,
   onExitSplitMode,
   cohesionState,
+  support,
   canRetreat = false,
   canSuicide = false,
   retreatActive = false,
@@ -81,6 +84,14 @@ export function UnitInspector({
   const sizing = useUnitSizing({ gameId, unit, allUnits, isMyUnit, isMyTurn })
   const [manoeuvre, setManoeuvre] = useState<Manoeuvre>('none')
   const [selectedRatio, setSelectedRatio] = useState<SplitRatio>('half')
+
+  // Phase 2.5 v2.3 : cohésion détaillée (score + breakdown) pour affichage temps réel.
+  // Recalculée à chaque changement de support → l'utilisateur voit immédiatement
+  // l'effet d'un renfort à proximité (avant fin de tour pour le moral chiffré).
+  const cohesionScore = useMemo(() => {
+    if (!support) return null
+    return computeCohesion(unit, support)
+  }, [unit, support])
 
   // Quand le splitMode global se ferme (validation ou annulation), on revient sur 'none'.
   // Quand il s'active, on force la sub-section sur 'split' (au cas où l'utilisateur ait fermé puis le parent l'a réouvert).
@@ -192,6 +203,39 @@ export function UnitInspector({
           />
         </div>
       </div>
+
+      {/* Phase 2.5 v2.3 : Cohésion + Soutien (temps réel) */}
+      {cohesionScore && (
+        <div className="space-y-1">
+          <div className="flex items-center justify-between text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+            <span>Cohésion</span>
+            <span className="tabular-nums flex items-center gap-2">
+              <span className="text-foreground">{(cohesionScore.total * 100).toFixed(0)}%</span>
+              <span
+                className="px-[6px] py-[1px] text-[9px] uppercase tracking-[0.12em] rounded-[2px] border"
+                style={{
+                  color: cohesionScore.state === 'broken' ? '#dc2626' : cohesionScore.state === 'shaken' ? '#eab308' : '#22c55e',
+                  borderColor: cohesionScore.state === 'broken' ? '#dc2626' : cohesionScore.state === 'shaken' ? '#eab308' : '#22c55e',
+                  background: `${cohesionScore.state === 'broken' ? '#dc2626' : cohesionScore.state === 'shaken' ? '#eab308' : '#22c55e'}1A`,
+                }}
+              >
+                {cohesionScore.state === 'broken' ? 'Brisé' : cohesionScore.state === 'shaken' ? 'Ébranlé' : 'Nominal'}
+              </span>
+            </span>
+          </div>
+          {support && (support.adjacent > 0 || support.nearby > 0) ? (
+            <div className="text-[9px] text-blue-300 tabular-nums">
+              Soutien : {support.adjacent} allié{support.adjacent > 1 ? 's' : ''} adj
+              {support.nearby > 0 && `, ${support.nearby} rayon 2`}
+              {' '}<span className="text-muted-foreground">(+{Math.round(support.adjacent + support.nearby * 0.5)} récup moral/tour, atténuation perte combat)</span>
+            </div>
+          ) : (
+            <div className="text-[9px] text-muted-foreground italic">
+              Isolée — aucun soutien adjacent
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Stats compactes v2 — facteurs unitaires Phase 2 */}
       <div className="grid grid-cols-3 gap-2 text-center">
