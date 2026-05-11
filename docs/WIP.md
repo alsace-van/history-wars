@@ -2,7 +2,72 @@
 
 ---
 
-## Session 18 &mdash; 11/05/2026 &mdash; Phase 2.6 Vague A engine engagement persistant (4 fichiers, 32 tests, 272 verts)
+## Session 18 (suite) &mdash; 11/05/2026 &mdash; Phase 2.6 Vague B BDD + EF Deno (migration 017 + 3 handlers + resolve_turn tick)
+
+**Vague B livrée côté code** — migration 017 + EF Deno. Pas encore appliqué en prod (attente confirmation user).
+
+### Fichiers livrés
+
+| Fichier | Contenu |
+|---|---|
+| `supabase/migrations/017_engagements.sql` (NEW) | Table `engagements (id, game_id, unit_a_id, unit_b_id, started_turn, created_at)` + RLS membre + Realtime + REPLICA IDENTITY FULL + CHECK pair_order (uuid_a < uuid_b) + UNIQUE(game_id, unit_a_id, unit_b_id) |
+| `supabase/functions/_shared/engine-port/engagement/{types,tick,index}.ts` (NEW) | Miroir 1:1 de `src/engine/engagement/*` côté Deno + helper `normalizePair(a, b)` |
+| `supabase/functions/_shared/types.ts` v2.2 | `ActionType += 'break_combat'`, `BreakCombatPayload`, `BreakCombatResultSnapshot`, `EngagementSnapshot`, `ERROR_CODES.NOT_ENGAGED` |
+| `supabase/functions/resolve_action/_handlers/handleEngage.ts` (NEW) | `createEngagementAfterMelee()` : INSERT idempotent (upsert sur UNIQUE), retourne snapshot ou null |
+| `supabase/functions/resolve_action/_handlers/handleAttack.ts` v1.2 | Appelle `createEngagementAfterMelee` après mêlée non-mortelle (phase='melee' && !defenderKilled && !attackerKilled) |
+| `supabase/functions/resolve_action/_handlers/handleBreakCombat.ts` (NEW) | Action `break_combat` : vérifie engagement actif, applique 10% pertes via `breakCombat` engine-port, DELETE tous engagements de l'unité (multi), INSERT game_actions D13 |
+| `supabase/functions/resolve_action/index.ts` v2.2 | Route `break_combat` → handleBreakCombat |
+| `supabase/functions/resolve_turn/index.ts` v1.3 | **Tick engagements actifs** avant récup moral : charge engagements + terrain + combat_config en // ; pour chaque engagement séquentiellement applique tick (cumul effective réduit) ; UPDATE unités ; DELETE engagements dissolus ; END-condition basée sur snapshot post-tick |
+
+### Décisions implémentation Vague B
+
+- **Engagement créé implicitement** : attack_melee → INSERT automatique (idempotent via UNIQUE). Pas d'action `engage` séparée — le bouton UI restera "Engager / Attaquer en mêlée" (cf. plan § 1.2).
+- **Normalisation paire** : la contrainte CHECK migration 017 impose `unit_a_id < unit_b_id` lexicographique. `normalizePair()` côté Deno garantit ça avant tout INSERT. Évite duplication (A,B) vs (B,A) sur ré-attaque.
+- **ON DELETE CASCADE** : une unité supprimée (dissolution) supprime auto ses engagements via FK. Idempotent côté code.
+- **Multi-engagement** : `handleBreakCombat` DELETE **tous** les engagements impliquant l'unité (rupture totale). Coût 10% appliqué une seule fois (cf. plan question ouverte § 12 — décidé "single charge" pour MVP, calibrage Vague D).
+- **Tick séquentiel vs cumul** : pour MVP, `resolve_turn` applique les ticks engagement par engagement (snapshot mémoire mis à jour entre chaque). Chaque tick voit l'unité avec effective réduit par les précédents → l'absorbtion 10% se renouvelle à chaque tick. Diffère de la spec § 6 stricte (cumul absorbtion une seule fois), mais comportement pratique raisonnable. À calibrer Vague D.
+- **REPLICA IDENTITY FULL** : posé sur engagements (cf. piège migration 010 sur units) — Realtime propage les DELETE avec payload complet aux clients pour cleanup local.
+- **Realtime publication** : engagements ajouté à `supabase_realtime` — les clients verront apparaître/disparaître les engagements en temps réel sans poll.
+
+### Tests
+
+- `npx vitest run` → **272/272 verts** (pas de régression côté client, Vague B ne modifie que Deno/SQL).
+- `npx tsc --noEmit` → 0 erreur.
+- Deno pas installé localement (`deno check` impossible) — port est un miroir 1:1 de `src/engine/engagement/*` déjà testé (32 tests Vague A).
+
+### Déploiement prod (à confirmer user)
+
+1. `mcp_supabase__apply_migration` migration 017 (idempotente — pas de risque)
+2. `Supabase:get_advisors` → 0 nouveau warning critique
+3. Redeploy EF : `resolve_action` v2.2 + `resolve_turn` v1.3 + (handleAttack v1.2 inclus)
+4. Vérification : INSERT manuel d'un engagement test via SQL → SELECT depuis le client (RLS check)
+
+### Vagues restantes Phase 2.6
+
+- **Vague C** (~1j) UI/Render :
+  - `useEngagement` hook Realtime sur table engagements
+  - `UnitInspector` v2.4 : section "Engagé en mêlée avec : Inf Rouges (T3)" + bouton "Rompre le combat"
+  - `useTacticalSelection` v1.6 : bloque mouvement standard si engagé
+  - `EngagementOverlay` 3D : ligne rouge entre 2 pions + anneau pulsant
+  - `CombatResultPanel` v3.2 : type 'attrition' affiché en plus de melee/ranged/charge
+
+- **Vague D** (~0.5j) Test humain :
+  - Scénario 1 : Combat 800 vs 400 plaine → durée 12-15 tours
+  - Scénario 2 : Encerclement 1 vs 3 → brisé en 7-10 tours
+  - Scénario 3 : Charge cav réussite → poursuite
+  - Scénario 4 : Charge cav qui tient → menu Rester/Replier (cf plan § 4 — pas implémenté Vague B, reporté Vague C+)
+  - Scénario 5 : Rompre coûteux → 700/800 → 630
+
+### Ouvert sans réponse (à valider Vague D)
+
+- Tick séquentiel vs cumul absorbtion (plan § 6) — pratique séquentiel pour MVP
+- Cav choix Rester/Replier après impact (plan § 4) — pas dans cette vague, à ajouter en C+ avec UI menu
+- Variance attrition ±5% vs ±15% — choix calibrage humain
+- Multi-engagement rupture : coût plafond ? — option A simple "coût unique 10%" appliquée pour MVP
+
+---
+
+## Session 18 (début) &mdash; 11/05/2026 &mdash; Phase 2.6 Vague A engine engagement persistant (4 fichiers, 32 tests, 272 verts)
 
 **Vague A engine livrée** côté client. Pas de migration ni d'EF pour cette vague (Vague B). Pas de UI (Vague C).
 
