@@ -2,6 +2,47 @@
 
 ---
 
+## Session 17 &mdash; 11/05/2026 &mdash; Hotfix soft-lock routed (PR #27) + design Phase 3 moral-cohésion
+
+**Bug remonté par user 11/05/2026** : 2 infanteries adjacentes (rouge 354/800 moral 22 routée + bleue 709/800 saine) sur partie 2 vs 2 joueurs → personne ne peut rien faire. Soft-lock par triangulation :
+- Routed ne peut ni bouger ni attaquer (`useTacticalSelection.ts` lignes 87, 110).
+- Routed ne peut pas être ciblée (`useTacticalSelection.ts` ligne 114).
+- Récup moral bloquée si en ZdC ennemie (`morale.ts:53`). Le bleu adjacent maintient le verrou.
+
+### Hotfix livré — PR #27
+
+- `src/hooks/useTacticalSelection.ts` v1.4 : retire `if (enemy.routed) continue` ligne 114. Permet le coup de grâce. Côté EF déjà autorisé (`handleAttack.ts:56` ne bloque que l'attaquant routé).
+- 206/206 tests verts. `tsc` 0 erreur.
+- Header 4 entrées max respecté (drop v1.0).
+
+### Design Phase 3 moral-cohésion — `docs/PLAN-MORAL-COHESION.md`
+
+Refonte routed binaire → **3 états gradués** :
+
+- **Cohésion** = `0.5 × moral + 0.3 × effectif + 0.2 × soutien` (plafond support 3, alliés rayon 1+2).
+- **Nominal** (>0.5) : OK ; **Ébranlé** (0.2-0.5) : OK + modale confirmation ; **Brisé** (≤0.2) : Retraite ou Reddition seule.
+- Effets soutien : +1 récup moral / allié rayon 1 (max +3) ; ×0.9 perte moral combat par allié (cumul max -30%) ; cohésion +0.2 max.
+- Reconstitution Brisé conditionnée à `effective ≥ 25% effectiveMax` (sinon merge ou Infirmier Phase 3).
+- Anneaux visuels : couche état (vert→jaune→orange clair→orange foncé) + couche soutien (bleu fin/épais/glow) + anneaux d'action existants (ambre sélection, rouge cible).
+- Découpé en 4 vagues (A engine / B EF / C UI+render / D tests humain), ~4 jours.
+
+Décisions actées user : rayon 1+2, plafond 3, pondération 50/30/20, anneau bleu superposé. Open questions : bonus moral exact reddition, calibrage 50/30/20 à valider Vague D.
+
+### Reste à faire
+
+- Test humain PR #27 sur la partie bloquée (le coup de grâce déverrouille).
+- Plan moral-cohésion à valider/affiner avant Vague A engine.
+- Build PWA + tag `phase-2-complete` reportés post-PR #27 mergée.
+
+### Fichiers touchés
+
+- `src/hooks/useTacticalSelection.ts` v1.4 (hotfix)
+- `docs/PLAN-MORAL-COHESION.md` (NEW)
+- `docs/BACKLOG.md` (section Phase 3 ajoutée)
+- `docs/WIP.md` (cette session)
+
+---
+
 ## Session 16 &mdash; 10/05/2026 &mdash; Phase 2 closure : polish 2.5 + 2 fix balance + déploiement prod complet
 
 **Phase 2 + Phase 2.5 = COMPLÈTES côté code/prod.** Reste pour officiellement clore :
