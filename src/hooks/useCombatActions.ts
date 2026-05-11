@@ -1,3 +1,4 @@
+// v2.2 (11/05/2026) — Phase 2.6 C : BreakCombatAction + code erreur NOT_ENGAGED
 // v2.1 (11/05/2026) — Phase 2.5 C : RetreatAction + SurrenderAction + SuicideAction + codes erreur cohésion
 // v2.0 (10/05/2026) — Phase 2 2D.5 : ajout SplitAction + MergeAction + nouveaux error codes humanises
 // v1.0 (09/05/2026) — L1C.1 : wrappers EF start_battle / resolve_action / resolve_turn
@@ -6,7 +7,7 @@ import { toast } from 'sonner'
 import { supabase } from '@lib/supabase'
 import { genUUID } from '@lib/uuid'
 
-const TAG = '[useCombatActions v2.1]'
+const TAG = '[useCombatActions v2.2]'
 
 // ----------------------------------------------------------------------------
 // Types payload UI (côté client). Identique aux MovePayload/AttackPayload des EF
@@ -58,6 +59,12 @@ export interface SuicideAction {
   payload: { unit_id: string; target_unit_id: string }
 }
 
+/** Phase 2.6 C — rupture volontaire d'engagement(s). Coût 10% effective, action consommée. */
+export interface BreakCombatAction {
+  type: 'break_combat'
+  payload: { unit_id: string }
+}
+
 export type GameAction =
   | MoveAction
   | AttackAction
@@ -66,6 +73,7 @@ export type GameAction =
   | RetreatAction
   | SurrenderAction
   | SuicideAction
+  | BreakCombatAction
 
 /** Reponse normalisee : ok=true + data, OU ok=false + message UI (toast deja affiche). */
 export interface ActionResponse<T = unknown> {
@@ -179,6 +187,8 @@ function humanizeError(code: string | undefined, fallback: string | undefined): 
     RETREAT_DEST_OCCUPIED: 'La case de retraite est occupee.',
     SUICIDE_NOT_SURROUNDED: 'Combat suicide reserve aux unites totalement encerclees. Tu peux encore battre en retraite.',
     SUICIDE_CAMP_TOO_LOW: 'Ton camp est trop affaibli pour un sacrifice utile. La capitulation s\'impose.',
+    // Phase 2.6 — engagement persistant
+    NOT_ENGAGED: 'Cette unite n\'est pas engagee. Aucun combat a rompre.',
     INTERNAL: 'Erreur serveur, reessaie.',
     NETWORK: 'Probleme reseau.',
   }

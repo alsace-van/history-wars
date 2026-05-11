@@ -1,7 +1,7 @@
+// v1.6 (11/05/2026) — Phase 2.6 C : engagedUnitIds bloque mouvement standard (Rompre obligatoire)
 // v1.5 (11/05/2026) — Phase 2.5 C : cohesionStateMap + supportMap exposés + bloque attaque standard si Brisé
 // v1.4 (11/05/2026) — Phase 2 hotfix soft-lock : autoriser l'attaque sur ennemi routé (coup de grâce)
 // v1.3 (10/05/2026) — Phase 2 2D.6 : param splitMode → tileStates 'split-target' sur hex adjacents libres
-// v1.2 (10/05/2026) — Phase 1.5 : ajout visibleEnemyIds (fog of war via LoS depuis toutes mes unités)
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { computeCohesion, computeSupport, type CohesionState, type SupportCount } from '@engine/cohesion'
 import { cubeKey, cubeDistance, neighbors } from '@engine/hex'
@@ -37,6 +37,13 @@ interface UseTacticalSelectionParams {
    * Click sur ces tiles/unités déclenche `suicide_attack` dans Game.tsx.
    */
   suicideMode?: boolean
+  /**
+   * Phase 2.6 C — Set des unitId actuellement dans au moins 1 engagement actif.
+   * Si l'unité sélectionnée y figure, son mouvement standard est désactivé
+   * (reachableMap vide). Elle doit Rompre le combat (-10% effective) avant
+   * de se redéplacer. L'attaque mêlée sur son opponent reste possible (riposte).
+   */
+  engagedUnitIds?: ReadonlySet<string>
 }
 
 interface UseTacticalSelectionResult {
@@ -72,7 +79,7 @@ interface UseTacticalSelectionResult {
 export function useTacticalSelection(
   params: UseTacticalSelectionParams
 ): UseTacticalSelectionResult {
-  const { inProgress, isMyTurn, myTeam, activeTeam, unitStates, boardKeys, splitMode, retreatMode = false, suicideMode = false } = params
+  const { inProgress, isMyTurn, myTeam, activeTeam, unitStates, boardKeys, splitMode, retreatMode = false, suicideMode = false, engagedUnitIds } = params
 
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null)
 
@@ -104,6 +111,9 @@ export function useTacticalSelection(
   const reachableMap = useMemo<Map<string, number>>(() => {
     if (!selectedUnit || !isSelectedMine || !isMyTurn) return new Map()
     if (selectedUnit.hasMoved || selectedUnit.routed) return new Map()
+    // Phase 2.6 — engagement persistant : une unité engagée doit Rompre le combat
+    // (action volontaire, -10% effective) avant de pouvoir bouger en standard.
+    if (engagedUnitIds && engagedUnitIds.has(selectedUnit.id)) return new Map()
     const stats = getUnitStats(selectedUnit.kind)
     const others = unitStates.filter(u => u.id !== selectedUnit.id)
     const blockers = new Set(others.map(u => cubeKey(u.position)))
@@ -121,7 +131,7 @@ export function useTacticalSelection(
       out.set(k, c)
     }
     return out
-  }, [selectedUnit, isSelectedMine, isMyTurn, unitStates, enemyZoc, boardKeys])
+  }, [selectedUnit, isSelectedMine, isMyTurn, unitStates, enemyZoc, boardKeys, engagedUnitIds])
 
   // Phase 2.5 — précalcule cohésion + support pour toutes les unités (single pass).
   // Permet : (1) bloquer attaque standard si Brisé, (2) UI panneau critique,

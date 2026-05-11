@@ -1,7 +1,7 @@
+// v1.8 (11/05/2026) — Phase 2.6 C : prop engagements (ligne 3D rouge pulsante entre pions engagés)
 // v1.7 (11/05/2026) — Phase 2.5 C.2 : props cohesionStateMap + supportMap pour anneaux 3D état/soutien
 // v1.6 (10/05/2026) — Phase 2 2.5 : prop damageFloaters (queue DamageFloater rendue en 3D au-dessus des unités)
 // v1.5 (10/05/2026) — Phase 1.5 : prop cameraFocusCube (centrer la vue sur une unité depuis CombatResultPanel)
-// v1.4 (10/05/2026) — Phase 1.5 : prop highlightedUnitIds (halo jaune unités du rapport combat actif)
 import { useMemo } from 'react'
 import { cubeToWorld, type Cube } from '@engine/hex'
 import type { Scale, Team } from '@/types/game'
@@ -12,6 +12,7 @@ import { UnitPlaceholder } from '../units/UnitPlaceholder'
 import { CameraController } from '../camera/CameraController'
 import { SceneLighting } from '../lighting/SceneLighting'
 import { DamageFloater } from '../effects/DamageFloater'
+import { EngagementOverlay, type EngagementPair } from '../effects/EngagementOverlay'
 import type { UnitInstance, HexTileState } from '../types'
 import type { DamageFloaterEntry } from '@hooks/useCombatAnimator'
 import { SceneShell } from './SceneShell'
@@ -45,6 +46,8 @@ interface TacticalSceneProps {
   cohesionStateMap?: Map<string, CohesionState>
   /** Phase 2.5 C.2 : Map<unitId, SupportCount> pour les cercles bleus de soutien. */
   supportMap?: Map<string, SupportCount>
+  /** Phase 2.6 C : paires engagées (ligne 3D rouge pulsante entre les 2 pions). */
+  engagements?: ReadonlyArray<EngagementPair>
   className?: string
 }
 
@@ -70,6 +73,7 @@ export function TacticalScene({
   onDamageFloaterDone,
   cohesionStateMap,
   supportMap,
+  engagements,
   className,
 }: TacticalSceneProps) {
   const { hexSize } = SCALE_CONFIG[scale]
@@ -126,6 +130,9 @@ export function TacticalScene({
       <SceneLighting />
       <HexGrid scale={scale} cubes={cubes} onTileClick={onTileClick} tileStates={tileStates} />
       {renderedUnits}
+      {engagements && engagements.length > 0 && (
+        <EngagementOverlay engagements={engagements} hexSize={hexSize} />
+      )}
       {damageFloaters?.map(f => (
         <DamageFloater
           key={f.id}
