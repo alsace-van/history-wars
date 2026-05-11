@@ -2,7 +2,98 @@
 
 ---
 
-## Session 18 (suite) &mdash; 11/05/2026 &mdash; Phase 2.6 Vague B BDD + EF Deno (migration 017 + 3 handlers + resolve_turn tick)
+## Session 18 (clôture) &mdash; 11/05/2026 &mdash; Phase 2.6 complète A+B+C livrée + 1 fix CHECK constraint + Vague D + sprint UX à faire session 19
+
+**Phase 2.6 livrée code + prod (Vagues A, B, C)**. Reste session 19 : sprint UX rapide ~1h (bug auto-select + tailles texte + effectif avant) puis test humain Vague D.
+
+### PRs livrées dans cette session (3)
+
+| # | Sujet | État |
+|---|---|---|
+| [#43](https://github.com/alsace-van/history-wars/pull/43) | **Vague A engine** : `engine/engagement/{types,tick,index}.ts` + 32 tests Vitest | ✅ mergée |
+| [#44](https://github.com/alsace-van/history-wars/pull/44) | **Vague B BDD + EF Deno** : migration 017, engine-port Deno, `handleEngage` + `handleBreakCombat`, `handleAttack` v1.2, `resolve_action` dispatcher v2.2, `resolve_turn` v1.3 tick | ✅ mergée |
+| [#45](https://github.com/alsace-van/history-wars/pull/45) | **Vague C UI** : `useEngagement` hook + `UnitInspector` v2.4 section Engagé + bouton Rompre + `EngagementOverlay` 3D ligne rouge pulsante + bloque mouvement engagé. Inclut migration 018 fix CHECK constraint | 🟡 ouverte (à merger) |
+
+### Déploiements prod (11/05/2026 PM/Soir)
+
+- **Migrations BDD** :
+  - 017 `engagements` (table + RLS + Realtime + CHECK pair_order + UNIQUE) — appliquée ✅
+  - **018 `fix_game_actions_action_type_check`** — découvert pendant test humain Vague B : la CHECK constraint migration 007 n'autorisait que `move/attack_ranged/attack_melee/end_turn/start_battle`. Bloquait silencieusement **6 action_types** (split_unit, merge_unit, retreat, surrender, suicide_attack, break_combat) → INSERT game_actions échouait, snapshot D13 perdu. Migration 018 ajoute les 11 valides. Appliquée ✅
+- **Edge Functions** :
+  - `resolve_action` v8 → **v9** (handleEngage, handleBreakCombat, handleAttack v1.2, dispatcher v2.2)
+  - `resolve_turn` v3 → **v4** (tick engagements séquentiel avant récup moral)
+- **Advisors** : 0 nouveau warning. 4 pré-existants restent (3× SECURITY DEFINER `is_*` + Auth leaked password).
+
+### Tests Vague B humain (réussis avec réserves)
+
+Partie 20:21-20:25 : tous les action_types fonctionnent post-fix 018. Comptabilité killed+wounded vs effective_loss cohérente (phantom_loss = 0). Engagements créés en mêlée, cascadés en DELETE quand unités tuées (CASCADE FK normal). Pertes 037f8b5b = 172 hommes sur 4 tours (~50-70 direct + ~100 tick engagement sur 3 ticks).
+
+**Bug observé partie 1 (résolu)** : unité `948d74cc` avait phantom_loss=400 hommes (killed+wounded=81 vs effective_loss=481). N'a pas reproduit en partie 2. À investiguer post-Vague D si récurrent.
+
+### Feedback UX critique (à traiter session 19)
+
+User a signalé après Vague C UI (mémoire `~/.claude/projects/.../memory/ux_tactica_lisibilite.md`) :
+
+1. **Bug auto-select CombatResultPanel** : reste sur le 1er combat au lieu de basculer auto sur le dernier. Cause : useEffect ne change `activeId` que si l'ancien n'est plus dans la liste — quand une nouvelle notif arrive, l'ancienne reste valide et le panel ne switch pas. Fix : `useRef` qui track `notifications.length` et force setActiveId quand augmente. **~5 min**
+2. **Manque effectif de départ dans rapport** : afficher effectif AVANT en plus de APRÈS (les 2 valeurs sont déjà dans le snapshot). **~15 min**
+3. **Textes trop petits** : 9-10px sur Inspector + CombatResultPanel + Sidebar → passer à 12-14px sur les sections clés. **~45 min**
+4. **Esthétique globale** : panneaux trop denses, manque hiérarchie visuelle, espacement insuffisant. **~2-4h refonte**
+
+Plan session 19 : option (a) sprint UX rapide ~1h (points 1+2+3) **avant** test Vague D. Point 4 sprint dédié si toujours frustrant après.
+
+### Prochaine étape (session 19)
+
+**Étape 1 — Sprint UX rapide (~1h)** :
+1. Fix bug auto-select CombatResultPanel (`useRef` + `notifications.length`)
+2. Ajout effectif AVANT dans rapport combat (déjà dispo via `combat.attackerEffectiveBefore`/`defenderEffectiveBefore`)
+3. Agrandir tailles texte 9-10px → 12-14px dans Inspector + CombatResultPanel + BattleSidebar
+
+**Étape 2 — Merger PR #45 + Vague D test humain (~0.5j)** : 5 scénarios `docs/PLAN-ENGAGEMENT-PERSISTENT.md` § 9 D :
+1. Combat 800 vs 400 plaine → durée 12-15 tours
+2. Encerclement 1 vs 3 → Brisé en 7-10 tours
+3. Charge cav réussite → poursuite
+4. Charge cav qui tient → menu Rester/Replier (pas implémenté Vague C, reporté)
+5. Rompre coûteux → 700/800 → 630
+
+**Étape 3 — Clôture Phase 2 complète** : tag git `phase-2-complete` (englobe Phase 2 + 2.5 + 2.6).
+
+### Bugs/observations ouverts
+
+| # | Bug | Statut |
+|---|---|---|
+| 1 | CHECK constraint game_actions.action_type bloquait Phase 2.5+2.6 silencieusement | ✅ Fix migration 018 |
+| 2 | CombatResultPanel reste sur 1er combat au lieu du dernier | 🔴 Session 19 |
+| 3 | Manque effectif de départ dans rapports combat | 🟡 Session 19 |
+| 4 | Textes trop petits (9-10px) sur Inspector + CombatResultPanel | 🟡 Session 19 |
+| 5 | Esthétique générale jugée pas jolie | 🟡 Sprint UX dédié post-Vague D |
+| 6 | phantom_loss 400 hommes (non reproduit en partie 2) | ⚪ À investiguer si récurrent |
+| 7 | Cav menu "Rester / Replier" après impact (plan § 4) | ⚪ Reporté post-Vague D |
+| 8 | CombatResultPanel type 'attrition' (tick engagement) | ⚪ Skip MVP, à ajouter si besoin |
+
+### Fichiers clés Phase 2.6 (cumulatif Vagues A+B+C)
+
+**Engine + port Deno miroir** : `src/engine/engagement/{types,tick,index}.ts` + `supabase/functions/_shared/engine-port/engagement/{types,tick,index}.ts`
+
+**EF Deno** : `handleEngage.ts` + `handleBreakCombat.ts` + `handleAttack.ts` v1.2 + `resolve_action/index.ts` v2.2 + `resolve_turn/index.ts` v1.3 + `_shared/types.ts` v2.2
+
+**Hooks** : `useEngagement.ts` v1.0 + `useCombatActions.ts` v2.2 + `useTacticalSelection.ts` v1.6
+
+**UI** : `UnitInspector.tsx` v2.4 + `BattleSidebar.tsx` v1.4 + `Game.tsx` v3.21
+
+**Render** : `EngagementOverlay.tsx` v1.0 + `TacticalScene.tsx` v1.8
+
+**Migrations** : 017 (engagements) + 018 (fix CHECK action_type)
+
+### Tests cumulés
+
+- `npx vitest run` : **272/272 verts** (240 baseline + 32 Vague A)
+- `npx tsc --noEmit` : 0 erreur
+- `npm run build` : PWA OK
+- Game.tsx 655 lignes, UnitInspector 616 lignes (≥600 soft limit, à nettoyer si dépasse 700)
+
+---
+
+## Session 18 (mid) &mdash; 11/05/2026 &mdash; Phase 2.6 Vague B BDD + EF Deno (migration 017 + 3 handlers + resolve_turn tick)
 
 **Vague B livrée côté code** — migration 017 + EF Deno. Pas encore appliqué en prod (attente confirmation user).
 
