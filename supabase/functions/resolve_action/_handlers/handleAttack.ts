@@ -1,5 +1,5 @@
+// v1.1 (11/05/2026) — Phase 2.5 : check cohésion 'broken' bloque attaque standard + propage support combat
 // v1.0 (10/05/2026) — Phase 2 2C.3 : handleAttack v2 (resolveCombat avec terrain + charge cav + breakdown)
-// Source : PLAN-PHASE-2-COMBAT-V2.md § 2C.3
 
 import { jsonResponse, errorResponse } from '../../_shared/cors.ts'
 import {
@@ -14,12 +14,13 @@ import { hasLineOfSight } from '../../_shared/engine-port/los/index.ts'
 import { resolveUnitStatsV2 } from '../../_shared/engine-port/units.ts'
 import { resolveCombat } from '../../_shared/engine-port/combat/v2/index.ts'
 import { seededRng } from '../../_shared/engine-port/combat/index.ts'
-import { buildUnitState, terrainAt, type UnitRow } from './_common.ts'
+import { computeCohesion, computeSupport } from '../../_shared/engine-port/cohesion/index.ts'
+import { buildAllUnitStates, buildUnitState, terrainAt, type UnitRow } from './_common.ts'
 import type { CombatConfig } from '../../_shared/engine-port/combat/v2/types.ts'
 import type { TerrainType } from '../../_shared/engine-port/terrain/index.ts'
 import type { Cube } from '../../_shared/engine-port/hex/index.ts'
 
-const TAG = '[handleAttack v1.0]'
+const TAG = '[handleAttack v1.1]'
 
 export interface HandleAttackArgs {
   // deno-lint-ignore no-explicit-any
@@ -93,6 +94,21 @@ export async function handleAttack(args: HandleAttackArgs): Promise<Response> {
   const attacker = buildUnitState(attackerRow)
   const defender = buildUnitState(defenderRow)
 
+  // Phase 2.5 — check cohésion attaquant : Brisé ne peut pas attaquer (sauf suicide_attack).
+  // Le routed legacy (moral < 25) reste également un blocage via le check au-dessus.
+  // Note : on calcule support sur TOUS les unitStates (alliés non-brisés rayon 1+2).
+  const allStates = buildAllUnitStates(units)
+  const attackerSupport = computeSupport(attacker, allStates)
+  const attackerCohesion = computeCohesion(attacker, attackerSupport)
+  if (attackerCohesion.state === 'broken') {
+    return errorResponse(
+      ERROR_CODES.COHESION_BROKEN,
+      'broken unit cannot perform standard attack — use retreat / surrender / suicide_attack',
+      400,
+    )
+  }
+  const defenderSupport = computeSupport(defender, allStates)
+
   const attackerTerrain = terrainAt(terrainMap, attackerPos)
   const defenderTerrain = terrainAt(terrainMap, defenderPos)
 
@@ -117,6 +133,8 @@ export async function handleAttack(args: HandleAttackArgs): Promise<Response> {
     attackerPathTerrain,
     rng,
     config: combatConfig,
+    attackerSupport,
+    defenderSupport,
   })
 
   const combat = combatRun.result

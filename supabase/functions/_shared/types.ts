@@ -1,7 +1,7 @@
+// v2.1 (11/05/2026) — Phase 2.5 B : ActionType etendu retreat/surrender/suicide_attack + payloads + error codes cohésion
 // v2.0 (10/05/2026) — Phase 2 2C.2 : ActionType etendu split_unit/merge_unit + AttackResultV2 + payloads + error codes
 // v1.2 (09/05/2026) — Phase 1 L1B.4a : ajout AttackPayload/Result + EndTurn* + INVALID_TARGET, GAME_FINISHED
 // v1.1 (09/05/2026) — Phase 1 L1B.3 : ajout ActionPayload + ERROR_CODES resolve_action
-// v1.0 (09/05/2026) — Phase 1 L1B.2 : types partages EF (initial)
 
 export type Team = 'blue' | 'red'
 export type UnitKind = 'I' | 'C' | 'A'
@@ -38,7 +38,16 @@ export interface UnitPlacement {
 // Phase 1 L1B.3 — Action types & payloads (move)
 // ----------------------------------------------------------------------------
 
-export type ActionType = 'move' | 'attack_ranged' | 'attack_melee' | 'split_unit' | 'merge_unit'
+export type ActionType =
+  | 'move'
+  | 'attack_ranged'
+  | 'attack_melee'
+  | 'split_unit'
+  | 'merge_unit'
+  // Phase 2.5 — actions critiques unité Brisée
+  | 'retreat'
+  | 'surrender'
+  | 'suicide_attack'
 
 export interface MovePayload {
   unit_id: string
@@ -240,6 +249,65 @@ export interface MergeResult {
 }
 
 // ----------------------------------------------------------------------------
+// Phase 2.5 — Actions critiques unité Brisée (cohésion ≤ 0.2)
+// ----------------------------------------------------------------------------
+
+/** Retraite volontaire vers 1 hex voisin choisi (case libre in-board). */
+export interface RetreatPayload {
+  unit_id: string
+  dest_q: number
+  dest_r: number
+}
+
+export interface RetreatResult {
+  unit_id: string
+  from: { q: number; r: number }
+  to: { q: number; r: number }
+  /** Hommes désertés pendant la retraite (>=0). Si pertes < 50% → 0. */
+  desertion: number
+  /** True si l'unité a été dissoute (effective post-désertion < effectiveMin). */
+  dissolved: boolean
+  /** État post-retraite. null si dissolved=true. */
+  unit_after: {
+    q: number
+    r: number
+    effective: number
+    killed: number
+    has_moved: true
+    has_attacked: true
+  } | null
+}
+
+/** Reddition (capitulation) volontaire ou forcée. Unité éliminée. */
+export interface SurrenderPayload {
+  unit_id: string
+}
+
+export interface SurrenderResult {
+  unit_id_deleted: string
+  /** Liste des id des unités du camp adverse dont le moral a augmenté (+10). */
+  enemy_units_morale_boosted: string[]
+  /** Liste des id des unités du camp qui se rend dont le moral a baissé (-10). */
+  ally_units_morale_lowered: string[]
+}
+
+/** Combat suicide (Thermopyle). Attaquant éliminé après l'attaque, pas de riposte, ×1.5 dégâts. */
+export interface SuicidePayload {
+  unit_id: string
+  target_unit_id: string
+}
+
+export interface SuicideResult {
+  attacker_id_deleted: string
+  target_id: string
+  combat: CombatResultSnapshotV2
+  target_killed: boolean
+  /** -5 moral sur toutes les unités camp adverse (impressionnées par la résistance). */
+  enemy_units_morale_lowered: string[]
+  seed: number
+}
+
+// ----------------------------------------------------------------------------
 // Phase 1 L1B.4c — End turn
 // ----------------------------------------------------------------------------
 
@@ -307,6 +375,14 @@ export const ERROR_CODES = {
   UNITS_NOT_ADJACENT: 'UNITS_NOT_ADJACENT',
   EFFECTIVE_OVERFLOW: 'EFFECTIVE_OVERFLOW',
   CHARGE_NOT_ALLOWED: 'CHARGE_NOT_ALLOWED',
+  // Phase 2.5 — cohésion / actions critiques
+  COHESION_BROKEN: 'COHESION_BROKEN',
+  COHESION_NOT_BROKEN: 'COHESION_NOT_BROKEN',
+  RETREAT_NO_FREE_NEIGHBOR: 'RETREAT_NO_FREE_NEIGHBOR',
+  RETREAT_DEST_NOT_ADJACENT: 'RETREAT_DEST_NOT_ADJACENT',
+  RETREAT_DEST_OCCUPIED: 'RETREAT_DEST_OCCUPIED',
+  SUICIDE_NOT_SURROUNDED: 'SUICIDE_NOT_SURROUNDED',
+  SUICIDE_CAMP_TOO_LOW: 'SUICIDE_CAMP_TOO_LOW',
   // generique
   INTERNAL: 'INTERNAL',
 } as const
