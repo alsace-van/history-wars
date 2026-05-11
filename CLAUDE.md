@@ -86,37 +86,25 @@ Exception : confiance < 95 % AVANT de coder → plan détaillé + questions auto
 
 Ne jamais demander un re-upload si le fichier est accessible via une de ces sources.
 
-## 7. État courant (11/05/2026 — session 17)
+## 7. État courant (11/05/2026 — session 18)
 
 - Phase 0 ✅ 13/13
 - Phase 1 ✅ 13/13 — combat MVP tactique complet
 - Phase 1.5 ✅ polish wounded + visuels asymétriques + toasts combat
-- **Phase 2 ✅** refonte combat v2 livrée (sessions 15-16) :
-  - Engine pur v2 + 205+ tests Vitest (24 fichiers verts)
-  - Migrations 012/013/014 appliquées prod (vérif 10/05)
-  - Engine-port Deno miroir complet, `resolve_action` refacturée en handlers
-  - UI : UnitInspector v2, Tooltip v2 breakdown, ResultPanel v3 charge, Sidebar v1.1 effectifs
-  - Render : UnitPlaceholder v2 + HealthBar v2 + DamageFloater 3D + skip Espace
-  - Balance : plancher attrition × 0.08, nerf cav 1.1/0.9
-  - Hotfix soft-lock routed (PR #27) — coup de grâce autorisé
-  - Doc : `docs/COMBAT-V2.md`
-- **Phase 2.5 🟡** moral / cohésion / soutien (en cours) — voir `docs/PLAN-MORAL-COHESION.md` :
-  - États gradués Nominal/Ébranlé/Brisé, cohésion `0.5×moral + 0.3×effectif + 0.2×soutien`
-  - Soutien rayon 1+2 (plafond 3), modale Ébranlé, panneau Retraite/Reddition/Suicide pour Brisé
-  - Désertion retraite seuil 50% pertes, cohésion temps réel
-  - Design figé via PRs #28-#31 ; **Vague A engine à attaquer** (~1 jour)
+- **Phase 2 ✅** refonte combat v2 livrée (sessions 15-16)
+- **Phase 2.5 ✅** moral / cohésion / soutien livrée prod (session 17) — 4 vagues A→C, Vague D (test humain) en attente
+- **Phase 2.6 🟡** engagement persistant (session 18 en cours) — voir `docs/PLAN-ENGAGEMENT-PERSISTENT.md` :
+  - **Vague A engine ✅ livrée session 18** : `engine/engagement/{types,tick,index}.ts` + 32 tests (272/272 verts)
+  - Constantes : `RESERVE_RELIEF_RATE=0.1`, `BREAK_COMBAT_COST_RATIO=0.1`, variance ±5%, fatigue moral -2/tour
+  - Vague B BDD+EF (~2j) à faire : migration 017 `engagements` + handleEngage/handleBreakCombat + resolve_turn v1.3
+  - Vague C UI/Render (~1j) : useEngagement, UnitInspector v2.4, EngagementOverlay 3D, CombatResultPanel attrition
+  - Vague D tests humain (~0.5j) : 5 scénarios calibrage
 - Phase 3 ⬜ moteur de tour : brouillard évolué, détection, pré-postures
 - Phase 4 ⬜ IA solo (déplacée de Phase 2 après refonte combat)
 - Phase 5 ⬜ Profondeur tactique (formations, fatigue, ravitaillement, Infirmier, météo)
 - Phases 6-15 ⬜
 
 Prochaine action :
-1. Vague A engine moral-cohésion : `engine/cohesion/*`, MAJ `morale.ts` v1.1, `contact.ts` v1.2 + tests.
-2. Vagues B (EF), C (UI/Render), D (calibrage tests humain).
-3. Test humain partie complète Phase 2 (split/merge/charge cav/coup de grâce routed) puis tag `phase-2-complete`.
-
-Prochaine action :
-1. Appliquer migrations 012/013/014 en prod via `mcp_supabase__apply_migration`.
-2. `Supabase:get_advisors` → 0 warning critique.
-3. Test humain 2 navigateurs (split + merge + charge cav + saturation terrain).
-4. Polish Session 2.5 (animations) puis `npm run build` PWA + tag `phase-2-complete`.
+1. Décider Vague B Phase 2.6 (migration 017 + EF) OU Vague D Phase 2.5 test humain (clôt Phase 2 officiel)
+2. Tag `phase-2-complete` après Vague D 2.5 OK
+3. Bug Realtime auto-reconnect en backlog Phase 3
