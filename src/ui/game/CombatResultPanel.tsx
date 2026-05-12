@@ -1,3 +1,4 @@
+// v4.1 (12/05/2026) — Fix positionnement : fixed sous le bouton TopBar (top-[68px]), couvre la sidebar quand ouvert
 // v4.0 (12/05/2026) — UX : liste scrollable verticale sous le bouton TopBar, plus d'onglets, croix par rapport
 // v3.4 (12/05/2026) — UX : bouton réduire ── (ferme sans vider) + monté seulement quand panel ouvert
 // v3.3 (12/05/2026) — Fog of war fix : effectif AVANT visible uniquement côté joueur (sinon déduction triviale)
@@ -52,12 +53,12 @@ export function CombatResultPanel({
 
   return (
     <div
-      className="absolute top-3 right-3 w-[420px] max-w-[92vw] z-40 pointer-events-auto"
+      className="fixed top-[68px] right-3 w-[420px] max-w-[92vw] z-50 pointer-events-auto"
       role="dialog"
       aria-label="Journal des combats"
       aria-live="polite"
     >
-      <div className="bg-[rgba(8,12,24,0.96)] backdrop-blur-[6px] border border-tactica-amber rounded-[2px] shadow-[0_8px_32px_rgba(0,0,0,0.5)] flex flex-col max-h-[calc(100vh-100px)]">
+      <div className="bg-[rgba(8,12,24,0.96)] backdrop-blur-[6px] border border-tactica-amber rounded-[2px] shadow-[0_8px_32px_rgba(0,0,0,0.5)] flex flex-col max-h-[calc(100vh-80px)]">
         {/* Header sticky */}
         <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-[rgba(226,232,240,0.10)] shrink-0">
           <div className="text-[13px] uppercase tracking-[0.12em] font-semibold text-tactica-amber flex items-center gap-2">
