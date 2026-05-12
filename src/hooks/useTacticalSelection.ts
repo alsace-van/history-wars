@@ -1,7 +1,7 @@
+// v1.7 (12/05/2026) — Override Brisée : attaque autorisée si ennemi strictement plus petit (mirror handleAttack EF v1.3)
 // v1.6 (11/05/2026) — Phase 2.6 C : engagedUnitIds bloque mouvement standard (Rompre obligatoire)
 // v1.5 (11/05/2026) — Phase 2.5 C : cohesionStateMap + supportMap exposés + bloque attaque standard si Brisé
 // v1.4 (11/05/2026) — Phase 2 hotfix soft-lock : autoriser l'attaque sur ennemi routé (coup de grâce)
-// v1.3 (10/05/2026) — Phase 2 2D.6 : param splitMode → tileStates 'split-target' sur hex adjacents libres
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { computeCohesion, computeSupport, type CohesionState, type SupportCount } from '@engine/cohesion'
 import { cubeKey, cubeDistance, neighbors } from '@engine/hex'
@@ -156,12 +156,15 @@ export function useTacticalSelection(
     const out = new Set<string>()
     if (!selectedUnit || !isSelectedMine || !isMyTurn) return out
     if (selectedUnit.hasAttacked || selectedUnit.routed) return out
-    // Phase 2.5 — Brisée ne peut pas attaquer en standard (uniquement actions critiques).
-    if (cohesionData.cohesionStateMap.get(selectedUnit.id) === 'broken') return out
+    // v1.7 (12/05/2026) — Brisée ne peut plus attaquer EN STANDARD sauf si l'ennemi est
+    // strictement plus petit (override "finir une troupe affaiblie"). Cohérent avec
+    // handleAttack.ts côté EF v1.3 — mirror obligatoire pour UI/serveur.
+    const isBroken = cohesionData.cohesionStateMap.get(selectedUnit.id) === 'broken'
     const stats = getUnitStats(selectedUnit.kind)
     const range = stats.range
     for (const enemy of unitStates) {
       if (enemy.team === selectedUnit.team) continue
+      if (isBroken && enemy.effective >= selectedUnit.effective) continue // override Brisée
       // Phase 2.5 — on attaque même les ennemis routed / Brisé (coup de grâce historique).
       const dist = cubeDistance(selectedUnit.position, enemy.position)
       if (dist === 0 || dist > range) continue

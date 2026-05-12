@@ -1,3 +1,4 @@
+// v1.1 (12/05/2026) — Garde-fou anti-broken (mirror src v1.1) — effective ≥ 1.5 × effectiveMin
 // v1.0 (11/05/2026) — Phase 2.5 : port cohesion/compute pour Deno
 // Source de verite : src/engine/cohesion/compute.ts. Duplication controlee (piege #12).
 
@@ -6,6 +7,7 @@ import type { UnitState } from '../units.ts'
 import {
   COHESION_STATE_THRESHOLDS,
   DEFAULT_COHESION_WEIGHTS,
+  MASS_SAFE_MULTIPLIER,
   SUPPORT_PLAFOND,
   SUPPORT_RADIUS_ADJACENT,
   SUPPORT_RADIUS_NEARBY,
@@ -49,7 +51,13 @@ export function computeCohesion(
   const supportComponent = weights.support * supportRatio
 
   const total = moraleComponent + effectiveComponent + supportComponent
-  const state = getCohesionState(total)
+  let state = getCohesionState(total)
+
+  // v1.1 — Garde-fou : unité avec encore beaucoup d'hommes → max shaken même si
+  // cohésion calculée < 0.2 (sinon une I 300/800 mal-morale serait Brisée).
+  if (state === 'broken' && unit.effective >= unit.effectiveMin * MASS_SAFE_MULTIPLIER) {
+    state = 'shaken'
+  }
 
   return {
     morale: moraleComponent,

@@ -66,6 +66,19 @@ export const COHESION_STATE_THRESHOLDS = Object.freeze({
 /** Plafond de soutien (alliés au-delà n'ajoutent rien). */
 export const SUPPORT_PLAFOND = 3
 
+/**
+ * Garde-fou anti-broken : une unité dont effective ≥ MASS_SAFE_MULTIPLIER × effectiveMin
+ * ne peut PAS être catégorisée Brisée même si la cohésion calculée tombe sous le seuil.
+ * Au pire elle est Ébranlée (shaken). Évite qu'une unité avec encore beaucoup d'hommes
+ * (ex: I 300/800) soit déclarée hors-jeu juste sur un mauvais moral transitoire.
+ *
+ * Concrètement :
+ *  - I : seuil = 1.5 × 100 = 150 hommes
+ *  - C : seuil = 1.5 × 25  ≈ 38 hommes
+ *  - A : seuil = 1.5 × 30  = 45 servants
+ */
+export const MASS_SAFE_MULTIPLIER = 1.5
+
 /** Rayons de mesure du soutien (en distance hex). */
 export const SUPPORT_RADIUS_ADJACENT = 1
 export const SUPPORT_RADIUS_NEARBY = 2

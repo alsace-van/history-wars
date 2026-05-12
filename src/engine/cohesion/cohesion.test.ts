@@ -186,9 +186,27 @@ describe('engine/cohesion — computeCohesion', () => {
   })
 
   it('protège contre moraleMax/effectiveMax = 0 (pas de division par 0)', () => {
-    const u = makeUnit({ moraleMax: 0, effectiveMax: 0 })
+    // effective: 0 explicite pour que le garde-fou anti-broken (v1.1) ne s'applique pas
+    const u = makeUnit({ moraleMax: 0, effectiveMax: 0, effective: 0 })
     const c = computeCohesion(u, { adjacent: 0, nearby: 0, total: 0 })
     expect(c.total).toBe(0)
+    expect(c.state).toBe('broken')
+  })
+
+  // v1.1 — garde-fou anti-broken
+  it('effective ≥ 1.5 × effectiveMin → clampé à shaken même si moral catastrophique', () => {
+    // I à 300/800 avec moral 5 : cohésion pure ≈ 0.5×0.05 + 0.3×0.375 + 0 ≈ 0.138 (broken)
+    // Mais effective 300 ≥ 1.5 × 100 = 150 → le garde-fou clampe à shaken.
+    const u = makeUnit({ effective: 300, morale: 5 })
+    const c = computeCohesion(u, { adjacent: 0, nearby: 0, total: 0 })
+    expect(c.total).toBeLessThan(0.2) // calcul brut bien sous le seuil broken
+    expect(c.state).toBe('shaken') // mais clampé
+  })
+
+  it('effective < 1.5 × effectiveMin → garde-fou inactif, broken normal', () => {
+    // I à 100/800 avec moral 5 : effective 100 < 1.5 × 100 = 150 → broken réel.
+    const u = makeUnit({ effective: 100, morale: 5 })
+    const c = computeCohesion(u, { adjacent: 0, nearby: 0, total: 0 })
     expect(c.state).toBe('broken')
   })
 })

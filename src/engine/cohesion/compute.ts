@@ -1,3 +1,4 @@
+// v1.1 (12/05/2026) — Garde-fou anti-broken : effective ≥ 1.5 × effectiveMin clampe à shaken max
 // v1.0 (11/05/2026) — Phase 2.5 : computeSupport, computeCohesion, getCohesionState
 // Source : docs/PLAN-MORAL-COHESION.md § 1-2
 // Frontière engine/ : zéro React, zéro Three, zéro Supabase
@@ -7,6 +8,7 @@ import type { UnitState } from '../units/types'
 import {
   COHESION_STATE_THRESHOLDS,
   DEFAULT_COHESION_WEIGHTS,
+  MASS_SAFE_MULTIPLIER,
   SUPPORT_PLAFOND,
   SUPPORT_RADIUS_ADJACENT,
   SUPPORT_RADIUS_NEARBY,
@@ -78,7 +80,14 @@ export function computeCohesion(
   const supportComponent = weights.support * supportRatio
 
   const total = moraleComponent + effectiveComponent + supportComponent
-  const state = getCohesionState(total)
+  let state = getCohesionState(total)
+
+  // v1.1 — Garde-fou : une unité avec encore beaucoup d'hommes ne peut pas être
+  // déclarée Brisée juste sur un mauvais moral transitoire (au pire elle est Ébranlée).
+  // Seuil = MASS_SAFE_MULTIPLIER (1.5) × effectiveMin. Cf. cohesion/types.ts.
+  if (state === 'broken' && unit.effective >= unit.effectiveMin * MASS_SAFE_MULTIPLIER) {
+    state = 'shaken'
+  }
 
   return {
     morale: moraleComponent,

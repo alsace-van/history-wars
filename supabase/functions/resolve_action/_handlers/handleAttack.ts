@@ -103,11 +103,18 @@ export async function handleAttack(args: HandleAttackArgs): Promise<Response> {
   const attackerSupport = computeSupport(attacker, allStates)
   const attackerCohesion = computeCohesion(attacker, attackerSupport)
   if (attackerCohesion.state === 'broken') {
-    return errorResponse(
-      ERROR_CODES.COHESION_BROKEN,
-      'broken unit cannot perform standard attack — use retreat / surrender / suicide_attack',
-      400,
-    )
+    // v1.3 (12/05/2026) — Override : autorise l'attaque si la cible est strictement
+    // plus petite (en effectif) que l'attaquant. Permet de finir une unité affaiblie
+    // même quand on est soi-même Brisé (par moral). L'information ne fuit pas vers le
+    // joueur côté UI (la requête réussit ou échoue, le serveur seul connaît l'écart).
+    const targetWeaker = defender.effective < attacker.effective
+    if (!targetWeaker) {
+      return errorResponse(
+        ERROR_CODES.COHESION_BROKEN,
+        'broken unit cannot perform standard attack — use retreat / surrender / suicide_attack',
+        400,
+      )
+    }
   }
   const defenderSupport = computeSupport(defender, allStates)
 
