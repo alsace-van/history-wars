@@ -60,7 +60,7 @@ Avant d'attaquer Phase 3, candidats prioritaires côté backlog (ordre suggéré
 
 ### Tag git
 
-`phase-2-complete` posé sur `5a20af0` (englobe Phase 2 + 2.5 + 2.6).
+`phase-2-complete` posé sur le commit de clôture docs session 19 (englobe Phase 2 + 2.5 + 2.6).
 
 ---
 
