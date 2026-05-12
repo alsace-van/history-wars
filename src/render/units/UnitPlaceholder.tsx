@@ -1,7 +1,7 @@
+// v2.6 (12/05/2026) — Phase 3.1-B : prop silhouette → mesh atténué + masquage label/anneaux/healthbar
 // v2.5 (12/05/2026) — Label kind monté pour cavalerie (suit la hauteur du mesh C plus grand)
 // v2.4 (12/05/2026) — CavalryMesh dédié pour unit.kind === 'C' (cavalier.glb)
 // v2.3 (12/05/2026) — UX : prop mergeTarget (halo bleu cyan, cible fusion sélectionnable)
-// v2.2 (12/05/2026) — MVP tweak : vitesse anim par UnitKind (C rapide, I/A lents)
 import { Suspense, useEffect, useMemo, useRef } from 'react'
 import { Billboard, Text } from '@react-three/drei'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
@@ -46,6 +46,12 @@ interface UnitPlaceholderProps {
   cohesionState?: CohesionState
   /** Phase 2.5 C.2 : décompte soutien — cercles bleus superposés. */
   support?: SupportCount
+  /**
+   * Phase 3.1-B : silhouette = ennemi repéré sans identification. Mesh atténué (opacity 0.35),
+   * pas de label kind, pas d'anneaux cohésion/soutien, pas de healthbar. Reste cliquable
+   * pour QW2 (panel "Identification incomplète").
+   */
+  silhouette?: boolean
 }
 
 const SOLDIER_SCALE_RATIO = 0.5
@@ -101,6 +107,7 @@ export function UnitPlaceholder({
   onPointerOut,
   cohesionState,
   support,
+  silhouette = false,
 }: UnitPlaceholderProps) {
   const targetPos = useMemo<[number, number, number]>(() => cubeWorld(unit.position, hexSize), [unit.position, hexSize])
 
@@ -249,7 +256,8 @@ export function UnitPlaceholder({
     onPointerOut?.(unit)
   }
 
-  const opacity = exhausted ? 0.55 : 1
+  // v2.6 : silhouette = ennemi repéré, mesh atténué. Override exhausted/normal.
+  const opacity = silhouette ? 0.35 : (exhausted ? 0.55 : 1)
 
   // Phase 2.5 C.2 : ratio effective/effectiveMax pour la couleur du status ring
   const cohesionRatio = effMax > 0 ? eff / effMax : 0
@@ -258,8 +266,9 @@ export function UnitPlaceholder({
 
   return (
     <group ref={groupRef}>
-      {/* Phase 2.5 C.2 — couche basse : anneau d'état permanent (vert/jaune/orange) */}
-      {cohesionState && (
+      {/* Phase 2.5 C.2 — couche basse : anneau d'état permanent (vert/jaune/orange).
+          v2.6 : masqué en mode silhouette (l'observateur ne connaît pas la cohésion exacte). */}
+      {!silhouette && cohesionState && (
         <UnitStatusRing
           radius={ringRadius}
           liftY={statusRingLift}
@@ -268,8 +277,8 @@ export function UnitPlaceholder({
           prominent={selected || highlighted}
         />
       )}
-      {/* Phase 2.5 C.2 — couche bleue soutien (cercles concentriques selon alliés) */}
-      {support && (
+      {/* Phase 2.5 C.2 — couche bleue soutien (cercles concentriques selon alliés). */}
+      {!silhouette && support && (
         <UnitSupportRing
           radius={ringRadius}
           liftY={supportRingLift}
@@ -393,8 +402,9 @@ export function UnitPlaceholder({
         </Suspense>
       </group>
 
-      {/* Phase 2 : barre effectif multi-segment (vert effective / orange wounded / sombre tues) — own only */}
-      {showHealthBar && (
+      {/* Phase 2 : barre effectif multi-segment (vert effective / orange wounded / sombre tues) — own only.
+          v2.6 : masquée en mode silhouette. */}
+      {!silhouette && showHealthBar && (
         <UnitHealthBar
           effective={eff}
           effectiveMax={effMax}
@@ -405,11 +415,12 @@ export function UnitPlaceholder({
       )}
 
       <Billboard position={[0, soldierScale * MESH_TOP_HEIGHT_BY_KIND[unit.kind] + 0.3, 0]} follow lockX={false} lockY={false} lockZ={false}>
+        {/* v2.6 : "?" en mode silhouette (kind inconnu de l'observateur). */}
         <Text fontSize={0.32} color="#ffffff" anchorX="center" anchorY="middle" outlineWidth={0.025} outlineColor="#000000">
-          {unit.kind}
+          {silhouette ? '?' : unit.kind}
         </Text>
-        {/* Phase 1.5 : effectif chiffre visible uniquement pour mes propres unites (fog of war partiel) */}
-        {showHealthBar && unit.count !== undefined && (
+        {/* Phase 1.5 : effectif chiffre visible uniquement pour mes propres unites (fog of war partiel). */}
+        {!silhouette && showHealthBar && unit.count !== undefined && (
           <Text position={[0, -0.32, 0]} fontSize={0.18} color="#e2e8f0" anchorX="center" anchorY="middle" outlineWidth={0.018} outlineColor="#000000">
             {unit.count}
           </Text>

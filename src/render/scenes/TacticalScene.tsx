@@ -1,19 +1,20 @@
+// v1.9 (12/05/2026) — Phase 3.1-B : props tileVisibility + enemyVisibility (fog client + silhouettes)
 // v1.8 (11/05/2026) — Phase 2.6 C : prop engagements (ligne 3D rouge pulsante entre pions engagés)
 // v1.7 (11/05/2026) — Phase 2.5 C.2 : props cohesionStateMap + supportMap pour anneaux 3D état/soutien
 // v1.6 (10/05/2026) — Phase 2 2.5 : prop damageFloaters (queue DamageFloater rendue en 3D au-dessus des unités)
-// v1.5 (10/05/2026) — Phase 1.5 : prop cameraFocusCube (centrer la vue sur une unité depuis CombatResultPanel)
 import { useMemo } from 'react'
 import { cubeToWorld, type Cube } from '@engine/hex'
 import type { Scale, Team } from '@/types/game'
 import { SCALE_CONFIG } from '@engine/scales'
 import { HexGrid } from '../hex/HexGrid'
 import type { CohesionState, SupportCount } from '@engine/cohesion'
+import type { VisibilityLevel } from '@engine/vision'
 import { UnitPlaceholder } from '../units/UnitPlaceholder'
 import { CameraController } from '../camera/CameraController'
 import { SceneLighting } from '../lighting/SceneLighting'
 import { DamageFloater } from '../effects/DamageFloater'
 import { EngagementOverlay, type EngagementPair } from '../effects/EngagementOverlay'
-import type { UnitInstance, HexTileState } from '../types'
+import type { UnitInstance, HexTileState, HexTileVisibility } from '../types'
 import type { DamageFloaterEntry } from '@hooks/useCombatAnimator'
 import { SceneShell } from './SceneShell'
 
@@ -50,6 +51,10 @@ interface TacticalSceneProps {
   supportMap?: Map<string, SupportCount>
   /** Phase 2.6 C : paires engagées (ligne 3D rouge pulsante entre les 2 pions). */
   engagements?: ReadonlyArray<EngagementPair>
+  /** Phase 3.1-B : visibilité par hex (fog client). Key absente = 'hidden'. */
+  tileVisibility?: Map<string, HexTileVisibility>
+  /** Phase 3.1-B : Map<unitId, VisibilityLevel> pour les ennemis. Key absente = 'hidden' (non rendu). */
+  enemyVisibility?: Map<string, VisibilityLevel>
   className?: string
 }
 
@@ -77,32 +82,48 @@ export function TacticalScene({
   cohesionStateMap,
   supportMap,
   engagements,
+  tileVisibility,
+  enemyVisibility,
   className,
 }: TacticalSceneProps) {
   const { hexSize } = SCALE_CONFIG[scale]
 
   const renderedUnits = useMemo(
-    () =>
-      units.map(u => (
-        <UnitPlaceholder
-          key={u.id}
-          unit={u}
-          hexSize={hexSize}
-          selected={u.id === selectedUnitId}
-          targetable={targetableUnitIds?.has(u.id) ?? false}
-          mergeTarget={mergeTargetUnitIds?.has(u.id) ?? false}
-          exhausted={exhaustedUnitIds?.has(u.id) ?? false}
-          highlighted={highlightedUnitIds?.has(u.id) ?? false}
-          viewerTeam={viewerTeam}
-          path={unitPaths?.get(u.id)}
-          onPathDone={onUnitPathDone}
-          onClick={onUnitClick}
-          onPointerOver={onUnitPointerOver}
-          onPointerOut={onUnitPointerOut}
-          cohesionState={cohesionStateMap?.get(u.id)}
-          support={supportMap?.get(u.id)}
-        />
-      )),
+    () => {
+      const out: JSX.Element[] = []
+      for (const u of units) {
+        // Phase 3.1-B : si enemyVisibility est fourni ET l'unité est ennemie (≠ viewerTeam),
+        // on filtre selon le niveau. 'hidden' = on ne rend pas. 'spotted' = silhouette.
+        let silhouette = false
+        if (enemyVisibility && viewerTeam && u.team !== viewerTeam) {
+          const level = enemyVisibility.get(u.id) ?? 'hidden'
+          if (level === 'hidden') continue
+          silhouette = level === 'spotted'
+        }
+        out.push(
+          <UnitPlaceholder
+            key={u.id}
+            unit={u}
+            hexSize={hexSize}
+            selected={u.id === selectedUnitId}
+            targetable={targetableUnitIds?.has(u.id) ?? false}
+            mergeTarget={mergeTargetUnitIds?.has(u.id) ?? false}
+            exhausted={exhaustedUnitIds?.has(u.id) ?? false}
+            highlighted={highlightedUnitIds?.has(u.id) ?? false}
+            viewerTeam={viewerTeam}
+            path={unitPaths?.get(u.id)}
+            onPathDone={onUnitPathDone}
+            onClick={onUnitClick}
+            onPointerOver={onUnitPointerOver}
+            onPointerOut={onUnitPointerOut}
+            cohesionState={cohesionStateMap?.get(u.id)}
+            support={supportMap?.get(u.id)}
+            silhouette={silhouette}
+          />,
+        )
+      }
+      return out
+    },
     [
       units,
       hexSize,
@@ -119,6 +140,7 @@ export function TacticalScene({
       onUnitPointerOut,
       cohesionStateMap,
       supportMap,
+      enemyVisibility,
     ]
   )
 
@@ -133,7 +155,7 @@ export function TacticalScene({
     <SceneShell className={className}>
       <CameraController scale={scale} target={cameraTarget} />
       <SceneLighting />
-      <HexGrid scale={scale} cubes={cubes} onTileClick={onTileClick} tileStates={tileStates} />
+      <HexGrid scale={scale} cubes={cubes} onTileClick={onTileClick} tileStates={tileStates} tileVisibility={tileVisibility} />
       {renderedUnits}
       {engagements && engagements.length > 0 && (
         <EngagementOverlay engagements={engagements} hexSize={hexSize} />

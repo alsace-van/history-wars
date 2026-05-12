@@ -1,8 +1,8 @@
+// v3.26 (12/05/2026) — Phase 3.1-C : useVisionMap câblé + tileVisibility + enemyVisibility propagés
+// v3.25 (12/05/2026) — QW1 : extraction useGameLifecycle + useCombatToastFeed + BattleHeader/Footer
 // v3.24 (12/05/2026) — UX manœuvres : mergeMode global + clic cible map (move+merge) + scinder simplifié
 // v3.23 (12/05/2026) — UX : journal rapports combat replié par défaut + toast sur nouveau combat + bouton Topbar
-// v3.22 (12/05/2026) — MVP tweak : MVP_CUBES dynamique selon tactical.boardRadius (fallback 7)
-// v3.21 (11/05/2026) — Phase 2.6 C : useEngagement + ligne 3D + bouton Rompre + bloque mouvement standard
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useRequireAuth } from '@hooks/useRequireAuth'
@@ -19,7 +19,12 @@ import { useUnitCriticalActions } from '@hooks/useUnitCriticalActions'
 import { useBattleClickHandlers } from '@hooks/useBattleClickHandlers'
 import { useEngagement } from '@hooks/useEngagement'
 import { useUnitSizing } from '@hooks/useUnitSizing'
-import type { EngagementPair } from '@render/effects/EngagementOverlay'
+import { useGameLifecycle } from '@hooks/useGameLifecycle'
+import { useCombatToastFeed } from '@hooks/useCombatToastFeed'
+import { useEnemyHoverTooltip } from '@hooks/useEnemyHoverTooltip'
+import { useUnitPathAnimation } from '@hooks/useUnitPathAnimation'
+import { useEngagementDerivations } from '@hooks/useEngagementDerivations'
+import { useVisionMap } from '@hooks/useVisionMap'
 import {
   isHost,
   isPlayerInGame,
@@ -31,17 +36,17 @@ import { TeamPanel, type SlotData } from '@ui/game/TeamPanel'
 import { BattleSidebar } from '@ui/game/BattleSidebar'
 import { GameHUD } from '@ui/game/GameHUD'
 import { GameTopBar } from '@ui/game/GameTopBar'
-import { Bracket } from '@ui/game/Bracket'
+import { BattleHeader } from '@ui/game/BattleHeader'
+import { BattleSidebarFooter } from '@ui/game/BattleSidebarFooter'
+import { getScaleLabel, getStatusLabel } from '@ui/game/gameLabels'
 import { BattleModals } from '@ui/game/BattleModals'
 import { CombatPreviewTooltip } from '@ui/game/CombatPreviewTooltip'
 import { CombatResultPanel } from '@ui/game/CombatResultPanel'
 import type { CombatNotification } from '@hooks/useCombatNotifications'
 import { TacticalScene, buildMvpUnitPlacement } from '@/render'
 import { unitRowsToInstances, unitRowsToStates } from '@render/_data/unitAdapter'
-import type { UnitInstance } from '@render/types'
 import { spiral, cubeKey, type Cube } from '@engine/hex'
 import { type UnitState, type SplitRatio } from '@engine/units'
-import { cn } from '@lib/cn'
 
 // v3.22 : board cubes derives a runtime depuis tactical.boardRadius (cf. useMemo dans le composant).
 // La valeur de fallback ci-dessous sert au rendu pre-bataille (lobby) ou si state encore null.
@@ -188,12 +193,20 @@ export function Game() {
   // Phase 2.6 C — engagements actifs (table engagements migration 017 + Realtime).
   const { engagements: engagementRows, engagedUnitIds, engagementsByUnit } = useEngagement(gameId, showBattle)
 
+  // Phase 3.1-C : fog client (vision range + LoS). Doit être appelé AVANT useTacticalSelection
+  // car ses outputs alimentent visibleTileKeys + enemyVisibility (filtre reachable/targetable).
+  const { visibleTileMap, enemyVisibility, visibleEnemyIds, visibleTileKeys } = useVisionMap({
+    myTeam: showBattle ? myTeam : null,
+    unitStates,
+    boardKeys: mvpBoardKeys,
+    activeTeam,
+  })
+
   const {
     selectedUnitId,
     selectedUnit,
     reachableMap,
     targetableUnitIds,
-    visibleEnemyIds,
     tileStates,
     exhaustedUnitIds,
     splitTargetKeys,
@@ -201,6 +214,7 @@ export function Game() {
     supportMap,
     retreatTargetKeys,
     suicideTargetIds,
+    inspectedEnemy,
     handleUnitClick: hookHandleUnitClick,
     clearSelection,
   } = useTacticalSelection({
@@ -210,6 +224,8 @@ export function Game() {
     retreatMode,
     suicideMode,
     engagedUnitIds,
+    visibleTileKeys: inProgress && myTeam ? visibleTileKeys : undefined,
+    enemyVisibility: inProgress && myTeam ? enemyVisibility : undefined,
   })
 
   const critical = useUnitCriticalActions({
@@ -257,43 +273,11 @@ export function Game() {
     if (!selectedUnit || sizing.mergeTargets.length === 0 || !isMyTurn) setMergeMode(false)
   }, [mergeMode, selectedUnit, sizing.mergeTargets.length, isMyTurn])
 
-  // Phase 2.6 C — Lookup unitId → UnitState pour récupérer positions + kind/team des opponents.
-  const unitById = useMemo<Map<string, UnitState>>(() => {
-    const m = new Map<string, UnitState>()
-    for (const u of unitStates) m.set(u.id, u)
-    return m
-  }, [unitStates])
+  const { enginePairs, engagementsForSelected, engagementsForInspected } = useEngagementDerivations({
+    unitStates, engagementRows, engagementsByUnit, selectedUnit, inspectedEnemy,
+  })
 
-  // EngagementPair[] pour TacticalScene (ligne 3D rouge entre les 2 pions).
-  const enginePairs = useMemo<EngagementPair[]>(() => {
-    const out: EngagementPair[] = []
-    for (const e of engagementRows) {
-      const a = unitById.get(e.unit_a_id)
-      const b = unitById.get(e.unit_b_id)
-      if (!a || !b) continue
-      out.push({ id: e.id, positionA: a.position, positionB: b.position })
-    }
-    return out
-  }, [engagementRows, unitById])
-
-  // Engagements de l'unité sélectionnée (pour la section "Engagement" du Inspector).
-  const engagementsForSelected = useMemo(() => {
-    if (!selectedUnit) return undefined
-    const list = engagementsByUnit.get(selectedUnit.id)
-    if (!list || list.length === 0) return undefined
-    return list.flatMap(e => {
-      const opponentId = e.unit_a_id === selectedUnit.id ? e.unit_b_id : e.unit_a_id
-      const opp = unitById.get(opponentId)
-      if (!opp) return []
-      return [{
-        id: e.id,
-        opponentId,
-        opponentKind: opp.kind as string,
-        opponentTeam: opp.team,
-        startedTurn: e.started_turn,
-      }]
-    })
-  }, [selectedUnit, engagementsByUnit, unitById])
+  const inspectedEnemyCohesion = inspectedEnemy ? cohesionStateMap.get(inspectedEnemy.id) : undefined
 
   // ---- Notifications combat en onglets (cf piège #52) ----
   const { notifications: combatNotifs, removeNotification: removeCombatNotif, clear: clearCombatNotifs } =
@@ -333,47 +317,12 @@ export function Game() {
     [unitStates]
   )
 
-  // ---- Hover ennemi targetable → tooltip combat ----
-  const [hoveredEnemyId, setHoveredEnemyId] = useState<string | null>(null)
-  const [mousePos, setMousePos] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
+  const {
+    hoveredEnemy, mousePos, setHoveredEnemyId,
+    handleSceneMouseMove, handleUnitPointerOver, handleUnitPointerOut,
+  } = useEnemyHoverTooltip({ unitStates, targetableUnitIds })
 
-  const handleSceneMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (!hoveredEnemyId) return // pas de tooltip → inutile de mettre a jour
-    const rect = e.currentTarget.getBoundingClientRect()
-    setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top })
-  }, [hoveredEnemyId])
-
-  const handleUnitPointerOver = useCallback((unit: UnitInstance) => {
-    if (targetableUnitIds.has(unit.id)) setHoveredEnemyId(unit.id)
-  }, [targetableUnitIds])
-
-  const handleUnitPointerOut = useCallback((unit: UnitInstance) => {
-    setHoveredEnemyId(prev => (prev === unit.id ? null : prev))
-  }, [])
-
-  const hoveredEnemy = useMemo<UnitState | null>(
-    () => unitStates.find(u => u.id === hoveredEnemyId) ?? null,
-    [unitStates, hoveredEnemyId]
-  )
-
-  // Reset hover si selection change (l'ennemi peut sortir du targetableUnitIds)
-  useEffect(() => {
-    if (hoveredEnemyId && !targetableUnitIds.has(hoveredEnemyId)) {
-      setHoveredEnemyId(null)
-    }
-  }, [hoveredEnemyId, targetableUnitIds])
-
-  // ---- Animation paths : Map<unitId, path[]> consommee par UnitPlaceholder ----
-  const [unitPaths, setUnitPaths] = useState<Map<string, ReadonlyArray<Cube>>>(new Map())
-
-  const onUnitPathDone = useCallback((unitId: string) => {
-    setUnitPaths(prev => {
-      if (!prev.has(unitId)) return prev
-      const next = new Map(prev)
-      next.delete(unitId)
-      return next
-    })
-  }, [])
+  const { unitPaths, setUnitPaths, onUnitPathDone } = useUnitPathAnimation()
 
   // Phase 2.5 C — handlers click extraits dans useBattleClickHandlers (alléger Game.tsx)
   const { handleUnitClick, handleTileClick, handleShakenConfirm } = useBattleClickHandlers({
@@ -411,77 +360,13 @@ export function Game() {
     pendingShakenAttack,
   })
 
-  async function handleLeave() {
-    if (!user || busy) return
-    if (iAmHost) {
-      const ok = window.confirm("Tu es l'hôte. Quitter va dissoudre la partie pour tous les joueurs. Continuer ?")
-      if (!ok) return
-      setBusy(true)
-      const { error } = await deleteGame()
-      setBusy(false)
-      if (error) {
-        toast.error(error)
-        return
-      }
-      toast.success('Partie dissoute.')
-      navigate('/lobby')
-    } else {
-      setBusy(true)
-      const { error } = await leaveGame()
-      setBusy(false)
-      if (error) {
-        toast.error(error)
-        return
-      }
-      toast.success('Tu as quitté la partie.')
-      navigate('/lobby')
-    }
-  }
-
-  async function handleKick(playerId: string) {
-    if (!iAmHost || busy) return
-    setBusy(true)
-    const { error } = await kickPlayer(playerId)
-    setBusy(false)
-    if (error) {
-      toast.error(error)
-      return
-    }
-    toast.success('Officier renvoyé.')
-  }
-
-  async function handleStartBattle() {
-    if (!gameId || !canStart || actionsBusy) return
-    const res = await startBattle(gameId)
-    if (res.ok) toast.success('Bataille engagée.')
-  }
-
-  async function handleEndTurn() {
-    if (!gameId || !inProgress || !isMyTurn || actionsBusy) return
-    const res = await endTurn(gameId)
-    if (res.ok) {
-      clearSelection()
-      // Phase 2.5 fix : ne pas dépendre uniquement de Realtime (qui peut décrocher).
-      // Refresh manuel garantit que activeTeam UI suit la BDD immédiatement.
-      void refresh()
-      toast.success('Tour terminé.')
-    }
-  }
-
-  // Phase 2.6 C — rupture volontaire d'engagement(s) pour l'unité sélectionnée.
-  // Coût 10 % effective + consomme hasMoved/hasAttacked. DELETE tous les engagements.
-  async function handleBreakCombat() {
-    if (!gameId || !selectedUnit || !isMyTurn || actionsBusy) return
-    if (!engagedUnitIds.has(selectedUnit.id)) return
-    const res = await submitAction(gameId, {
-      type: 'break_combat',
-      payload: { unit_id: selectedUnit.id },
-    })
-    if (res.ok) {
-      void refresh()
-      toast.success('Combat rompu.')
-    }
-  }
+  const { handleLeave, handleKick, handleStartBattle, handleEndTurn, handleBreakCombat } = useGameLifecycle({
+    gameId: gameId ?? null, iAmHost, busy, setBusy,
+    deleteGame, leaveGame, kickPlayer,
+    canStart, inProgress, isMyTurn, actionsBusy,
+    startBattle, endTurn, submitAction, refresh, clearSelection,
+    selectedUnit, engagedUnitIds, navigate,
+  })
 
   // Modal de fin : ouverte automatiquement sur status='finished',
   // refermable une fois (l'utilisateur peut rester sur le plateau pour debriefer).
@@ -490,40 +375,8 @@ export function Game() {
     if (!finished) setEndModalDismissed(false)
   }, [finished, gameId])
 
-  // v3.23 — Journal des combats : replié par défaut, le bouton "Rapports" de
-  // GameTopBar le toggle. Chaque nouvelle notification déclenche un toast bref.
-  const [combatPanelOpen, setCombatPanelOpen] = useState(false)
-  const prevCombatNotifLenRef = useRef(0)
-  useEffect(() => {
-    const prev = prevCombatNotifLenRef.current
-    prevCombatNotifLenRef.current = combatNotifs.length
-    if (combatNotifs.length <= prev) return
-    // Nouvelle notif arrivée → toaste la dernière (ephemere, 4s)
-    const last = combatNotifs[combatNotifs.length - 1]
-    const phase = last.kind === 'charge' ? 'Charge cav' : last.kind === 'melee' ? 'Mêlée' : 'Tir'
-    const perspective = last.isMyAttack
-      ? `${phase} : ${last.attackerKindLabel} → ${last.defenderKindLabel} adverse`
-      : `${phase} subi : ${last.attackerKindLabel} adverse → ${last.defenderKindLabel}`
-    const losses = last.defenderLosses
-    const subtitle = losses.isKilled
-      ? `${last.defenderKindLabel} décimée`
-      : `${losses.killed} morts au combat`
-    toast(perspective, {
-      description: subtitle,
-      duration: 4000,
-      action: {
-        label: 'Détail',
-        onClick: () => setCombatPanelOpen(true),
-      },
-    })
-  }, [combatNotifs])
-  // Si le panel est ouvert et que la liste se vide (clear) → on ferme aussi.
-  useEffect(() => {
-    if (combatPanelOpen && combatNotifs.length === 0) setCombatPanelOpen(false)
-  }, [combatPanelOpen, combatNotifs.length])
-  const toggleCombatPanel = useCallback(() => {
-    setCombatPanelOpen(prev => !prev)
-  }, [])
+  // v3.23 — Journal des combats : extrait dans useCombatToastFeed (QW1).
+  const { combatPanelOpen, setCombatPanelOpen, toggleCombatPanel } = useCombatToastFeed({ combatNotifs })
 
   if (authLoading || !user || loading || !game) {
     return (
@@ -534,24 +387,8 @@ export function Game() {
   }
 
   const hostUserId = game.created_by
-  const scaleLabel =
-    game.current_scale === 'tactical'
-      ? 'Échelle tactique'
-      : game.current_scale === 'operational'
-        ? 'Échelle opérationnelle'
-        : 'Échelle stratégique'
-
-  const statusLabel =
-    game.status === 'lobby'
-      ? 'En attente'
-      : game.status === 'briefing'
-        ? 'Briefing'
-        : game.status === 'in_progress'
-          ? 'Bataille en cours'
-          : game.status === 'finished'
-            ? 'Bataille achevée'
-            : game.status
-
+  const scaleLabel = getScaleLabel(game.current_scale)
+  const statusLabel = getStatusLabel(game.status)
   const subtitleLabel = showBattle ? 'Bataille' : 'Brief'
 
   return (
@@ -569,23 +406,14 @@ export function Game() {
 
       <div className="flex flex-1 min-h-0">
         <div className="flex-1 flex flex-col min-w-0">
-          <div className="px-10 py-5 border-b border-[rgba(226,232,240,0.10)] shrink-0">
-            <div className="text-[10px] font-semibold uppercase tracking-[0.32em] text-tactica-amber mb-[4px]">
-              Ordre de bataille — {statusLabel}
-            </div>
-            <h1 className="font-serif italic text-[28px] font-medium m-0 leading-[1.1] text-foreground">
-              {game.name}
-            </h1>
-            <div className="text-muted-foreground text-[10px] uppercase tracking-[0.08em] flex flex-wrap gap-x-[12px] gap-y-1 mt-1">
-              <span>{game.scenario_id ?? '—'}</span>
-              <span className="opacity-40">/</span>
-              <span>{scaleLabel}</span>
-              <span className="opacity-40">/</span>
-              <span>Hôte : {players.find(p => p.user_id === hostUserId)?.username ?? '...'}</span>
-              <span className="opacity-40">/</span>
-              <span>Tour {tactical?.currentTurn ?? game.turn_number}</span>
-            </div>
-          </div>
+          <BattleHeader
+            statusLabel={statusLabel}
+            gameName={game.name}
+            scenarioId={game.scenario_id}
+            scaleLabel={scaleLabel}
+            hostName={players.find(p => p.user_id === hostUserId)?.username ?? '...'}
+            turnNumber={tactical?.currentTurn ?? game.turn_number}
+          />
 
           <div
             className="flex-1 relative min-h-0"
@@ -615,6 +443,8 @@ export function Game() {
               cohesionStateMap={showBattle ? cohesionStateMap : undefined}
               supportMap={showBattle ? supportMap : undefined}
               engagements={showBattle ? enginePairs : undefined}
+              tileVisibility={inProgress && myTeam ? visibleTileMap : undefined}
+              enemyVisibility={inProgress && myTeam ? enemyVisibility : undefined}
             />
             {combatPanelOpen && (
               <CombatResultPanel
@@ -689,6 +519,9 @@ export function Game() {
                 currentTurn={tactical?.currentTurn ?? game.turn_number}
                 onBreakCombat={() => void handleBreakCombat()}
                 breakCombatDisabled={actionsBusy}
+                inspectedEnemy={inspectedEnemy}
+                inspectedEnemyCohesion={inspectedEnemyCohesion}
+                inspectedEnemyEngagements={engagementsForInspected}
                 blueSlots={blueSlots}
                 redSlots={redSlots}
                 hostUserId={hostUserId}
@@ -702,22 +535,11 @@ export function Game() {
             )}
           </div>
 
-          <div className="relative p-4 border-t border-[rgba(226,232,240,0.18)] bg-[rgba(15,23,42,0.85)]">
-            <div aria-hidden className="absolute top-[-1px] left-3 right-3 h-px opacity-40" style={{ background: 'linear-gradient(90deg, transparent, #EF9F27, transparent)' }} />
-            <Bracket position="tl" /><Bracket position="tr" /><Bracket position="bl" /><Bracket position="br" />
-
-            <div className="flex items-center justify-between">
-              <div className="text-muted-foreground text-[10px] uppercase tracking-[0.12em]">
-                <strong className="text-foreground font-semibold">{players.length} / {game.max_players} officiers</strong>
-                {' · '}
-                {players.length < game.max_players ? 'en attente' : 'effectif complet'}
-              </div>
-              <span className="flex items-center gap-[6px] text-[10px] uppercase tracking-[0.12em]" title={online ? 'Connecté au serveur' : 'Hors ligne — Realtime indisponible'}>
-                <span aria-hidden className={cn('w-[7px] h-[7px] rounded-full shrink-0', online ? 'bg-emerald-400' : 'bg-red-500 animate-pulse')} />
-                <span className={online ? 'text-muted-foreground' : 'text-red-400'}>{online ? 'En ligne' : 'Hors ligne'}</span>
-              </span>
-            </div>
-          </div>
+          <BattleSidebarFooter
+            playersCount={players.length}
+            maxPlayers={game.max_players}
+            online={online}
+          />
         </aside>
       </div>
 

@@ -1,3 +1,4 @@
+// v1.2 (12/05/2026) — Phase 3.1-B : prop tileVisibility (fog client, défaut 'visible')
 // v1.1 (09/05/2026) — L1C.3 : prop tileStates Map<cubeKey, HexTileState> qui override le hover local
 // v1.0 (09/05/2026) — Grille hex parametree par scale, lit SCALE_CONFIG[scale]
 import { useMemo, useState } from 'react'
@@ -6,7 +7,7 @@ import { cubeKey } from '@engine/hex'
 import type { Scale } from '@/types/game'
 import { SCALE_CONFIG } from '@engine/scales'
 import { HexTile } from './HexTile'
-import type { HexTileState } from '../types'
+import type { HexTileState, HexTileVisibility } from '../types'
 
 interface HexGridProps {
   scale: Scale
@@ -20,6 +21,11 @@ interface HexGridProps {
    * sur les hex en idle dans cette map.
    */
   tileStates?: Map<string, HexTileState>
+  /**
+   * Phase 3.1-B : visibilité par hex. Si présente : key absente = 'hidden' (fog client).
+   * Si absente : tous les hex sont 'visible' (pré-Phase 3, ou hors bataille).
+   */
+  tileVisibility?: Map<string, HexTileVisibility>
 }
 
 const flat = () => 0
@@ -30,6 +36,7 @@ export function HexGrid({
   getElevation = flat,
   onTileClick,
   tileStates,
+  tileVisibility,
 }: HexGridProps) {
   const { hexSize } = SCALE_CONFIG[scale]
   const [hoveredKey, setHoveredKey] = useState<string | null>(null)
@@ -56,6 +63,10 @@ export function HexGrid({
         } else {
           state = t.key === hoveredKey ? 'hover' : 'idle'
         }
+        // v1.2 : si tileVisibility absent → tout 'visible'. Sinon : key absente = 'hidden'.
+        const visibility: HexTileVisibility = tileVisibility
+          ? (tileVisibility.get(t.key) ?? 'hidden')
+          : 'visible'
         return (
           <HexTile
             key={t.key}
@@ -63,7 +74,7 @@ export function HexGrid({
             hexSize={hexSize}
             elevation={t.elevation}
             state={state}
-            visibility="visible"
+            visibility={visibility}
             onClick={() => onTileClick?.(t.cube)}
             onPointerOver={() => setHoveredKey(t.key)}
             onPointerOut={() =>

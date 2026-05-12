@@ -1,7 +1,7 @@
+// v1.10 (12/05/2026) — Phase 3.1-C : params visibleTileKeys + enemyVisibility (filtre reachable/targetable), retire visibleEnemyIds (fourni par useVisionMap)
+// v1.9 (12/05/2026) — QW2 : inspectedEnemyId (clic ennemi → panel read-only, toggle même cible)
 // v1.8 (12/05/2026) — Post-rupture : mouvement restreint aux hex qui éloignent de TOUS les ennemis adjacents
 // v1.7 (12/05/2026) — Override Brisée : attaque autorisée si ennemi strictement plus petit (mirror handleAttack EF v1.3)
-// v1.6 (11/05/2026) — Phase 2.6 C : engagedUnitIds bloque mouvement standard (Rompre obligatoire)
-// v1.5 (11/05/2026) — Phase 2.5 C : cohesionStateMap + supportMap exposés + bloque attaque standard si Brisé
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { computeCohesion, computeSupport, type CohesionState, type SupportCount } from '@engine/cohesion'
 import { cubeKey, cubeDistance, neighbors } from '@engine/hex'
@@ -9,6 +9,7 @@ import { bfsReachable } from '@engine/movement'
 import { computeEnemyZoc } from '@engine/zoc'
 import { hasLineOfSight } from '@engine/los'
 import { getUnitStats, type UnitState } from '@engine/units'
+import type { VisibilityLevel } from '@engine/vision'
 import type { HexTileState } from '@render/types'
 import type { Team } from '@/types/game'
 
@@ -44,6 +45,19 @@ interface UseTacticalSelectionParams {
    * de se redéplacer. L'attaque mêlée sur son opponent reste possible (riposte).
    */
   engagedUnitIds?: ReadonlySet<string>
+  /**
+   * Phase 3.1-C : hex visibles par mon team (fog client, fourni par useVisionMap).
+   * Si présent, reachableMap est filtré pour ne contenir QUE les hex visibles.
+   * Si absent (rétro-compat), pas de filtre fog (comportement pré-Phase 3).
+   */
+  visibleTileKeys?: ReadonlySet<string>
+  /**
+   * Phase 3.1-C : niveau d'identification par ennemi (fourni par useVisionMap).
+   * Si présent, targetableUnitIds exclut les ennemis 'hidden' (impossible de tirer
+   * sur ce qu'on ne voit pas). Côté serveur (EF), la validation reste désactivée
+   * en MVP — RLS anti-triche prévu Phase 4.
+   */
+  enemyVisibility?: ReadonlyMap<string, VisibilityLevel>
 }
 
 interface UseTacticalSelectionResult {
@@ -56,8 +70,6 @@ interface UseTacticalSelectionResult {
   targetableUnitIds: Set<string>
   /** Set des cubeKey en ZoC ennemie ; entrer y stoppe le mouvement (cf piege #41) */
   dangerousZocKeys: Set<string>
-  /** Set des unitId ennemis observes par AU MOINS une de mes unites (LoS, fog of war Phase 1.5). */
-  visibleEnemyIds: Set<string>
   /** Map<cubeKey, HexTileState> a passer a TacticalScene */
   tileStates: Map<string, HexTileState>
   /** Set des unites qui ont epuise leurs ordres (visuellement attenuees) */
@@ -72,14 +84,18 @@ interface UseTacticalSelectionResult {
   retreatTargetKeys: Set<string>
   /** Phase 2.5 C — Set des unitId ennemis adjacents en mode suicide (vide sinon). */
   suicideTargetIds: Set<string>
+  /** QW2 — Unité ennemie en cours d'inspection (panel read-only). null si aucune. */
+  inspectedEnemy: UnitState | null
   handleUnitClick: (unit: { id: string; team: Team }) => void
   clearSelection: () => void
+  /** QW2 — clear l'inspection seule (sans toucher selectedUnitId). */
+  clearInspection: () => void
 }
 
 export function useTacticalSelection(
   params: UseTacticalSelectionParams
 ): UseTacticalSelectionResult {
-  const { inProgress, isMyTurn, myTeam, activeTeam, unitStates, boardKeys, splitMode, retreatMode = false, suicideMode = false, engagedUnitIds } = params
+  const { inProgress, isMyTurn, myTeam, activeTeam, unitStates, boardKeys, splitMode, retreatMode = false, suicideMode = false, engagedUnitIds, visibleTileKeys, enemyVisibility } = params
 
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null)
 
@@ -165,10 +181,13 @@ export function useTacticalSelection(
         }
         if (!isAwayFromAll) continue
       }
+      // Phase 3.1-C : fog client — ne pas proposer de move vers un hex non observé.
+      // (Le serveur ne valide pas la visibilité en MVP, cf. RLS Phase 4.)
+      if (visibleTileKeys && !visibleTileKeys.has(k)) continue
       out.set(k, c)
     }
     return out
-  }, [selectedUnit, isSelectedMine, isMyTurn, unitStates, enemyZoc, boardKeys, engagedUnitIds, postRuptureAdjacentEnemies])
+  }, [selectedUnit, isSelectedMine, isMyTurn, unitStates, enemyZoc, boardKeys, engagedUnitIds, postRuptureAdjacentEnemies, visibleTileKeys])
 
   // Phase 2.5 — précalcule cohésion + support pour toutes les unités (single pass).
   // Permet : (1) bloquer attaque standard si Brisé, (2) UI panneau critique,
@@ -215,35 +234,15 @@ export function useTacticalSelection(
         }
         if (!hasLineOfSight(selectedUnit.position, enemy.position, blockers)) continue
       }
+      // Phase 3.1-C : impossible de cibler un ennemi non vu (hidden). 'spotted'/'identified' OK.
+      if (enemyVisibility && (enemyVisibility.get(enemy.id) ?? 'hidden') === 'hidden') continue
       out.add(enemy.id)
     }
     return out
-  }, [selectedUnit, isSelectedMine, isMyTurn, unitStates, cohesionData])
+  }, [selectedUnit, isSelectedMine, isMyTurn, unitStates, cohesionData, enemyVisibility])
 
-  // Phase 1.5 fog of war : un ennemi est visible si AU MOINS une de mes unités non-routed a LoS sur lui.
-  // Blockers LoS = tous les corps SAUF l'observateur et la cible (cohérent avec hasLineOfSight côté EF).
-  const visibleEnemyIds = useMemo<Set<string>>(() => {
-    const out = new Set<string>()
-    if (!myTeam) return out
-    const myObservers = unitStates.filter(u => u.team === myTeam && !u.routed)
-    if (myObservers.length === 0) return out
-    for (const enemy of unitStates) {
-      if (enemy.team === myTeam) continue
-      for (const observer of myObservers) {
-        const blockers = new Set<string>()
-        for (const u of unitStates) {
-          if (u.id === observer.id) continue
-          if (u.id === enemy.id) continue
-          blockers.add(cubeKey(u.position))
-        }
-        if (hasLineOfSight(observer.position, enemy.position, blockers)) {
-          out.add(enemy.id)
-          break
-        }
-      }
-    }
-    return out
-  }, [myTeam, unitStates])
+  // v1.10 (12/05/2026) — Phase 3.1-C : visibleEnemyIds n'est plus calculé ici, il vient de
+  // useVisionMap (param enemyVisibility) — single source of truth, évite double calcul fog.
 
   // Phase 2 2D.6 : 6 voisins libres autour de la source quand splitMode actif.
   // Calcul indépendant de reachableMap (pas de coût MP, juste adjacence + libre).
@@ -335,14 +334,44 @@ export function useTacticalSelection(
         setSelectedUnitId(null)
         return
       }
-      if (unit.team !== myTeam) return
+      if (unit.team !== myTeam) {
+        // QW2 — clic ennemi : toggle inspection (panel read-only).
+        // setInspectedEnemyId déclaré plus bas (queue) — la closure capture le binding.
+        setInspectedEnemyId(prev => (prev === unit.id ? null : unit.id))
+        return
+      }
       setSelectedUnitId(unit.id)
+      setInspectedEnemyId(null)
     },
     [inProgress, selectedUnitId, myTeam]
   )
 
   const clearSelection = useCallback(() => {
     setSelectedUnitId(null)
+    setInspectedEnemyId(null)
+  }, [])
+
+  // QW2 — Inspection ennemie (hooks en queue cf. CLAUDE.md règle 3).
+  const [inspectedEnemyId, setInspectedEnemyId] = useState<string | null>(null)
+
+  const inspectedEnemy = useMemo<UnitState | null>(
+    () => unitStates.find(u => u.id === inspectedEnemyId) ?? null,
+    [unitStates, inspectedEnemyId],
+  )
+
+  // Reset inspection si sortie de in_progress ou si l'ennemi disparaît (killed/merged).
+  useEffect(() => {
+    if (!inProgress) {
+      setInspectedEnemyId(null)
+      return
+    }
+    if (inspectedEnemyId && !unitStates.some(u => u.id === inspectedEnemyId)) {
+      setInspectedEnemyId(null)
+    }
+  }, [inProgress, inspectedEnemyId, unitStates])
+
+  const clearInspection = useCallback(() => {
+    setInspectedEnemyId(null)
   }, [])
 
   return {
@@ -352,7 +381,6 @@ export function useTacticalSelection(
     reachableMap,
     targetableUnitIds,
     dangerousZocKeys: enemyZoc,
-    visibleEnemyIds,
     tileStates,
     exhaustedUnitIds,
     splitTargetKeys,
@@ -360,7 +388,9 @@ export function useTacticalSelection(
     supportMap: cohesionData.supportMap,
     retreatTargetKeys,
     suicideTargetIds,
+    inspectedEnemy,
     handleUnitClick,
     clearSelection,
+    clearInspection,
   }
 }

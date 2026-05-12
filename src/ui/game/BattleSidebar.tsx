@@ -1,12 +1,13 @@
+// v1.7 (12/05/2026) — QW2 : prop inspectedEnemy → EnemyUnitPanel (priorité selectedUnit > inspectedEnemy > fallback)
 // v1.6 (12/05/2026) — UX : propage mergeMode + handlers à Inspector (fusion par clic map)
 // v1.5 (12/05/2026) — Sprint UX : tailles texte 10px → 12px (lisibilité Sidebar)
 // v1.4 (11/05/2026) — Phase 2.6 C : propage engagements + currentTurn + onBreakCombat à Inspector
-// v1.3 (11/05/2026) — Phase 2.5 C : propage cohesionState + actions critiques (retraite/reddition/suicide) à Inspector
 import type { Team } from '@/types/game'
 import type { CohesionState, SupportCount } from '@engine/cohesion'
 import type { UnitState, SplitRatio } from '@engine/units'
 import { TeamPanel, type SlotData } from '@ui/game/TeamPanel'
 import { UnitInspector } from '@ui/game/UnitInspector'
+import { EnemyUnitPanel, type EnemyEngagementInfo } from '@ui/game/EnemyUnitPanel'
 
 export interface BattleSidebarProps {
   turn: number
@@ -54,6 +55,12 @@ export interface BattleSidebarProps {
   currentTurn?: number
   onBreakCombat?: () => void
   breakCombatDisabled?: boolean
+  // -------- QW2 : inspection unité ennemie (read-only, prioritaire seulement si pas de selectedUnit) --------
+  inspectedEnemy?: UnitState | null
+  /** Cohésion de l'ennemi inspecté (lookup côté parent dans cohesionStateMap). */
+  inspectedEnemyCohesion?: CohesionState
+  /** Engagements de l'ennemi inspecté (lookup côté parent dans engagementsByUnit). */
+  inspectedEnemyEngagements?: ReadonlyArray<EnemyEngagementInfo>
   blueSlots: SlotData[]
   redSlots: SlotData[]
   hostUserId: string
@@ -90,6 +97,9 @@ export function BattleSidebar({
   currentTurn,
   onBreakCombat,
   breakCombatDisabled,
+  inspectedEnemy,
+  inspectedEnemyCohesion,
+  inspectedEnemyEngagements,
   blueSlots,
   redSlots,
   hostUserId,
@@ -170,11 +180,18 @@ export function BattleSidebar({
           onBreakCombat={onBreakCombat}
           breakCombatDisabled={breakCombatDisabled}
         />
+      ) : inspectedEnemy ? (
+        <EnemyUnitPanel
+          unit={inspectedEnemy}
+          cohesionState={inspectedEnemyCohesion}
+          engagements={inspectedEnemyEngagements}
+          currentTurn={currentTurn}
+        />
       ) : (
         <div className="px-3 py-3 text-[12px] uppercase tracking-[0.08em] text-muted-foreground border border-[rgba(226,232,240,0.10)] rounded-[2px]">
           {isMyTurn
-            ? 'Clique sur une de tes unités pour voir ses ordres.'
-            : 'En attente du camp adverse. Tu peux inspecter une unité en la cliquant.'}
+            ? 'Clique sur une de tes unités pour voir ses ordres. Clique un ennemi pour l’inspecter.'
+            : 'En attente du camp adverse. Clique une unité (alliée ou ennemie) pour l’inspecter.'}
         </div>
       )}
 

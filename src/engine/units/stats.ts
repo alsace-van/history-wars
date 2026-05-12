@@ -1,7 +1,7 @@
+// v2.3 (12/05/2026) — Phase 3.1-A : ajout vision (I=3, C=5, A=4) pour fog of war évolué
 // v2.2 (12/05/2026) — MVP tweak : C movement 6→4 + A range 7→6 (rééquilibrage)
 // v2.1 (10/05/2026) — Phase 2.5 balance : nerf cav (1.5/0.7 → 1.1/0.9) — bug one-shot C vs C
 // v2.0 (10/05/2026) — Phase 2 2A.2 : UNIT_STATS_V2 (effectif + facteurs unitaires + range/minRange + archerOverride)
-// v1.0 (09/05/2026) — Phase 1 L1A.1 : stats de base par UnitKind (legacy v1, conserve 1 phase)
 // Source : PLAN-PHASE-2-COMBAT-V2.md § 2A.2
 
 import type { UnitKind } from '../../types/game'
@@ -64,6 +64,12 @@ export interface UnitStatsV2 {
   readonly minRange: number
   readonly movement: number
   readonly moraleMax: number
+  /**
+   * Phase 3.1-A : portée de vision (hex). Un ennemi à distance ≤ vision et avec LoS
+   * est `spotted` ; à distance ≤ floor(vision/2) il devient `identified`.
+   * Valeurs initiales calibrage Vague D : I=3, C=5, A=4.
+   */
+  readonly vision: number
   readonly archerOverride?: SubKindOverride
 }
 
@@ -78,6 +84,7 @@ export const UNIT_STATS_V2: Readonly<Record<UnitKind, UnitStatsV2>> = Object.fre
     minRange: 0,
     movement: 3,
     moraleMax: 100,
+    vision: 3,
   }),
   C: Object.freeze({
     effectiveMax: 180,
@@ -95,6 +102,7 @@ export const UNIT_STATS_V2: Readonly<Record<UnitKind, UnitStatsV2>> = Object.fre
     // compensee a la hausse cote render (cf. UnitPlaceholder MOVE_SECONDS_PER_HEX).
     movement: 4,
     moraleMax: 100,
+    vision: 5,
   }),
   A: Object.freeze({
     effectiveMax: 120,
@@ -107,6 +115,7 @@ export const UNIT_STATS_V2: Readonly<Record<UnitKind, UnitStatsV2>> = Object.fre
     minRange: 2,
     movement: 2,
     moraleMax: 100,
+    vision: 4,
     archerOverride: Object.freeze({
       range: 4,
       minRange: 0,
