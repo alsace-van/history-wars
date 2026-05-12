@@ -1,7 +1,7 @@
+// v2.2 (12/05/2026) — MVP tweak : vitesse anim par UnitKind (C rapide, I/A lents)
 // v2.1 (11/05/2026) — Phase 2.5 C.2 : ajout UnitStatusRing (état) + UnitSupportRing (soutien)
 // v2.0 (10/05/2026) — Phase 2 2E.1 : scale par effective/effectiveMax (Phase 2) + plage 0.35-1.0 amplifiee
 // v1.9 (10/05/2026) — Phase 1.5 : prop highlighted (halo jaune pulsant) pour unités du rapport combat actif
-// v1.8 (10/05/2026) — Phase 1.5 fix : effectif chiffre (count) cache aux equipes adverses
 import { Suspense, useEffect, useMemo, useRef } from 'react'
 import { Billboard, Text } from '@react-three/drei'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
@@ -10,6 +10,7 @@ import type { CohesionState, SupportCount } from '@engine/cohesion'
 import { cubeToWorld, type Cube } from '@engine/hex'
 import type { Team } from '@/types/game'
 import type { UnitInstance } from '../types'
+import type { UnitKind } from '@/types/game'
 import { COLORS } from '../colors'
 import { SoldierMesh } from './SoldierMesh'
 import { UnitHealthBar } from './UnitHealthBar'
@@ -47,8 +48,17 @@ interface UnitPlaceholderProps {
 const SOLDIER_SCALE_RATIO = 0.5
 const RING_LIFT = 0.1 // halo : bien au-dessus de TILE_THICKNESS/2 + EDGE_LIFT (0.045) — piege #47
 const RING_NET_LIFT = RING_LIFT + 0.004 // net : 4mm au-dessus du halo — anti z-fight coplanaire (piege #47)
-const SECONDS_PER_HEX = 1.0
-const SEGMENT_DURATION_MS = SECONDS_PER_HEX * 1000
+
+// v2.2 : vitesse d'animation par UnitKind (secondes par hex traverse).
+// La cavalerie galope (rapide), l'infanterie 800h marche au pas (lente),
+// l'artillerie tracte ses pieces (la plus lente). Pure cosmetique, n'affecte
+// pas la logique de combat ni la portee de mouvement (UNIT_STATS_V2.movement).
+const SECONDS_PER_HEX_BY_KIND: Readonly<Record<UnitKind, number>> = {
+  C: 0.45,
+  I: 1.40,
+  A: 1.80,
+}
+const DEFAULT_SECONDS_PER_HEX = 1.0
 
 // Scale visuel selon effective / effectiveMax. Plage 0.35-1.0 amplifiee Phase 2
 // pour mieux differencier visuellement un pion de 100 vs 800 hommes.
@@ -104,7 +114,9 @@ export function UnitPlaceholder({
   const segStartRef = useRef<[number, number, number]>(targetPos)
   const segEndRef = useRef<[number, number, number]>(targetPos)
   const segStartTimeRef = useRef(0)
-  const segDurationRef = useRef(SEGMENT_DURATION_MS)
+  // v2.2 : duree par hex calculee depuis le kind (galop cav / pas inf / tract art).
+  const segmentDurationMsForKind = (SECONDS_PER_HEX_BY_KIND[unit.kind] ?? DEFAULT_SECONDS_PER_HEX) * 1000
+  const segDurationRef = useRef(segmentDurationMsForKind)
   const pathRef = useRef<ReadonlyArray<Cube> | null>(null)
   const animatingRef = useRef(false)
   const doneCalledRef = useRef(false)
@@ -135,7 +147,7 @@ export function UnitPlaceholder({
       const cur = groupRef.current.position
       segStartRef.current = [cur.x, cur.y, cur.z]
       segEndRef.current = cubeWorld(path[1], hexSize)
-      segDurationRef.current = SEGMENT_DURATION_MS
+      segDurationRef.current = segmentDurationMsForKind
       segStartTimeRef.current = performance.now()
       animatingRef.current = true
       doneCalledRef.current = false

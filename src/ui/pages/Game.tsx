@@ -1,7 +1,7 @@
+// v3.22 (12/05/2026) — MVP tweak : MVP_CUBES dynamique selon tactical.boardRadius (fallback 7)
 // v3.21 (11/05/2026) — Phase 2.6 C : useEngagement + ligne 3D + bouton Rompre + bloque mouvement standard
 // v3.20 (11/05/2026) — Phase 2.5 fix UX : passe support à BattleSidebar (affichage cohésion temps réel dans Inspector)
 // v3.19 (11/05/2026) — Phase 2.5 C.2 : transmission cohesionStateMap + supportMap à TacticalScene (anneaux 3D)
-// v3.18 (11/05/2026) — Phase 2.5 fix : refresh manuel après endTurn + actions critiques (UI sync sans Realtime)
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -42,8 +42,9 @@ import { spiral, cubeKey, type Cube } from '@engine/hex'
 import { type UnitState, type SplitRatio } from '@engine/units'
 import { cn } from '@lib/cn'
 
-const MVP_CUBES: Cube[] = spiral({ q: 0, r: 0, s: 0 }, 5)
-const MVP_BOARD_KEYS = new Set(MVP_CUBES.map(cubeKey))
+// v3.22 : board cubes derives a runtime depuis tactical.boardRadius (cf. useMemo dans le composant).
+// La valeur de fallback ci-dessous sert au rendu pre-bataille (lobby) ou si state encore null.
+const DEFAULT_TACTICAL_RADIUS = 7
 
 interface TacticalStateView {
   phase?: string
@@ -133,6 +134,14 @@ export function Game() {
     return s?.tactical ?? null
   }, [game])
 
+  // v3.22 : board derive de state.tactical.boardRadius (compatible parties existantes radius=5
+  // grâce au stockage en state — nouvelle partie = 7 via DEFAULT_BOARD_RADIUS EF).
+  // Calcul direct sans useMemo pour respecter la regle hooks "ajout en queue uniquement"
+  // (passe ces valeurs aux hooks de selection/critical en aval).
+  const boardRadius = tactical?.boardRadius ?? DEFAULT_TACTICAL_RADIUS
+  const mvpCubes: Cube[] = spiral({ q: 0, r: 0, s: 0 }, boardRadius)
+  const mvpBoardKeys = new Set(mvpCubes.map(cubeKey))
+
   const occupiedPlayers = useMemo(() => players.filter(p => p.user_id !== null), [players])
   const blueOccupied = occupiedPlayers.some(p => p.team === 'blue')
   const redOccupied = occupiedPlayers.some(p => p.team === 'red')
@@ -193,7 +202,7 @@ export function Game() {
     clearSelection,
   } = useTacticalSelection({
     inProgress, isMyTurn, myTeam, activeTeam, unitStates,
-    boardKeys: MVP_BOARD_KEYS,
+    boardKeys: mvpBoardKeys,
     splitMode: splitMode !== null,
     retreatMode,
     suicideMode,
@@ -204,7 +213,7 @@ export function Game() {
     gameId: gameId ?? null,
     selectedUnit,
     unitStates,
-    boardKeys: MVP_BOARD_KEYS,
+    boardKeys: mvpBoardKeys,
     onActionCompleted: () => {
       setRetreatMode(false)
       setSuicideMode(false)
@@ -519,7 +528,7 @@ export function Game() {
           >
             <TacticalScene
               scale={game.current_scale}
-              cubes={MVP_CUBES}
+              cubes={mvpCubes}
               units={renderUnits}
               viewerTeam={showBattle ? myTeam : null}
               tileStates={showBattle ? tileStates : undefined}

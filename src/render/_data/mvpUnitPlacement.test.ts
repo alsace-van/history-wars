@@ -1,3 +1,4 @@
+// v1.1 (12/05/2026) — MVP tweak : 8 unites (2I+1C+1A par equipe)
 // v1.0 (09/05/2026) — Tests buildMvpUnitPlacement
 import { describe, it, expect } from 'vitest'
 import { buildMvpUnitPlacement } from './mvpUnitPlacement'
@@ -6,20 +7,20 @@ import { cubeDistance } from '@engine/hex'
 describe('buildMvpUnitPlacement', () => {
   const units = buildMvpUnitPlacement()
 
-  it('genere 6 unites', () => {
-    expect(units).toHaveLength(6)
+  it('genere 8 unites', () => {
+    expect(units).toHaveLength(8)
   })
 
-  it('3 par equipe', () => {
-    expect(units.filter(u => u.team === 'blue')).toHaveLength(3)
-    expect(units.filter(u => u.team === 'red')).toHaveLength(3)
+  it('4 par equipe', () => {
+    expect(units.filter(u => u.team === 'blue')).toHaveLength(4)
+    expect(units.filter(u => u.team === 'red')).toHaveLength(4)
   })
 
-  it('1 de chaque type par equipe', () => {
+  it('2 Infanterie + 1 Cavalerie + 1 Artillerie par equipe', () => {
     const blueKinds = units.filter(u => u.team === 'blue').map(u => u.kind).sort()
     const redKinds = units.filter(u => u.team === 'red').map(u => u.kind).sort()
-    expect(blueKinds).toEqual(['A', 'C', 'I'])
-    expect(redKinds).toEqual(['A', 'C', 'I'])
+    expect(blueKinds).toEqual(['A', 'C', 'I', 'I'])
+    expect(redKinds).toEqual(['A', 'C', 'I', 'I'])
   })
 
   it('blue cote ouest (q<0), red cote est (q>0)', () => {

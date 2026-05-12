@@ -1,3 +1,4 @@
+// v2.2 (12/05/2026) — MVP tweak : C movement 6→4 + A range 7→6 (rééquilibrage)
 // v2.1 (10/05/2026) — Phase 2.5 balance : nerf cav (1.5/0.7 → 1.1/0.9) — bug one-shot C vs C
 // v2.0 (10/05/2026) — Phase 2 2A.2 : UNIT_STATS_V2 (effectif + facteurs unitaires + range/minRange + archerOverride)
 // v1.0 (09/05/2026) — Phase 1 L1A.1 : stats de base par UnitKind (legacy v1, conserve 1 phase)
@@ -90,7 +91,9 @@ export const UNIT_STATS_V2: Readonly<Record<UnitKind, UnitStatsV2>> = Object.fre
     rangedPower: 0,
     range: 1,
     minRange: 0,
-    movement: 6,
+    // v2.2 (12/05/2026) : portee de manoeuvre reduite 6→4. Vitesse d'animation
+    // compensee a la hausse cote render (cf. UnitPlaceholder MOVE_SECONDS_PER_HEX).
+    movement: 4,
     moraleMax: 100,
   }),
   A: Object.freeze({
@@ -99,7 +102,8 @@ export const UNIT_STATS_V2: Readonly<Record<UnitKind, UnitStatsV2>> = Object.fre
     attack: 0.5,           // au contact c'est faible
     defense: 0.3,
     rangedPower: 4.0,      // par piece engage
-    range: 7,
+    // v2.2 (12/05/2026) : range 7→6 (rééquilibrage MVP, board radius 7 sinon overshoot).
+    range: 6,
     minRange: 2,
     movement: 2,
     moraleMax: 100,

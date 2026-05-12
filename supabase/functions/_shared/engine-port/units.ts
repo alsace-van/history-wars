@@ -1,3 +1,4 @@
+// v2.1 (12/05/2026) — MVP tweak : C movement 6→4 + A range 7→6 (mirror src/engine/units/stats.ts v2.2)
 // v2.0 (10/05/2026) — Phase 2 2C.1 : effective elastique (UnitState v2 + UNIT_STATS_V2 + sizing)
 // v1.2 (10/05/2026) — Phase 1.5 : ajout `wounded` a UnitState (mirror src/engine/units/types.ts v1.1)
 // v1.0 (09/05/2026) — Phase 1 L1B.2 : port engine/units pour Deno EF
@@ -61,12 +62,14 @@ export const UNIT_STATS_V2: Record<UnitKind, UnitStatsV2> = Object.freeze({
     effectiveMax: 180, effectiveMin: 25,
     // Phase 2.5 balance : nerf attack/defense (cf. src v2.1)
     attack: 1.1, defense: 0.9, rangedPower: 0,
-    range: 1, minRange: 0, movement: 6, moraleMax: 100,
+    // v2.1 mirror : movement 6→4 (rééquilibrage MVP)
+    range: 1, minRange: 0, movement: 4, moraleMax: 100,
   }),
   A: Object.freeze({
     effectiveMax: 120, effectiveMin: 30,
     attack: 0.5, defense: 0.3, rangedPower: 4.0,
-    range: 7, minRange: 2, movement: 2, moraleMax: 100,
+    // v2.1 mirror : range 7→6 (rééquilibrage MVP)
+    range: 6, minRange: 2, movement: 2, moraleMax: 100,
     archerOverride: Object.freeze({ range: 4, minRange: 0, rangedPower: 2.5 }),
   }),
 }) as Record<UnitKind, UnitStatsV2>
