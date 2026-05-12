@@ -1,7 +1,7 @@
+// v1.5 (12/05/2026) — Sprint UX : tailles texte 10px → 12px (lisibilité Sidebar)
 // v1.4 (11/05/2026) — Phase 2.6 C : propage engagements + currentTurn + onBreakCombat à Inspector
 // v1.3 (11/05/2026) — Phase 2.5 C : propage cohesionState + actions critiques (retraite/reddition/suicide) à Inspector
 // v1.2 (10/05/2026) — Phase 2 2D.6 : propagation splitActive/onEnterSplitMode/onExitSplitMode a Inspector
-// v1.1 (10/05/2026) — Phase 2 2D.4 : effectif total par camp + propagation gameId/allUnits a Inspector
 import type { Team } from '@/types/game'
 import type { CohesionState, SupportCount } from '@engine/cohesion'
 import type { UnitState, SplitRatio } from '@engine/units'
@@ -106,7 +106,7 @@ export function BattleSidebar({
           background: `linear-gradient(180deg, ${activeColor}22 0%, transparent 100%)`,
         }}
       >
-        <div className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground mb-1">
+        <div className="text-[12px] uppercase tracking-[0.16em] text-muted-foreground mb-1">
           Tour {turn}
         </div>
         <div
@@ -116,12 +116,12 @@ export function BattleSidebar({
           {isMyTurn ? 'À toi de jouer' : `Tour des ${activeLabel}`}
         </div>
         {myTeam && (
-          <div className="text-[10px] text-muted-foreground mt-1 uppercase tracking-[0.08em]">
+          <div className="text-[12px] text-muted-foreground mt-1 uppercase tracking-[0.08em]">
             Ton camp : {myTeam === 'blue' ? 'Bleus' : 'Rouges'}
           </div>
         )}
         {/* Phase 2 : effectifs totaux */}
-        <div className="mt-2 grid grid-cols-2 gap-2 text-[10px] tabular-nums">
+        <div className="mt-2 grid grid-cols-2 gap-2 text-[12px] tabular-nums">
           <div className="px-2 py-1 border border-blue-400/40 rounded-[2px] bg-blue-400/10 text-blue-300">
             <span className="opacity-70 mr-1">Bleus</span>{blueEffectiveTotal}
           </div>
@@ -158,7 +158,7 @@ export function BattleSidebar({
           breakCombatDisabled={breakCombatDisabled}
         />
       ) : (
-        <div className="px-3 py-3 text-[10px] uppercase tracking-[0.08em] text-muted-foreground border border-[rgba(226,232,240,0.10)] rounded-[2px]">
+        <div className="px-3 py-3 text-[12px] uppercase tracking-[0.08em] text-muted-foreground border border-[rgba(226,232,240,0.10)] rounded-[2px]">
           {isMyTurn
             ? 'Clique sur une de tes unités pour voir ses ordres.'
             : 'En attente du camp adverse. Tu peux inspecter une unité en la cliquant.'}

@@ -1,7 +1,7 @@
+// v2.2 (12/05/2026) — Sprint UX : ajout effectiveBefore dans losses (rapport AVANT/APRÈS)
 // v2.1 (11/05/2026) — Phase 2.5 fix : losses.effectiveAfter (absolu) au lieu de hpAfter (% legacy)
 // v2.0 (10/05/2026) — Phase 2 2D.3 : kind etendu 'charge' + lit effective si dispo (fallback hp legacy)
 // v1.2 (10/05/2026) — Phase 1.5 : tabs (notifications array + removeNotification) + attackerId/defenderId pour highlight
-// v1.0 (10/05/2026) — Phase 1.5 P1.5-NOTIF-01 : Realtime listener game_actions → toasts asymétriques
 import { useCallback, useRef, useState } from 'react'
 import { useRealtime } from './useRealtime'
 import type { Team, UnitKind } from '@/types/game'
@@ -21,7 +21,9 @@ interface CombatResultSnapshot {
   defenderKilled: boolean
   // Phase 2 v2 (optionnels pour retrocompat avec actions anciennes en BDD)
   attackPhase?: 'melee' | 'ranged' | 'charge'
+  defenderEffectiveBefore?: number
   defenderEffectiveAfter?: number
+  attackerEffectiveBefore?: number
   attackerEffectiveAfter?: number
   chargeBonusApplied?: boolean
 }
@@ -92,10 +94,10 @@ export interface CombatNotification {
   attackerKindLabel: string
   /** Label kind defender. */
   defenderKindLabel: string
-  /** Pertes infligees au defenseur lors de l'attaque initiale. effectiveAfter = nb soldats absolus restants (Phase 2). */
-  defenderLosses: { killed: number; woundedAdd: number; effectiveAfter: number; isKilled: boolean; isRouted: boolean }
-  /** Pertes infligees a l'attaquant si riposte melee (null sinon). effectiveAfter = nb soldats absolus restants. */
-  attackerLosses: { killed: number; woundedAdd: number; effectiveAfter: number; isKilled: boolean; isRouted: boolean } | null
+  /** Pertes infligees au defenseur lors de l'attaque initiale. effectiveBefore/After = nb soldats absolus avant/apres (Phase 2). */
+  defenderLosses: { killed: number; woundedAdd: number; effectiveBefore: number; effectiveAfter: number; isKilled: boolean; isRouted: boolean }
+  /** Pertes infligees a l'attaquant si riposte melee (null sinon). */
+  attackerLosses: { killed: number; woundedAdd: number; effectiveBefore: number; effectiveAfter: number; isKilled: boolean; isRouted: boolean } | null
 }
 
 interface UseCombatNotificationsOptions {
@@ -217,22 +219,35 @@ function parseAction(
   // Phase 2.5 fix : "Soldats restants" doit afficher l'effective absolu (sur effectiveMax),
   // pas le hp legacy v1 (sur 100 = pourcentage). Fallback en cascade :
   // result.defender_after.effective (post-EF) → combat.defenderEffectiveAfter (snapshot v2).
+  // v2.2 : effectiveBefore present dans le snapshot Phase 2 v2 (cf. CombatResultV2).
+  // Fallback retrocompat : reconstruit a partir de effectiveAfter + killed + woundedAdd
+  // (invariant moteur : effectiveBefore === effectiveAfter + killed + woundedAdd).
+  const defenderEffectiveAfter = result.defender_after?.effective ?? combat.defenderEffectiveAfter ?? 0
+  const defenderEffectiveBefore =
+    combat.defenderEffectiveBefore ?? defenderEffectiveAfter + (combat.killed ?? 0) + (combat.woundedAdd ?? 0)
   const defenderLosses = {
     killed: combat.killed ?? 0,
     woundedAdd: combat.woundedAdd ?? 0,
-    effectiveAfter: result.defender_after?.effective ?? combat.defenderEffectiveAfter ?? 0,
+    effectiveBefore: defenderEffectiveBefore,
+    effectiveAfter: defenderEffectiveAfter,
     isKilled: result.defender_killed,
     isRouted: combat.defenderRouted,
   }
 
   const attackerLosses = riposte
-    ? {
-        killed: riposte.killed ?? 0,
-        woundedAdd: riposte.woundedAdd ?? 0,
-        effectiveAfter: result.attacker_after?.effective ?? riposte.defenderEffectiveAfter ?? 0,
-        isKilled: result.attacker_killed,
-        isRouted: riposte.attackerRouted,
-      }
+    ? (() => {
+        const after = result.attacker_after?.effective ?? riposte.defenderEffectiveAfter ?? 0
+        // Riposte : "defender" du snapshot riposte = l'attaquant initial (qui prend les pertes).
+        const before = riposte.defenderEffectiveBefore ?? after + (riposte.killed ?? 0) + (riposte.woundedAdd ?? 0)
+        return {
+          killed: riposte.killed ?? 0,
+          woundedAdd: riposte.woundedAdd ?? 0,
+          effectiveBefore: before,
+          effectiveAfter: after,
+          isKilled: result.attacker_killed,
+          isRouted: riposte.attackerRouted,
+        }
+      })()
     : null
 
   return {

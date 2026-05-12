@@ -1,8 +1,8 @@
+// v3.2 (12/05/2026) — Sprint UX : fix auto-select (useRef length) + effectif AVANT + tailles texte
 // v3.1 (11/05/2026) — Phase 2.5 fix : "Soldats restants" affiche effectiveAfter (absolu) au lieu de hpAfter (% legacy)
 // v3.0 (10/05/2026) — Phase 2 2D.3 : badge phase melee/ranged/charge + label tab "Charge" si applicable
 // v2.1 (10/05/2026) — Phase 1.5 : bouton "Centrer la vue" sur l'onglet actif (focus camera mon unité)
-// v2.0 (10/05/2026) — Phase 1.5 : refactor en onglets + clic sélectionne combat actif (highlight unités plateau)
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Team } from '@/types/game'
 import type { CombatNotification } from '@hooks/useCombatNotifications'
 import { cn } from '@lib/cn'
@@ -33,15 +33,27 @@ export function CombatResultPanel({ notifications, onActiveChange, onRemove, onC
   // Onglet actif : par defaut le dernier (le plus recent)
   const [activeId, setActiveId] = useState<string | null>(null)
 
+  // v3.2 : tracker la longueur precedente — quand une nouvelle notif arrive,
+  // on force le switch sur la derniere (bug session 18 : l'active restait sur
+  // le 1er combat car l'ancien id etait toujours valide dans la liste).
+  const prevLengthRef = useRef(0)
+
   // Auto-select : nouvelle notif → devient active. Si l'active disparait, fallback sur la derniere.
   useEffect(() => {
     if (notifications.length === 0) {
       if (activeId !== null) setActiveId(null)
+      prevLengthRef.current = 0
       return
     }
-    if (!activeId || !notifications.some(n => n.id === activeId)) {
-      setActiveId(notifications[notifications.length - 1].id)
+    const lastId = notifications[notifications.length - 1].id
+    if (notifications.length > prevLengthRef.current) {
+      // Nouvelle notif arrivee → switch sur la derniere meme si l'active est encore valide
+      setActiveId(lastId)
+    } else if (!activeId || !notifications.some(n => n.id === activeId)) {
+      // Active disparue (X de l'onglet) → fallback sur la derniere encore en liste
+      setActiveId(lastId)
     }
+    prevLengthRef.current = notifications.length
   }, [notifications, activeId])
 
   const activeNotif = useMemo(
@@ -113,7 +125,7 @@ function Tab({
   return (
     <div
       className={cn(
-        'flex items-center gap-1 px-2 py-[3px] rounded-[2px] cursor-pointer transition-colors text-[10px] uppercase tracking-[0.06em]',
+        'flex items-center gap-1 px-2 py-[4px] rounded-[2px] cursor-pointer transition-colors text-[12px] uppercase tracking-[0.05em]',
         active
           ? 'border'
           : 'bg-[rgba(226,232,240,0.04)] hover:bg-[rgba(226,232,240,0.08)] border border-transparent'
@@ -125,7 +137,7 @@ function Tab({
       }
       onClick={onSelect}
     >
-      <span aria-hidden className="text-[12px] leading-none">
+      <span aria-hidden className="text-[14px] leading-none">
         {icon}
       </span>
       <span className="font-semibold">{tabLabel}</span>
@@ -135,7 +147,7 @@ function Tab({
           onRemove()
         }}
         aria-label={`Fermer ${tabLabel}`}
-        className="ml-1 w-4 h-4 flex items-center justify-center hover:bg-[rgba(239,68,68,0.20)] hover:text-destructive rounded-[1px] text-[12px] leading-none"
+        className="ml-1 w-4 h-4 flex items-center justify-center hover:bg-[rgba(239,68,68,0.20)] hover:text-destructive rounded-[1px] text-[13px] leading-none"
       >
         ✕
       </button>
@@ -161,7 +173,7 @@ function ReportContent({ notif, onFocusUnit }: { notif: CombatNotification; onFo
       {/* Sous-titre engagement + bouton centrer */}
       <div className="px-4 pt-3 pb-2 flex items-start justify-between gap-2">
         <div
-          className="text-[12px] font-semibold uppercase tracking-[0.04em] leading-tight flex-1 min-w-0"
+          className="text-[14px] font-semibold uppercase tracking-[0.03em] leading-tight flex-1 min-w-0"
           style={{ color: titleColor }}
         >
           {titleSummary}
@@ -171,7 +183,7 @@ function ReportContent({ notif, onFocusUnit }: { notif: CombatNotification; onFo
             onClick={() => onFocusUnit(myUnitId)}
             title={`Centrer la vue sur ma ${myUnitLabel}`}
             aria-label={`Centrer la vue sur ma ${myUnitLabel}`}
-            className="shrink-0 px-2 py-1 text-[10px] uppercase tracking-[0.06em] bg-tactica-amber/10 hover:bg-tactica-amber/20 border border-tactica-amber/40 hover:border-tactica-amber text-tactica-amber rounded-[2px] transition-colors flex items-center gap-1 leading-none"
+            className="shrink-0 px-2 py-1 text-[12px] uppercase tracking-[0.05em] bg-tactica-amber/10 hover:bg-tactica-amber/20 border border-tactica-amber/40 hover:border-tactica-amber text-tactica-amber rounded-[2px] transition-colors flex items-center gap-1 leading-none"
           >
             <span aria-hidden>📍</span>
             Centrer
@@ -204,7 +216,7 @@ function ReportContent({ notif, onFocusUnit }: { notif: CombatNotification; onFo
 interface LossesBlockProps {
   team: Team
   unitLabel: string
-  losses: { killed: number; woundedAdd: number; effectiveAfter: number; isKilled: boolean; isRouted: boolean }
+  losses: { killed: number; woundedAdd: number; effectiveBefore: number; effectiveAfter: number; isKilled: boolean; isRouted: boolean }
   showFullDetail: boolean
   isRiposte?: boolean
 }
@@ -217,31 +229,33 @@ function LossesBlock({ team, unitLabel, losses, showFullDetail, isRiposte }: Los
   if (losses.killed === 0 && losses.woundedAdd === 0 && !losses.isKilled) {
     return (
       <div className="px-4 py-3 border-t border-[rgba(226,232,240,0.06)]">
-        <div className="text-[9px] uppercase tracking-[0.16em] mb-1" style={{ color: teamColor }}>
+        <div className="text-[11px] uppercase tracking-[0.14em] mb-1" style={{ color: teamColor }}>
           {headerLabel} · {unitLabel} {teamName}
         </div>
-        <div className="text-[11px] text-muted-foreground italic">Aucune perte</div>
+        <div className="text-[13px] text-muted-foreground italic">Aucune perte</div>
       </div>
     )
   }
 
   return (
     <div className="px-4 py-3 border-t border-[rgba(226,232,240,0.06)]">
-      <div className="text-[9px] uppercase tracking-[0.16em] mb-2 flex items-center gap-2" style={{ color: teamColor }}>
+      <div className="text-[11px] uppercase tracking-[0.14em] mb-2 flex items-center gap-2 flex-wrap" style={{ color: teamColor }}>
         <span>{headerLabel} · {unitLabel} {teamName}</span>
         {losses.isKilled && (
-          <span className="text-[8px] px-2 py-[1px] bg-[rgba(239,68,68,0.15)] border border-red-500/40 text-red-400 rounded-[2px] tracking-[0.08em]">
+          <span className="text-[10px] px-2 py-[1px] bg-[rgba(239,68,68,0.15)] border border-red-500/40 text-red-400 rounded-[2px] tracking-[0.08em]">
             Décimée
           </span>
         )}
         {!losses.isKilled && losses.isRouted && (
-          <span className="text-[8px] px-2 py-[1px] bg-[rgba(251,146,60,0.15)] border border-orange-500/40 text-orange-400 rounded-[2px] tracking-[0.08em]">
+          <span className="text-[10px] px-2 py-[1px] bg-[rgba(251,146,60,0.15)] border border-orange-500/40 text-orange-400 rounded-[2px] tracking-[0.08em]">
             En déroute
           </span>
         )}
       </div>
 
-      <div className="space-y-1 text-[11px] tabular-nums">
+      <div className="space-y-1 text-[13px] tabular-nums">
+        {/* v3.2 : effectif AVANT visible pour les 2 perspectives — donne le repere brut */}
+        <Row icon="◐" label="Soldats avant" value={losses.effectiveBefore} color="#94a3b8" />
         <Row icon="⚰" label="Morts au combat" value={losses.killed} color="#ef4444" />
         {showFullDetail && (
           <>
@@ -252,7 +266,7 @@ function LossesBlock({ team, unitLabel, losses, showFullDetail, isRiposte }: Los
           </>
         )}
         {!showFullDetail && !losses.isKilled && (
-          <div className="text-[10px] italic text-muted-foreground/70 pt-[2px]">
+          <div className="text-[12px] italic text-muted-foreground/70 pt-[2px]">
             (effectifs adverses inconnus)
           </div>
         )}
