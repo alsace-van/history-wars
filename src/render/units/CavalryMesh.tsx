@@ -1,3 +1,4 @@
+// v1.1 (12/05/2026) — Scale ×2 : bbox cavalier (Y ∈ [-0.5, 0.5]) vs soldier (Y ∈ [-1, 1])
 // v1.0 (12/05/2026) — Mesh 3D cavalerie (cavalier.glb) — même logique de teinte que SoldierMesh
 import { useMemo } from 'react'
 import { useGLTF } from '@react-three/drei'
@@ -7,6 +8,12 @@ import { COLORS } from '../colors'
 
 const CAVALRY_URL = '/models/cavalier.glb'
 useGLTF.preload(CAVALRY_URL)
+
+// v1.1 — Le cavalier.glb a un bbox Y ∈ [-0.5, 0.5] (hauteur unitaire 1.0) alors que
+// soldier.glb a Y ∈ [-1, 1] (hauteur 2.0). On compense par un scale x2 pour que les
+// deux pions apparaissent à la même hauteur sur le plateau (le scale extérieur de
+// UnitPlaceholder est appliqué identiquement aux deux meshes).
+const CAVALRY_BBOX_SCALE = 2.0
 
 interface CavalryMeshProps {
   team: Team
@@ -36,7 +43,7 @@ export function CavalryMesh({ team, opacity = 1, selected = false }: CavalryMesh
     return cloned
   }, [scene, team, opacity, selected])
 
-  return <primitive object={clonedScene} />
+  return <primitive object={clonedScene} scale={CAVALRY_BBOX_SCALE} />
 }
 
 function cloneTinted(
