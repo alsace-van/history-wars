@@ -2,6 +2,68 @@
 
 ---
 
+## Session 19 (clôture) &mdash; 12/05/2026 &mdash; Phase 2.6 Vague D testée + clôture Phase 2 complète + nombreux fixes UX/gameplay
+
+**Phase 2 (Phase 2 + 2.5 + 2.6) clôturée**. Vague D testée par l'utilisateur (5 scénarios validés). Sprint UX initial du plan accompli, puis nombreux écarts demandés en cours de route (refonte journal combats, garde-fous Brisée, repli forcé Rompre, fusion à distance, bonus moral fusion, mesh cavalerie dédié, MVP tweak board/stats).
+
+### Commits livrés (18 sur `main`)
+
+| # | Sujet | Catégorie |
+|---|---|---|
+| 1976df4 | MVP tweak : board radius 7 + 4v4 colonnes + C move 4 + A range 6 + anim per kind | gameplay |
+| 929783f | Sprint UX (plan §1) : auto-select panel + effectif AVANT + tailles texte 11-13px | UX |
+| 545b181 | Fix FoW : effectif AVANT visible côté joueur seulement | UX FoW |
+| 937c6ab | Journal combats replié + toast bref + bouton TopBar | UX |
+| 65d54b8 | Refonte panel : liste scrollable verticale sous le bouton (plus d'onglets) | UX |
+| ecabebb | Fix position : `fixed top-[68px]` sous le bouton Rapports | UX |
+| 40b3f30 | Cohésion : garde-fou anti-broken (effective ≥ 1.5 × min) + override attaque vs ennemi plus petit | gameplay |
+| eaaa212 | Rompre conserve le mouvement (peut se replier ce tour) | gameplay |
+| 8e16730 | Rompre : repli forcé (destination doit s'éloigner de tous les ex-engagés) | gameplay |
+| 2bc6e07 | UX manœuvres : scinder ratio direct + fusion par clic map (move+merge auto si distant) | UX/gameplay |
+| dbdaa74 | Fusion : bonus moral +25 + recalcul routed (sort de la déroute) | gameplay |
+| e5964be | Fusion : effectiveMin ne cumule plus (= standard du type) | gameplay |
+| 5bd4d33 | CavalryMesh dédié (cavalier.glb 38 MB) | render |
+| 29f0e64 | cavalier.glb optimisé 41.5 → 2.9 MB (gltf-transform simplify+meshopt+webp) | assets |
+| 19b79a1 | Cavalry scale 2.0 → 2.8 (silhouette domine légèrement) | render |
+| c243597 | Cavalry Y offset auto (sabots sur le sol, compense scale > 2) | render |
+| 5a20af0 | Label kind suit la hauteur réelle du mesh (C remonté) | render |
+| 493bf3a | Backlog : menu perso assets (import GLB + icônes user) → Phase 13 | docs |
+
+### Déploiements EFs prod (12/05/2026)
+
+- `start_battle` v3 (board radius 7, 8 placements en colonnes)
+- `resolve_action` v10+ (mirror sizing + cohésion + engagement à jour)
+- `resolve_turn` v5 (mirror cohésion + engagement à jour)
+
+### Vague D — Test humain validé (utilisateur)
+
+L'utilisateur a confirmé avoir testé les 5 scénarios `docs/PLAN-ENGAGEMENT-PERSISTENT.md` § 9 D. Aucune anomalie nouvelle signalée à l'issue des tests. Les ajustements demandés en cours de session (garde-fou Brisée, override attaque, repli forcé, bonus moral fusion) sont l'aboutissement de ces tests humains.
+
+### Bugs/observations restants
+
+| # | Bug | Statut |
+|---|---|---|
+| 1 | phantom_loss 400 hommes (vu 1× partie 1 session 18) | ⚪ Non reproduit, à surveiller |
+| 2 | Cav menu "Rester / Replier" après impact (PLAN-ENGAGEMENT-PERSISTENT § 4) | ⚪ Reporté |
+| 3 | CombatResultPanel type 'attrition' (tick engagement) | ⚪ Skip MVP |
+| 4 | `effectiveMin` figé en BDD sur les pions déjà fusionnés avant le fix e5964be | ⚪ Acceptable, n'affecte que les parties existantes |
+
+### Prochaine étape — Session 20
+
+**Phase 3** : moteur de tour (brouillard évolué, détection, pré-postures). Voir `PLAN-MASTER-V2.md`.
+
+Avant d'attaquer Phase 3, candidats prioritaires côté backlog (ordre suggéré) :
+1. **[ux]** Inspection unité ennemie en cliquant (lecture seule de leurs stats publiques)
+2. **[balance]** Pondération `baseAttritionRate` (0.08) à revoir selon retour humain élargi
+3. **[refacto]** Sortir `handleTileClick` vers `useTacticalSelection` (Game.tsx repasse < 600 lignes)
+4. **[asset]** Compresser `soldier.glb` 5 MB → < 500 KB (pipeline gltf-transform identique cavalier)
+
+### Tag git
+
+`phase-2-complete` posé sur `5a20af0` (englobe Phase 2 + 2.5 + 2.6).
+
+---
+
 ## Session 18 (clôture) &mdash; 11/05/2026 &mdash; Phase 2.6 complète A+B+C livrée + 1 fix CHECK constraint + Vague D + sprint UX à faire session 19
 
 **Phase 2.6 livrée code + prod (Vagues A, B, C)**. Reste session 19 : sprint UX rapide ~1h (bug auto-select + tailles texte + effectif avant) puis test humain Vague D.

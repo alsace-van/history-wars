@@ -86,31 +86,34 @@ Exception : confiance < 95 % AVANT de coder → plan détaillé + questions auto
 
 Ne jamais demander un re-upload si le fichier est accessible via une de ces sources.
 
-## 7. État courant (11/05/2026 — session 18)
+## 7. État courant (12/05/2026 — session 19 clôturée)
 
 - Phase 0 ✅ 13/13
 - Phase 1 ✅ 13/13 — combat MVP tactique complet
 - Phase 1.5 ✅ polish wounded + visuels asymétriques + toasts combat
 - **Phase 2 ✅** refonte combat v2 livrée (sessions 15-16)
-- **Phase 2.5 ✅** moral / cohésion / soutien livrée prod (session 17) — 4 vagues A→C, Vague D (test humain) en attente
-- **Phase 2.6 🟡** engagement persistant (session 18 clôturée) — voir `docs/PLAN-ENGAGEMENT-PERSISTENT.md` :
-  - **Vague A engine ✅ mergée** (PR #43) : `engine/engagement/{types,tick,index}.ts` + 32 tests
-  - **Vague B BDD + EF ✅ mergée + prod** (PR #44) : migration 017 + engine-port Deno + handleEngage + handleBreakCombat + handleAttack v1.2 + resolve_turn v1.3. EF resolve_action v9 + resolve_turn v4 prod.
-  - **Migration 018 fix ✅ appliquée prod** : CHECK constraint `game_actions.action_type` étendue (6 nouveaux types Phase 2.5+2.6 étaient silencieusement bloqués)
-  - **Vague C UI ✅ livrée** (PR #45 🟡 ouverte) : `useEngagement` + `UnitInspector` v2.4 + bouton Rompre + `EngagementOverlay` 3D ligne rouge pulsante + bloque mouvement engagé
-  - **Session 19 à faire** :
-    1. Sprint UX rapide ~1h (bug auto-select CombatResultPanel + textes 9-10px → 12-14px + effectif avant rapport)
-    2. Merger PR #45 puis test humain Vague D (5 scénarios)
-    3. Sprint UX large esthétique si toujours frustrant
+- **Phase 2.5 ✅** moral / cohésion / soutien livrée prod (session 17)
+- **Phase 2.6 ✅** engagement persistant livrée + testée humain (sessions 18-19) — Vague A engine, Vague B BDD+EF, Vague C UI, Vague D test ✅. Tag git `phase-2-complete` posé.
+- **Session 19 livré aussi** (en plus du plan original) :
+  - MVP tweak board radius 7 + 8 unités en colonnes + C move 4 + A range 6 + anim vitesse par kind
+  - Refonte journal combats (toast bref + bouton TopBar + panel scrollable sous le bouton)
+  - Garde-fou Brisée : effective ≥ 1.5 × min → max shaken
+  - Override attaque Brisée : autorisée si ennemi strictement plus petit
+  - Rompre : conserve le mouvement + repli forcé (dest doit s'éloigner du contact)
+  - UX manœuvres : scinder = clic ratio direct, fusion = clic sur la map (move auto si distant)
+  - Fusion : bonus moral +25 (sort de la déroute) + effectiveMin ne cumule plus
+  - CavalryMesh dédié (cavalier.glb optimisé 41 MB → 2.9 MB via gltf-transform)
 - Phase 3 ⬜ moteur de tour : brouillard évolué, détection, pré-postures
 - Phase 4 ⬜ IA solo
 - Phase 5 ⬜ Profondeur tactique (formations, fatigue, ravitaillement, Infirmier, météo)
 - Phases 6-15 ⬜
 
-Prochaine action session 19 :
-1. **Sprint UX rapide** (~1h) sur la branche `claude/p26-vague-c-ui` (PR #45) : `useRef` pour fix auto-select CombatResultPanel + ajouter effectif avant dans `ReportContent` + grossir tailles texte Inspector/Sidebar/Panel
-2. Push update PR #45 puis merger
-3. Test humain Vague D (5 scénarios)
-4. Tag `phase-2-complete` (englobe Phase 2 + 2.5 + 2.6)
+Prochaine action session 20 — Phase 3 ou pré-Phase 3 (au choix) :
+- Préparation : revue rapide `PLAN-MASTER-V2.md` § Phase 3 (fog of war évolué, postures, détection)
+- Quick wins backlog avant Phase 3 (~1-2h chacun) :
+  1. **[ux]** Inspection unité ennemie en cliquant (lecture seule stats publiques)
+  2. **[balance]** Pondération `baseAttritionRate` 0.08 à revoir selon retour humain élargi
+  3. **[refacto]** Sortir `handleTileClick` vers `useTacticalSelection` (Game.tsx repasse < 600 lignes)
+  4. **[asset]** Compresser `soldier.glb` 5 MB → < 500 KB (pipeline gltf-transform identique cavalier)
 
 Feedback UX user sauvegardé en mémoire : `~/.claude/projects/.../memory/ux_tactica_lisibilite.md`
