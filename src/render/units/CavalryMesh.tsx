@@ -1,3 +1,4 @@
+// v1.2 (12/05/2026) — Scale ×2.8 (silhouette visuelle cavalier plus tassée que soldat debout)
 // v1.1 (12/05/2026) — Scale ×2 : bbox cavalier (Y ∈ [-0.5, 0.5]) vs soldier (Y ∈ [-1, 1])
 // v1.0 (12/05/2026) — Mesh 3D cavalerie (cavalier.glb) — même logique de teinte que SoldierMesh
 import { useMemo } from 'react'
@@ -9,11 +10,11 @@ import { COLORS } from '../colors'
 const CAVALRY_URL = '/models/cavalier.glb'
 useGLTF.preload(CAVALRY_URL)
 
-// v1.1 — Le cavalier.glb a un bbox Y ∈ [-0.5, 0.5] (hauteur unitaire 1.0) alors que
-// soldier.glb a Y ∈ [-1, 1] (hauteur 2.0). On compense par un scale x2 pour que les
-// deux pions apparaissent à la même hauteur sur le plateau (le scale extérieur de
-// UnitPlaceholder est appliqué identiquement aux deux meshes).
-const CAVALRY_BBOX_SCALE = 2.0
+// v1.2 — Bbox Y unitaire = 1.0 (vs 2.0 pour soldier). Le ratio strict serait ×2.0
+// mais la silhouette d'un cavalier (homme étalé horizontalement sur un cheval) paraît
+// visuellement plus tassée qu'un soldat debout droit. On surcompense à ×2.8 pour que
+// le cavalier domine légèrement sur le plateau, comme dans la réalité historique.
+const CAVALRY_BBOX_SCALE = 2.8
 
 interface CavalryMeshProps {
   team: Team
