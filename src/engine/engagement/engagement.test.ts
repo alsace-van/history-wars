@@ -309,10 +309,20 @@ describe('engine/engagement — breakCombat', () => {
     expect(result.unitAfter.effective).toBe(100)
   })
 
-  it('consomme hasMoved et hasAttacked', () => {
+  // v1.1 (12/05/2026) — Rompre ne consomme plus hasMoved : l'unité doit pouvoir
+  // se replier dans le même tour après avoir rompu, sinon l'ennemi adjacent
+  // ré-engage immédiatement et la rupture n'a aucun intérêt.
+  it('consomme hasAttacked mais préserve hasMoved (mouvement conservé pour repli)', () => {
     const u = makeUnit({ effective: 800, hasMoved: false, hasAttacked: false })
     const result = breakCombat(u)
-    expect(result.unitAfter.hasMoved).toBe(true)
+    expect(result.unitAfter.hasMoved).toBe(false) // peut encore se déplacer
+    expect(result.unitAfter.hasAttacked).toBe(true) // mais a consommé son action
+  })
+
+  it('ne re-active pas hasMoved si déjà true (cas unité ayant déjà bougé avant de rompre)', () => {
+    const u = makeUnit({ effective: 800, hasMoved: true, hasAttacked: false })
+    const result = breakCombat(u)
+    expect(result.unitAfter.hasMoved).toBe(true) // reste true (passé par spread)
     expect(result.unitAfter.hasAttacked).toBe(true)
   })
 

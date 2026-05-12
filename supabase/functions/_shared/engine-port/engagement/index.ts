@@ -1,3 +1,4 @@
+// v1.1 (12/05/2026) — Rompre ne consomme plus hasMoved (mirror src v1.1)
 // v1.0 (11/05/2026) — Phase 2.6 Vague B : barrel engagement engine-port Deno
 // Source de verite : src/engine/engagement/index.ts. Duplication controlee (piege #12).
 
@@ -70,7 +71,7 @@ export function breakCombat(unit: UnitState): BreakCombatResult {
       wounded: woundedAfter,
       hp: hpAfter,
       killed: unit.killed + split.killed,
-      hasMoved: true,
+      // v1.1 : hasMoved conservé (l'unité peut se replier après rompre)
       hasAttacked: true,
     },
     actualDamage: split.actualDamage,

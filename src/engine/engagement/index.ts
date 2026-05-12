@@ -1,3 +1,4 @@
+// v1.1 (12/05/2026) — Rompre ne consomme plus hasMoved (mouvement conservé pour repli)
 // v1.0 (11/05/2026) — Phase 2.6 Vague A : barrel engine/engagement + helpers start / break / lookup
 // Source : docs/PLAN-ENGAGEMENT-PERSISTENT.md § 1, 3, 6
 // Frontière engine/ : zéro React, zéro Three, zéro Supabase
@@ -83,7 +84,8 @@ export function startEngagement(
  * Le caller (EF handleBreakCombat vague B) est responsable de :
  *  - vérifier que l'unité est bien dans au moins un engagement
  *  - supprimer tous les engagements de cette unité (rupture totale)
- *  - consommer hasMoved + hasAttacked pour le tour
+ *  - consommer hasAttacked pour le tour (mais PAS hasMoved — v1.1 : le repli est
+ *    autorisé après rompre, sinon l'ennemi adjacent ré-engage immédiatement).
  *
  * Retourne un UnitState modifié + détail des pertes pour log UI.
  */
@@ -110,7 +112,8 @@ export function breakCombat(unit: UnitState): BreakCombatResult {
       wounded: woundedAfter,
       hp: hpAfter,
       killed: unit.killed + split.killed,
-      hasMoved: true,
+      // v1.1 : hasMoved reste à sa valeur d'origine (souvent false) → l'unité peut
+      // se déplacer après rompre. hasAttacked passe à true → on consomme l'action.
       hasAttacked: true,
     },
     actualDamage: split.actualDamage,

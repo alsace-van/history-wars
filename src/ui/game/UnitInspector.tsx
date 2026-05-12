@@ -462,7 +462,7 @@ export function UnitInspector({
             Coût : ≈ {Math.max(1, Math.round(unit.effective * 0.1))} hommes laissés au front
             {engagements.length > 1 && ' · libère les '}{engagements.length > 1 && engagements.length}{engagements.length > 1 && ' engagements'}
             <br />
-            Action consommée pour ce tour.
+            Action consommée — <span className="text-tactica-amber/80">le déplacement reste disponible pour se replier.</span>
           </div>
         </div>
       )}

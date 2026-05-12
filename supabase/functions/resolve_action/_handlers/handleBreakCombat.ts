@@ -1,3 +1,4 @@
+// v1.1 (12/05/2026) — Rompre ne consomme plus le mouvement (l'unité peut se replier ce tour)
 // v1.0 (11/05/2026) — Phase 2.6 Vague B : rupture volontaire d'engagement (coût 10% effective)
 // Source : docs/PLAN-ENGAGEMENT-PERSISTENT.md § 3 + § 11.3
 
@@ -61,6 +62,9 @@ export async function handleBreakCombat(args: HandleBreakCombatArgs): Promise<Re
   const result = breakCombat(unitState)
 
   // UPDATE BDD : effective + wounded + killed + hp + flags
+  // v1.1 (12/05/2026) — Rompre = action consommée (has_attacked=true) MAIS mouvement
+  // conservé (has_moved=false). Sinon rompre n'a aucun intérêt : l'ennemi adjacent
+  // ré-engage au tour suivant immédiatement. Désormais l'unité peut se replier après.
   const { error: updateErr } = await admin
     .from('units')
     .update({
@@ -68,7 +72,7 @@ export async function handleBreakCombat(args: HandleBreakCombatArgs): Promise<Re
       wounded: result.unitAfter.wounded,
       killed: result.unitAfter.killed,
       hp: result.unitAfter.hp,
-      has_moved: true,
+      has_moved: false,
       has_attacked: true,
     })
     .eq('id', unitId)
