@@ -1,23 +1,21 @@
+// v4.0 (12/05/2026) — UX : liste scrollable verticale sous le bouton TopBar, plus d'onglets, croix par rapport
 // v3.4 (12/05/2026) — UX : bouton réduire ── (ferme sans vider) + monté seulement quand panel ouvert
 // v3.3 (12/05/2026) — Fog of war fix : effectif AVANT visible uniquement côté joueur (sinon déduction triviale)
 // v3.2 (12/05/2026) — Sprint UX : fix auto-select (useRef length) + effectif AVANT + tailles texte
-// v3.1 (11/05/2026) — Phase 2.5 fix : "Soldats restants" affiche effectiveAfter (absolu) au lieu de hpAfter (% legacy)
-import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Team } from '@/types/game'
 import type { CombatNotification } from '@hooks/useCombatNotifications'
-import { cn } from '@lib/cn'
 
 interface CombatResultPanelProps {
   notifications: ReadonlyArray<CombatNotification>
-  /** Callback quand l'onglet actif change → Game.tsx en derive les unitéIds à highlighter sur le plateau. */
+  /** Callback quand le hover/focus change → Game.tsx en dérive les unitéIds à highlighter sur le plateau. */
   onActiveChange?: (notif: CombatNotification | null) => void
-  /** Retire une notification (X de l'onglet). */
+  /** Retire une notification (croix de la carte). */
   onRemove: (id: string) => void
-  /** Vide toutes les notifications (X global du panel). */
+  /** Vide toutes les notifications (X global). */
   onClear: () => void
-  /** v3.4 : ferme le panel sans vider la liste (bouton "réduire" ─). Le badge TopBar reste actif. */
+  /** Ferme le panel sans vider la liste (─). */
   onClose?: () => void
-  /** Phase 1.5 : centre la caméra sur une unité (typiquement l'unité du viewer dans le combat actif). */
+  /** Centre la caméra sur une unité (bouton 📍 par carte). */
   onFocusUnit?: (unitId: string) => void
 }
 
@@ -31,146 +29,99 @@ const TEAM_NAME: Record<Team, string> = {
   red: 'Rouges',
 }
 
-export function CombatResultPanel({ notifications, onActiveChange, onRemove, onClear, onClose, onFocusUnit }: CombatResultPanelProps) {
-  // Onglet actif : par defaut le dernier (le plus recent)
-  const [activeId, setActiveId] = useState<string | null>(null)
-
-  // v3.2 : tracker la longueur precedente — quand une nouvelle notif arrive,
-  // on force le switch sur la derniere (bug session 18 : l'active restait sur
-  // le 1er combat car l'ancien id etait toujours valide dans la liste).
-  const prevLengthRef = useRef(0)
-
-  // Auto-select : nouvelle notif → devient active. Si l'active disparait, fallback sur la derniere.
-  useEffect(() => {
-    if (notifications.length === 0) {
-      if (activeId !== null) setActiveId(null)
-      prevLengthRef.current = 0
-      return
-    }
-    const lastId = notifications[notifications.length - 1].id
-    if (notifications.length > prevLengthRef.current) {
-      // Nouvelle notif arrivee → switch sur la derniere meme si l'active est encore valide
-      setActiveId(lastId)
-    } else if (!activeId || !notifications.some(n => n.id === activeId)) {
-      // Active disparue (X de l'onglet) → fallback sur la derniere encore en liste
-      setActiveId(lastId)
-    }
-    prevLengthRef.current = notifications.length
-  }, [notifications, activeId])
-
-  const activeNotif = useMemo(
-    () => notifications.find(n => n.id === activeId) ?? null,
-    [notifications, activeId]
-  )
-
-  // Notifie le parent de l'unite active pour le highlight plateau
-  useEffect(() => {
-    onActiveChange?.(activeNotif)
-  }, [activeNotif, onActiveChange])
-
+/**
+ * Panel "Journal des combats" — v4.0 (refonte UX).
+ *
+ * - Ancré en haut à droite, sous le bouton "Rapports" du TopBar.
+ * - Liste scrollable verticale. Le plus récent en haut.
+ * - Chaque rapport est une carte complète avec son propre bouton "✕".
+ * - Hover sur une carte → highlight des unités du combat sur le plateau.
+ */
+export function CombatResultPanel({
+  notifications,
+  onActiveChange,
+  onRemove,
+  onClear,
+  onClose,
+  onFocusUnit,
+}: CombatResultPanelProps) {
   if (notifications.length === 0) return null
+
+  // Plus récent en haut (la liste arrive en ordre d'arrivée, on inverse pour l'affichage).
+  const ordered = [...notifications].reverse()
 
   return (
     <div
-      className="absolute bottom-[80px] right-3 w-[400px] max-w-[92vw] z-40 pointer-events-auto animate-slide-up"
+      className="absolute top-3 right-3 w-[420px] max-w-[92vw] z-40 pointer-events-auto"
       role="dialog"
+      aria-label="Journal des combats"
       aria-live="polite"
     >
-      <div className="bg-[rgba(8,12,24,0.95)] backdrop-blur-[6px] border border-tactica-amber rounded-[2px] shadow-[0_8px_32px_rgba(0,0,0,0.5)]">
-        {/* Bandeau onglets */}
-        <div className="flex items-center justify-between gap-2 px-2 pt-2 pb-1 border-b border-[rgba(226,232,240,0.10)]">
-          <div className="flex flex-wrap gap-1 min-w-0 flex-1">
-            {notifications.map(n => (
-              <Tab
-                key={n.id}
-                notif={n}
-                active={n.id === activeId}
-                onSelect={() => setActiveId(n.id)}
-                onRemove={() => onRemove(n.id)}
-              />
-            ))}
+      <div className="bg-[rgba(8,12,24,0.96)] backdrop-blur-[6px] border border-tactica-amber rounded-[2px] shadow-[0_8px_32px_rgba(0,0,0,0.5)] flex flex-col max-h-[calc(100vh-100px)]">
+        {/* Header sticky */}
+        <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-[rgba(226,232,240,0.10)] shrink-0">
+          <div className="text-[13px] uppercase tracking-[0.12em] font-semibold text-tactica-amber flex items-center gap-2">
+            <span aria-hidden>⚔</span>
+            <span>Journal des combats</span>
+            <span className="text-muted-foreground tabular-nums font-normal text-[12px]">
+              ({notifications.length})
+            </span>
           </div>
           <div className="shrink-0 flex items-center gap-1">
             {onClose && (
               <button
                 onClick={onClose}
                 aria-label="Réduire"
-                title="Réduire (garder les rapports en mémoire)"
-                className="w-6 h-6 flex items-center justify-center text-muted-foreground hover:text-tactica-amber hover:bg-tactica-amber/10 rounded-[2px] transition-colors text-[18px] leading-none"
+                title="Réduire (garder l'historique)"
+                className="w-7 h-7 flex items-center justify-center text-muted-foreground hover:text-tactica-amber hover:bg-tactica-amber/10 rounded-[2px] transition-colors text-[18px] leading-none"
               >
                 ─
               </button>
             )}
             <button
               onClick={onClear}
-              aria-label="Tout fermer"
-              className="w-6 h-6 flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-[rgba(239,68,68,0.10)] rounded-[2px] transition-colors text-[16px] leading-none"
-              title="Vider et fermer"
+              aria-label="Tout vider"
+              title="Tout vider et fermer"
+              className="w-7 h-7 flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-[rgba(239,68,68,0.10)] rounded-[2px] transition-colors text-[16px] leading-none"
             >
               ✕
             </button>
           </div>
         </div>
 
-        {/* Contenu de l'onglet actif */}
-        {activeNotif && <ReportContent notif={activeNotif} onFocusUnit={onFocusUnit} />}
+        {/* Liste scrollable */}
+        <div className="overflow-y-auto flex-1 min-h-0">
+          {ordered.map(n => (
+            <ReportCard
+              key={n.id}
+              notif={n}
+              onRemove={() => onRemove(n.id)}
+              onHoverEnter={() => onActiveChange?.(n)}
+              onHoverLeave={() => onActiveChange?.(null)}
+              onFocusUnit={onFocusUnit}
+            />
+          ))}
+        </div>
       </div>
     </div>
   )
 }
 
-function Tab({
+function ReportCard({
   notif,
-  active,
-  onSelect,
   onRemove,
+  onHoverEnter,
+  onHoverLeave,
+  onFocusUnit,
 }: {
   notif: CombatNotification
-  active: boolean
-  onSelect: () => void
   onRemove: () => void
+  onHoverEnter: () => void
+  onHoverLeave: () => void
+  onFocusUnit?: (unitId: string) => void
 }) {
-  const teamColor = notif.isMyAttack ? TEAM_COLOR[notif.attackerTeam] : TEAM_COLOR[notif.defenderTeam]
-  // Phase 2 : 3 phases d'attaque distinctes
   const icon = notif.kind === 'charge' ? '🐎' : notif.kind === 'melee' ? '⚔' : '🏹'
   const phaseLabel = notif.kind === 'charge' ? 'Charge cav' : notif.kind === 'melee' ? 'Mêlée' : 'Tir'
-  const tabLabel = `T${notif.turn} · ${phaseLabel}`
-
-  return (
-    <div
-      className={cn(
-        'flex items-center gap-1 px-2 py-[4px] rounded-[2px] cursor-pointer transition-colors text-[12px] uppercase tracking-[0.05em]',
-        active
-          ? 'border'
-          : 'bg-[rgba(226,232,240,0.04)] hover:bg-[rgba(226,232,240,0.08)] border border-transparent'
-      )}
-      style={
-        active
-          ? { borderColor: teamColor, background: `${teamColor}1A`, color: teamColor }
-          : { color: '#94a3b8' }
-      }
-      onClick={onSelect}
-    >
-      <span aria-hidden className="text-[14px] leading-none">
-        {icon}
-      </span>
-      <span className="font-semibold">{tabLabel}</span>
-      <button
-        onClick={e => {
-          e.stopPropagation()
-          onRemove()
-        }}
-        aria-label={`Fermer ${tabLabel}`}
-        className="ml-1 w-4 h-4 flex items-center justify-center hover:bg-[rgba(239,68,68,0.20)] hover:text-destructive rounded-[1px] text-[13px] leading-none"
-      >
-        ✕
-      </button>
-    </div>
-  )
-}
-
-function ReportContent({ notif, onFocusUnit }: { notif: CombatNotification; onFocusUnit?: (unitId: string) => void }) {
-  // Phase 2 : 3 phases distinctes
   const actionLabel = notif.kind === 'charge' ? 'Charge cavalerie' : notif.kind === 'melee' ? 'Mêlée' : 'Tir'
   const titleColor = notif.isMyAttack ? TEAM_COLOR[notif.attackerTeam] : TEAM_COLOR[notif.defenderTeam]
 
@@ -178,34 +129,59 @@ function ReportContent({ notif, onFocusUnit }: { notif: CombatNotification; onFo
     ? `${actionLabel} : ${notif.attackerKindLabel} ${TEAM_NAME[notif.attackerTeam]} vs ${notif.defenderKindLabel} ${TEAM_NAME[notif.defenderTeam]}`
     : `${actionLabel} subi : ${notif.attackerKindLabel} ${TEAM_NAME[notif.attackerTeam]} attaque votre ${notif.defenderKindLabel}`
 
-  // Mon unité dans ce combat = l'attaquant si j'ai attaqué, sinon le défenseur
   const myUnitId = notif.isMyAttack ? notif.attackerId : notif.defenderId
   const myUnitLabel = notif.isMyAttack ? notif.attackerKindLabel : notif.defenderKindLabel
 
   return (
-    <>
-      {/* Sous-titre engagement + bouton centrer */}
-      <div className="px-4 pt-3 pb-2 flex items-start justify-between gap-2">
-        <div
-          className="text-[14px] font-semibold uppercase tracking-[0.03em] leading-tight flex-1 min-w-0"
+    <div
+      onMouseEnter={onHoverEnter}
+      onMouseLeave={onHoverLeave}
+      className="border-b border-[rgba(226,232,240,0.06)] last:border-b-0 hover:bg-tactica-amber/[0.04] transition-colors"
+    >
+      {/* Bandeau carte : phase + tour + croix */}
+      <div className="flex items-center gap-2 px-3 pt-2 pb-1">
+        <span aria-hidden className="text-[15px] leading-none">{icon}</span>
+        <span
+          className="text-[12px] uppercase tracking-[0.06em] font-semibold tabular-nums"
           style={{ color: titleColor }}
         >
-          {titleSummary}
-        </div>
+          T{notif.turn} · {phaseLabel}
+        </span>
+        <span className="flex-1" />
         {onFocusUnit && (
           <button
+            type="button"
             onClick={() => onFocusUnit(myUnitId)}
             title={`Centrer la vue sur ma ${myUnitLabel}`}
             aria-label={`Centrer la vue sur ma ${myUnitLabel}`}
-            className="shrink-0 px-2 py-1 text-[12px] uppercase tracking-[0.05em] bg-tactica-amber/10 hover:bg-tactica-amber/20 border border-tactica-amber/40 hover:border-tactica-amber text-tactica-amber rounded-[2px] transition-colors flex items-center gap-1 leading-none"
+            className="shrink-0 px-2 py-[3px] text-[11px] uppercase tracking-[0.05em] bg-tactica-amber/10 hover:bg-tactica-amber/20 border border-tactica-amber/40 hover:border-tactica-amber text-tactica-amber rounded-[2px] transition-colors flex items-center gap-1 leading-none"
           >
             <span aria-hidden>📍</span>
             Centrer
           </button>
         )}
+        <button
+          type="button"
+          onClick={onRemove}
+          aria-label="Fermer ce rapport"
+          title="Fermer ce rapport"
+          className="shrink-0 w-6 h-6 flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-[rgba(239,68,68,0.10)] rounded-[2px] transition-colors text-[14px] leading-none"
+        >
+          ✕
+        </button>
       </div>
 
-      {/* Bloc pertes defenseur */}
+      {/* Sous-titre engagement */}
+      <div className="px-3 pb-2">
+        <div
+          className="text-[13px] font-semibold uppercase tracking-[0.03em] leading-tight"
+          style={{ color: titleColor }}
+        >
+          {titleSummary}
+        </div>
+      </div>
+
+      {/* Bloc pertes défenseur */}
       <LossesBlock
         team={notif.defenderTeam}
         unitLabel={notif.defenderKindLabel}
@@ -213,7 +189,7 @@ function ReportContent({ notif, onFocusUnit }: { notif: CombatNotification; onFo
         showFullDetail={notif.isMyDefense}
       />
 
-      {/* Bloc pertes attaquant si riposte (melee defenseur survivant) */}
+      {/* Bloc pertes attaquant si riposte (mêlée défenseur survivant) */}
       {notif.attackerLosses && (
         <LossesBlock
           team={notif.attackerTeam}
@@ -223,7 +199,7 @@ function ReportContent({ notif, onFocusUnit }: { notif: CombatNotification; onFo
           isRiposte
         />
       )}
-    </>
+    </div>
   )
 }
 
@@ -242,7 +218,7 @@ function LossesBlock({ team, unitLabel, losses, showFullDetail, isRiposte }: Los
 
   if (losses.killed === 0 && losses.woundedAdd === 0 && !losses.isKilled) {
     return (
-      <div className="px-4 py-3 border-t border-[rgba(226,232,240,0.06)]">
+      <div className="px-3 py-2 border-t border-[rgba(226,232,240,0.06)]">
         <div className="text-[11px] uppercase tracking-[0.14em] mb-1" style={{ color: teamColor }}>
           {headerLabel} · {unitLabel} {teamName}
         </div>
@@ -252,7 +228,7 @@ function LossesBlock({ team, unitLabel, losses, showFullDetail, isRiposte }: Los
   }
 
   return (
-    <div className="px-4 py-3 border-t border-[rgba(226,232,240,0.06)]">
+    <div className="px-3 py-2 border-t border-[rgba(226,232,240,0.06)]">
       <div className="text-[11px] uppercase tracking-[0.14em] mb-2 flex items-center gap-2 flex-wrap" style={{ color: teamColor }}>
         <span>{headerLabel} · {unitLabel} {teamName}</span>
         {losses.isKilled && (
@@ -268,9 +244,8 @@ function LossesBlock({ team, unitLabel, losses, showFullDetail, isRiposte }: Los
       </div>
 
       <div className="space-y-1 text-[13px] tabular-nums">
-        {/* v3.3 : effectif AVANT visible UNIQUEMENT côté joueur (showFullDetail).
-            Sinon le joueur déduit l'effectif courant ennemi par soustraction
-            (before - killed = after), trou de fog of war. */}
+        {/* Effectif AVANT visible UNIQUEMENT côté joueur (showFullDetail).
+            Sinon déduction triviale (before - killed = after) → trou de fog of war. */}
         {showFullDetail && (
           <Row icon="◐" label="Soldats avant" value={losses.effectiveBefore} color="#94a3b8" />
         )}
