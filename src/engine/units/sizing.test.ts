@@ -136,6 +136,17 @@ describe('engine/units/sizing — mergeUnits', () => {
     expect(result.id).toBe('a')
   })
 
+  // v1.1 — effectiveMin ne cumule plus (sinon retraite dissout les pions fusionnés très tôt)
+  it('merge garde effectiveMin standard du type (pas de cumul)', () => {
+    const target = makeUnit({ id: 'a', effective: 800, position: cube(0, 0, 0) })
+    const source = makeUnit({ id: 'b', effective: 800, position: cube(1, 0, -1) })
+    const result = mergeUnits({ target, source })
+    if (isSizingError(result)) throw new Error('unexpected error')
+    // I : effectiveMin = 100. Cumul (200) abandonné v1.1.
+    expect(result.effectiveMin).toBe(100)
+    expect(result.effectiveMax).toBe(1600) // cumul OK
+  })
+
   it('merge refuse si total > effectiveMax fusionne', () => {
     // 2 pions de 800 + 800 + 1 = 1601 > 1600
     const target = makeUnit({ id: 'a', effective: 800, position: cube(0, 0, 0) })

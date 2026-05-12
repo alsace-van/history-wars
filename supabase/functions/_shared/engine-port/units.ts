@@ -253,7 +253,10 @@ export function mergeUnits(params: MergeParams): UnitState | SizingError {
   const totalKilled = target.killed + source.killed
   const totalHpMax = target.hpMax + source.hpMax
   const totalHp = Math.min(target.hp + source.hp, totalHpMax)
-  const mergedEffectiveMin = target.effectiveMin + source.effectiveMin
+  // v2.2 mirror — effectiveMin = max des 2 sources (= standard du type), pas cumul.
+  // Cumul rendait pion fusionné fragile à la retraite (dissolution sous 200 alors qu'un
+  // pion classique tient à 100). Voir src/engine/units/sizing.ts v1.1.
+  const mergedEffectiveMin = Math.max(target.effectiveMin, source.effectiveMin)
   const weightedMorale = totalEffective > 0
     ? Math.round((target.morale * target.effective + source.morale * source.effective) / totalEffective)
     : Math.round((target.morale + source.morale) / 2)

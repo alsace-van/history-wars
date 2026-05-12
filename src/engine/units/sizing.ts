@@ -215,10 +215,12 @@ export function mergeUnits(params: MergeParams): MergeResult | SizingError {
   const totalHpMax = target.hpMax + source.hpMax
   const totalHp = Math.min(totalHpRaw, totalHpMax)
 
-  // effectiveMin du pion fusionne : on conserve celui de target (standard du type),
-  // sinon un pion de 1600 hommes serait considere "vivant" jusqu'a 100 hommes seulement.
-  // Cumuler le min permet aussi un seuil plus haut sur un pion gros.
-  const mergedEffectiveMin = target.effectiveMin + source.effectiveMin
+  // v1.1 — effectiveMin du pion fusionné : on garde le standard du type (= max des 2 sources,
+  // identique en pratique puisque le kind est garanti identique). Le cumul (100+100=200) rendait
+  // les pions fusionnés très fragiles : une retraite à 86% de pertes pouvait dissoudre un pion
+  // de 200 hommes (sous le seuil 200) alors qu'un pion classique à 100 aurait survécu.
+  // Le seuil dur reste celui d'un bataillon viable (100 pour I, 25 pour C, 30 pour A).
+  const mergedEffectiveMin = Math.max(target.effectiveMin, source.effectiveMin)
 
   // Morale pondérée par les effectifs + bonus de regroupement (v1.1).
   // Le bonus traduit le ralliement : renforts vus, repli ordonné, ravitaillement.
