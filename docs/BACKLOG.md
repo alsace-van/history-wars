@@ -55,3 +55,4 @@ Format : 1-2 lignes par item, étiquettes entre crochets.
 - RLS units : vue SQL filtrée pour fog of war → Phase 4.
 - HexTile materials adaptatifs au terrain (heightmap, biome) → Phase 5 relief.
 - ScalingTransition tactique ↔ opérationnel → Phase 8.
+- **[ux/mod]** **Menu de personnalisation assets** → Phase 13 moddabilité. Permettre à l'utilisateur d'importer ses propres `.glb` (par `UnitKind` ou par `subKind` historique) + ses icônes UI (drapeau camp, icônes ordres, marqueurs hex). Storage Supabase par user, hot-reload côté client. Origine : feedback user 12/05 (1ère intégration `cavalier.glb` manuelle). Pré-requis : pipeline auto de compression à l'upload (gltf-transform `optimize --simplify-ratio 0.15 --compress meshopt --texture-compress webp`), validation taille max (cible < 5 MB par modèle), bounding box auto-normalisée à la hauteur unitaire 2.0 (évite les ajustements de scale manuels comme `CAVALRY_BBOX_SCALE`).
