@@ -1,7 +1,7 @@
+// v2.5 (12/05/2026) — Label kind monté pour cavalerie (suit la hauteur du mesh C plus grand)
 // v2.4 (12/05/2026) — CavalryMesh dédié pour unit.kind === 'C' (cavalier.glb)
 // v2.3 (12/05/2026) — UX : prop mergeTarget (halo bleu cyan, cible fusion sélectionnable)
 // v2.2 (12/05/2026) — MVP tweak : vitesse anim par UnitKind (C rapide, I/A lents)
-// v2.1 (11/05/2026) — Phase 2.5 C.2 : ajout UnitStatusRing (état) + UnitSupportRing (soutien)
 import { Suspense, useEffect, useMemo, useRef } from 'react'
 import { Billboard, Text } from '@react-three/drei'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
@@ -62,6 +62,16 @@ const SECONDS_PER_HEX_BY_KIND: Readonly<Record<UnitKind, number>> = {
   A: 1.80,
 }
 const DEFAULT_SECONDS_PER_HEX = 1.0
+
+// v2.5 — hauteur visuelle du mesh par kind (en unités locales × soldierScale).
+// Sert à positionner le label kind ("I", "C", "A") au-dessus du sommet du mesh.
+// Soldier : bbox unitaire Y ∈ [-1, 1] → top à 2 × soldierScale.
+// Cavalier : bbox interne × CAVALRY_BBOX_SCALE=2.8 → top à 2.8 × soldierScale.
+const MESH_TOP_HEIGHT_BY_KIND: Readonly<Record<UnitKind, number>> = {
+  I: 2.0,
+  C: 2.8,
+  A: 2.0,
+}
 
 // Scale visuel selon effective / effectiveMax. Plage 0.35-1.0 amplifiee Phase 2
 // pour mieux differencier visuellement un pion de 100 vs 800 hommes.
@@ -394,7 +404,7 @@ export function UnitPlaceholder({
         />
       )}
 
-      <Billboard position={[0, soldierScale * 2.2 + 0.2, 0]} follow lockX={false} lockY={false} lockZ={false}>
+      <Billboard position={[0, soldierScale * MESH_TOP_HEIGHT_BY_KIND[unit.kind] + 0.3, 0]} follow lockX={false} lockY={false} lockZ={false}>
         <Text fontSize={0.32} color="#ffffff" anchorX="center" anchorY="middle" outlineWidth={0.025} outlineColor="#000000">
           {unit.kind}
         </Text>
