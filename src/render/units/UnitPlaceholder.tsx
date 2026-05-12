@@ -1,7 +1,7 @@
+// v2.3 (12/05/2026) — UX : prop mergeTarget (halo bleu cyan, cible fusion sélectionnable)
 // v2.2 (12/05/2026) — MVP tweak : vitesse anim par UnitKind (C rapide, I/A lents)
 // v2.1 (11/05/2026) — Phase 2.5 C.2 : ajout UnitStatusRing (état) + UnitSupportRing (soutien)
 // v2.0 (10/05/2026) — Phase 2 2E.1 : scale par effective/effectiveMax (Phase 2) + plage 0.35-1.0 amplifiee
-// v1.9 (10/05/2026) — Phase 1.5 : prop highlighted (halo jaune pulsant) pour unités du rapport combat actif
 import { Suspense, useEffect, useMemo, useRef } from 'react'
 import { Billboard, Text } from '@react-three/drei'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
@@ -22,6 +22,8 @@ interface UnitPlaceholderProps {
   hexSize: number
   selected?: boolean
   targetable?: boolean
+  /** v2.3 : unité proposée comme cible de fusion (halo bleu cyan statique). */
+  mergeTarget?: boolean
   exhausted?: boolean
   /** Phase 1.5 : unité impliquée dans le rapport combat actif → halo jaune pulsant pour identification visuelle. */
   highlighted?: boolean
@@ -77,6 +79,7 @@ export function UnitPlaceholder({
   hexSize,
   selected = false,
   targetable = false,
+  mergeTarget = false,
   exhausted = false,
   highlighted = false,
   viewerTeam,
@@ -333,6 +336,31 @@ export function UnitPlaceholder({
             <mesh renderOrder={4}>
               <ringGeometry args={[ringRadius * 1.0, ringRadius * 1.18, 64]} />
               <meshBasicMaterial color={COLORS.unitTargetableHalo} transparent opacity={0.7} side={THREE.DoubleSide} depthWrite={false} />
+            </mesh>
+          </group>
+        </>
+      )}
+      {mergeTarget && !selected && (
+        <>
+          {/* v2.3 — Halos additifs bleus cyan (cible fusion, statique) */}
+          <group position={[0, RING_LIFT, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <mesh renderOrder={1}>
+              <ringGeometry args={[ringRadius * 1.2, ringRadius * 1.85, 64]} />
+              <meshBasicMaterial color={COLORS.unitMergeTargetHalo} transparent opacity={0.07} side={THREE.DoubleSide} depthWrite={false} blending={THREE.AdditiveBlending} />
+            </mesh>
+            <mesh renderOrder={2}>
+              <ringGeometry args={[ringRadius * 1.05, ringRadius * 1.45, 64]} />
+              <meshBasicMaterial color={COLORS.unitMergeTargetHalo} transparent opacity={0.16} side={THREE.DoubleSide} depthWrite={false} blending={THREE.AdditiveBlending} />
+            </mesh>
+            <mesh renderOrder={3}>
+              <ringGeometry args={[ringRadius * 0.95, ringRadius * 1.25, 64]} />
+              <meshBasicMaterial color={COLORS.unitMergeTargetHalo} transparent opacity={0.24} side={THREE.DoubleSide} depthWrite={false} blending={THREE.AdditiveBlending} />
+            </mesh>
+          </group>
+          <group position={[0, RING_NET_LIFT, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+            <mesh renderOrder={4}>
+              <ringGeometry args={[ringRadius * 1.0, ringRadius * 1.18, 64]} />
+              <meshBasicMaterial color={COLORS.unitMergeTargetHalo} transparent opacity={0.75} side={THREE.DoubleSide} depthWrite={false} />
             </mesh>
           </group>
         </>

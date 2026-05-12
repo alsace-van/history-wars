@@ -1,3 +1,4 @@
+// v1.1 (12/05/2026) — UX : mergeMode → clic sur unité alliée cible déclenche performMerge (avec move auto si distant)
 // v1.0 (11/05/2026) — Phase 2.5 C : extraction handlers click (unit/tile/shaken) pour alléger Game.tsx
 import { useCallback } from 'react'
 import { cubeKey, type Cube } from '@engine/hex'
@@ -21,6 +22,11 @@ interface UseBattleClickHandlersParams {
   retreatTargetKeys: Set<string>
   suicideMode: boolean
   suicideTargetIds: Set<string>
+  // v1.1 — mergeMode (sélection cible alliée sur la map)
+  mergeMode: boolean
+  mergeTargetUnitIds: Set<string>
+  performMerge: (targetUnitId: string) => Promise<boolean>
+  setMergeMode: (on: boolean) => void
   selectedCohesionState: 'nominal' | 'shaken' | 'broken' | undefined
   skipShakenWarning: boolean
   actionsBusy: boolean
@@ -50,6 +56,7 @@ export function useBattleClickHandlers(p: UseBattleClickHandlersParams): UseBatt
   const {
     gameId, inProgress, selectedUnit, myTeam, unitStates, reachableMap, targetableUnitIds,
     splitMode, splitTargetKeys, retreatMode, retreatTargetKeys, suicideMode, suicideTargetIds,
+    mergeMode, mergeTargetUnitIds, performMerge, setMergeMode,
     selectedCohesionState, skipShakenWarning, actionsBusy, submitAction,
     performRetreat, performSuicide, hookHandleUnitClick, clearSelection, setHoveredEnemyId,
     setSplitMode, setRetreatMode, setPendingShakenAttack, setSkipShakenWarning,
@@ -59,6 +66,21 @@ export function useBattleClickHandlers(p: UseBattleClickHandlersParams): UseBatt
   const handleUnitClick = useCallback(
     async (unit: { id: string; team: Team }) => {
       if (!gameId || !inProgress) return
+      // v1.1 — mergeMode : clic sur unité alliée cible (cerclée bleue) → performMerge
+      if (mergeMode && selectedUnit && unit.team === myTeam && mergeTargetUnitIds.has(unit.id)) {
+        if (actionsBusy) return
+        const ok = await performMerge(unit.id)
+        if (ok) {
+          setMergeMode(false)
+          clearSelection()
+        }
+        return
+      }
+      // mergeMode + clic n'importe où d'autre → cancel
+      if (mergeMode) {
+        setMergeMode(false)
+        // tomber dans le comportement normal pour la cible cliquée
+      }
       // Suicide mode : click ennemi adjacent → suicide_attack
       if (suicideMode && selectedUnit && unit.team !== myTeam && suicideTargetIds.has(unit.id)) {
         if (actionsBusy) return
@@ -90,6 +112,7 @@ export function useBattleClickHandlers(p: UseBattleClickHandlersParams): UseBatt
       gameId, inProgress, selectedUnit, myTeam, targetableUnitIds, actionsBusy, submitAction,
       clearSelection, hookHandleUnitClick, suicideMode, suicideTargetIds, performSuicide,
       selectedCohesionState, skipShakenWarning, setPendingShakenAttack, setHoveredEnemyId,
+      mergeMode, mergeTargetUnitIds, performMerge, setMergeMode,
     ],
   )
 
@@ -97,6 +120,8 @@ export function useBattleClickHandlers(p: UseBattleClickHandlersParams): UseBatt
     async (cube: Cube) => {
       if (!gameId || !inProgress || !selectedUnit) return
       const key = cubeKey(cube)
+      // v1.1 — mergeMode : clic sur hex vide → cancel mergeMode et stop
+      if (mergeMode) { setMergeMode(false); return }
       // Mode retreat : tile ambre → retreat
       if (retreatMode) {
         if (!retreatTargetKeys.has(key)) { setRetreatMode(false); return }
@@ -139,7 +164,7 @@ export function useBattleClickHandlers(p: UseBattleClickHandlersParams): UseBatt
     [
       gameId, inProgress, selectedUnit, splitMode, splitTargetKeys, reachableMap, actionsBusy,
       submitAction, unitStates, clearSelection, retreatMode, retreatTargetKeys, performRetreat,
-      setRetreatMode, setSplitMode, setUnitPaths,
+      setRetreatMode, setSplitMode, setUnitPaths, mergeMode, setMergeMode,
     ],
   )
 

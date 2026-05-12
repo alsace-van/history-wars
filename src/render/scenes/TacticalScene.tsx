@@ -27,6 +27,8 @@ interface TacticalSceneProps {
   tileStates?: Map<string, HexTileState>
   selectedUnitId?: string | null
   targetableUnitIds?: ReadonlySet<string>
+  /** v3.x — unités alliées proposées comme cible de fusion (halo bleu cyan). */
+  mergeTargetUnitIds?: ReadonlySet<string>
   exhaustedUnitIds?: ReadonlySet<string>
   /** Phase 1.5 : unités impliquées dans le rapport combat actif (halo jaune pulsant). */
   highlightedUnitIds?: ReadonlySet<string>
@@ -60,6 +62,7 @@ export function TacticalScene({
   tileStates,
   selectedUnitId,
   targetableUnitIds,
+  mergeTargetUnitIds,
   exhaustedUnitIds,
   highlightedUnitIds,
   cameraFocusCube,
@@ -87,6 +90,7 @@ export function TacticalScene({
           hexSize={hexSize}
           selected={u.id === selectedUnitId}
           targetable={targetableUnitIds?.has(u.id) ?? false}
+          mergeTarget={mergeTargetUnitIds?.has(u.id) ?? false}
           exhausted={exhaustedUnitIds?.has(u.id) ?? false}
           highlighted={highlightedUnitIds?.has(u.id) ?? false}
           viewerTeam={viewerTeam}
@@ -104,6 +108,7 @@ export function TacticalScene({
       hexSize,
       selectedUnitId,
       targetableUnitIds,
+      mergeTargetUnitIds,
       exhaustedUnitIds,
       highlightedUnitIds,
       viewerTeam,

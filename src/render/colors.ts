@@ -1,3 +1,4 @@
+// v1.3 (12/05/2026) — UX : ajout unitMergeTargetHalo (bleu cyan pour cible fusion)
 // v1.2 (10/05/2026) — P1-L1C4-04 : ajout tileDangerous/Edge (orange-warning, ZoC ennemie)
 // v1.1 (09/05/2026) — L1C.3 : ajout tileReachable/Edge (cyan) + tileTargetable/Edge (rouge) + unitSelectedRing (amber)
 // v1.0 (09/05/2026) — Constantes couleur Three.js, synchro tokens Tailwind
@@ -35,7 +36,8 @@ export const COLORS = {
 
   // Unit highlights
   unitSelectedRing: 0xef9f27, // amber autour cylindre selectionne
-  unitTargetableHalo: 0xff6b6b, // halo rouge si cible (L1C.4)
+  unitTargetableHalo: 0xff6b6b, // halo rouge si cible attaque (L1C.4)
+  unitMergeTargetHalo: 0x60a5fa, // halo bleu cyan si cible fusion (v1.3)
 
   // Background scene
   sceneBg: 0x0f172a,

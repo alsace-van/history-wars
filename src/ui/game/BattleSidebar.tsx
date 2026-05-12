@@ -1,7 +1,7 @@
+// v1.6 (12/05/2026) — UX : propage mergeMode + handlers à Inspector (fusion par clic map)
 // v1.5 (12/05/2026) — Sprint UX : tailles texte 10px → 12px (lisibilité Sidebar)
 // v1.4 (11/05/2026) — Phase 2.6 C : propage engagements + currentTurn + onBreakCombat à Inspector
 // v1.3 (11/05/2026) — Phase 2.5 C : propage cohesionState + actions critiques (retraite/reddition/suicide) à Inspector
-// v1.2 (10/05/2026) — Phase 2 2D.6 : propagation splitActive/onEnterSplitMode/onExitSplitMode a Inspector
 import type { Team } from '@/types/game'
 import type { CohesionState, SupportCount } from '@engine/cohesion'
 import type { UnitState, SplitRatio } from '@engine/units'
@@ -24,6 +24,11 @@ export interface BattleSidebarProps {
   onEnterSplitMode: (ratio: SplitRatio) => void
   /** Phase 2 2D.6 : sort du mode split (parent éteint highlight). */
   onExitSplitMode: () => void
+  // v1.6 — mergeMode (sélection cible alliée sur la map, adjacent ou distant via move auto)
+  mergeActive?: boolean
+  mergeAvailableTargets?: number
+  onEnterMergeMode?: () => void
+  onExitMergeMode?: () => void
   // -------- Phase 2.5 C : panneau État critique (cohésion broken) --------
   cohesionState?: CohesionState
   /** Phase 2.5 v2.3 : décompte soutien pour affichage temps réel. */
@@ -66,6 +71,10 @@ export function BattleSidebar({
   splitActive,
   onEnterSplitMode,
   onExitSplitMode,
+  mergeActive,
+  mergeAvailableTargets,
+  onEnterMergeMode,
+  onExitMergeMode,
   cohesionState,
   support,
   canRetreat,
@@ -141,6 +150,10 @@ export function BattleSidebar({
           splitActive={splitActive}
           onEnterSplitMode={onEnterSplitMode}
           onExitSplitMode={onExitSplitMode}
+          mergeActive={mergeActive}
+          mergeAvailableTargets={mergeAvailableTargets}
+          onEnterMergeMode={onEnterMergeMode}
+          onExitMergeMode={onExitMergeMode}
           cohesionState={cohesionState}
           support={support}
           canRetreat={canRetreat}

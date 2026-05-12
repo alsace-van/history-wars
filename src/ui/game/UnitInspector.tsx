@@ -1,7 +1,7 @@
+// v2.6 (12/05/2026) — UX : scinder = clic ratio direct (suppression bouton intermédiaire) + fusion = mergeMode
 // v2.5 (12/05/2026) — Sprint UX : tailles texte 8-11px → 11-13px (lisibilité Inspector)
 // v2.4 (11/05/2026) — Phase 2.6 C : section "Engagé en mêlée" + bouton "Rompre le combat"
 // v2.3 (11/05/2026) — Phase 2.5 fix UX : affiche cohésion + soutien en permanence (lisibilité temps réel)
-// v2.2 (11/05/2026) — Phase 2.5 C : section "État critique" pour Brisé (Retraite / Reddition / Suicide)
 import { useEffect, useMemo, useState } from 'react'
 import { computeCohesion, type CohesionState, type SupportCount } from '@engine/cohesion'
 import type { UnitState, SplitRatio } from '@engine/units'
@@ -63,6 +63,15 @@ interface UnitInspectorProps {
   onBreakCombat?: () => void
   /** Désactive le bouton Rompre (busy ou action en cours). */
   breakCombatDisabled?: boolean
+  // -------- v2.6 : mergeMode (sélection cible alliée sur la map) --------
+  /** True si on est actuellement en mode "choisir la cible fusion" — les unités cibles s'illuminent en bleu sur la map. */
+  mergeActive?: boolean
+  /** Entre en mode mergeMode (le parent active highlights cibles). */
+  onEnterMergeMode?: () => void
+  /** Sort du mode mergeMode (cancel). */
+  onExitMergeMode?: () => void
+  /** Nombre de cibles disponibles (adjacentes + distantes atteignables). 0 → bouton grisé. */
+  mergeAvailableTargets?: number
 }
 
 const KIND_LABEL: Record<string, string> = {
@@ -103,6 +112,10 @@ export function UnitInspector({
   currentTurn,
   onBreakCombat,
   breakCombatDisabled = false,
+  mergeActive = false,
+  onEnterMergeMode,
+  onExitMergeMode,
+  mergeAvailableTargets = 0,
 }: UnitInspectorProps) {
   const stats = resolveUnitStatsV2(unit.kind, unit.subKind)
   const sizing = useUnitSizing({ gameId, unit, allUnits, isMyUnit, isMyTurn })
@@ -135,19 +148,16 @@ export function UnitInspector({
 
   const freeAdjacentCount = sizing.splitTargets.filter(t => t.free).length
 
-  const handleEnterSplit = () => {
-    onEnterSplitMode(selectedRatio)
+  // v2.6 — Scinder simplifié : un clic sur un ratio entre directement en mode
+  // sélection grille (suppression du 2e bouton "Sélectionner la case").
+  const handleRatioClick = (r: SplitRatio) => {
+    setSelectedRatio(r)
+    onEnterSplitMode(r)
   }
 
   const handleCancelSplit = () => {
     onExitSplitMode()
     setManoeuvre('none')
-  }
-
-  const handleMergeClick = (otherId: string) => {
-    sizing.performMerge(otherId).then(ok => {
-      if (ok) setManoeuvre('none')
-    })
   }
 
   return (
@@ -306,7 +316,7 @@ export function UnitInspector({
       </div>
 
       {/* Manoeuvre Phase 2 : split + merge */}
-      {isMyUnit && isMyTurn && (sizing.canSplit || sizing.canMerge) && (
+      {isMyUnit && isMyTurn && (sizing.canSplit || sizing.canMerge || mergeAvailableTargets > 0) && (
         <div className="border-t border-[rgba(226,232,240,0.10)] pt-2">
           <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground mb-2">
             Manœuvre
@@ -323,12 +333,19 @@ export function UnitInspector({
             </button>
             <button
               type="button"
-              disabled={!sizing.canMerge || sizing.busy}
-              onClick={() => setManoeuvre(manoeuvre === 'merge' ? 'none' : 'merge')}
-              className="flex-1 text-[13px] px-2 py-1 border rounded-[2px] uppercase tracking-[0.08em] disabled:opacity-30 disabled:cursor-not-allowed enabled:hover:bg-blue-400/20 transition"
-              style={{ borderColor: '#60a5fa', color: sizing.canMerge ? '#60a5fa' : undefined }}
+              disabled={(mergeAvailableTargets === 0 && !mergeActive) || sizing.busy}
+              onClick={() => {
+                if (mergeActive) onExitMergeMode?.()
+                else onEnterMergeMode?.()
+              }}
+              className="flex-1 text-[13px] px-2 py-1 border-2 rounded-[2px] uppercase tracking-[0.08em] disabled:opacity-30 disabled:cursor-not-allowed enabled:hover:bg-blue-400/20 transition"
+              style={{
+                borderColor: '#60a5fa',
+                color: mergeAvailableTargets > 0 || mergeActive ? '#60a5fa' : undefined,
+                background: mergeActive ? 'rgba(96,165,250,0.20)' : undefined,
+              }}
             >
-              Fusionner
+              {mergeActive ? 'Annuler fusion' : 'Fusionner'}
             </button>
           </div>
           <div className="text-[11px] text-muted-foreground mt-1 italic">
@@ -336,36 +353,23 @@ export function UnitInspector({
           </div>
 
           {manoeuvre === 'split' && sizing.canSplit && !splitActive && (
-            <div className="mt-3 space-y-3 p-3 bg-[rgba(15,23,42,0.6)] rounded-[2px] border border-[rgba(234,179,8,0.3)]">
-              <div>
-                <div className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground mb-1">
-                  Ratio
-                </div>
-                <div className="flex gap-1">
-                  {(['half', 'three_quarter', 'nine_one'] as SplitRatio[]).map(r => (
-                    <button
-                      key={r}
-                      type="button"
-                      onClick={() => setSelectedRatio(r)}
-                      className={`flex-1 text-[13px] px-2 py-1.5 border rounded-[2px] tabular-nums transition ${
-                        selectedRatio === r
-                          ? 'bg-tactica-amber/30 border-tactica-amber text-tactica-amber'
-                          : 'border-[rgba(226,232,240,0.20)] text-muted-foreground hover:bg-[rgba(234,179,8,0.10)]'
-                      }`}
-                    >
-                      {RATIO_LABEL[r]}
-                    </button>
-                  ))}
-                </div>
+            <div className="mt-3 space-y-2 p-3 bg-[rgba(15,23,42,0.6)] rounded-[2px] border border-[rgba(234,179,8,0.3)]">
+              <div className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                Choisis le ratio — les cases adjacentes s'illumineront aussitôt
               </div>
-              <button
-                type="button"
-                onClick={handleEnterSplit}
-                disabled={freeAdjacentCount === 0 || sizing.busy}
-                className="w-full text-[13px] font-semibold uppercase tracking-[0.08em] px-3 py-2 border-2 rounded-[2px] bg-tactica-amber/15 border-tactica-amber text-tactica-amber enabled:hover:bg-tactica-amber/30 disabled:opacity-40 disabled:cursor-not-allowed transition"
-              >
-                Sélectionner la case →
-              </button>
+              <div className="flex gap-1">
+                {(['half', 'three_quarter', 'nine_one'] as SplitRatio[]).map(r => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => handleRatioClick(r)}
+                    disabled={freeAdjacentCount === 0 || sizing.busy}
+                    className="flex-1 text-[13px] font-semibold px-2 py-2 border-2 rounded-[2px] tabular-nums transition border-tactica-amber/60 text-tactica-amber bg-tactica-amber/10 enabled:hover:bg-tactica-amber/30 enabled:hover:border-tactica-amber disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
+                    {RATIO_LABEL[r]}
+                  </button>
+                ))}
+              </div>
               <div className="text-[11px] text-muted-foreground text-center italic">
                 {freeAdjacentCount === 0
                   ? 'Aucune case adjacente libre.'
@@ -392,32 +396,19 @@ export function UnitInspector({
             </div>
           )}
 
-          {manoeuvre === 'merge' && sizing.canMerge && (
-            <div className="mt-3 space-y-2 p-2 bg-[rgba(15,23,42,0.6)] rounded-[2px] border border-[rgba(96,165,250,0.3)]">
-              <div className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
-                Pion adjacent à fusionner
+          {mergeActive && (
+            <div className="mt-3 space-y-2 p-3 bg-blue-500/10 rounded-[2px] border-2 border-blue-400 animate-pulse">
+              <div className="text-[13px] font-semibold uppercase tracking-[0.08em] text-blue-300 text-center">
+                Choisis la cible alliée
               </div>
-              <div className="space-y-1">
-                {sizing.mergeTargets.map(t => {
-                  const dir = hexDirection(t.position.q - unit.position.q, t.position.r - unit.position.r)
-                  return (
-                    <button
-                      key={t.id}
-                      type="button"
-                      disabled={sizing.busy}
-                      onClick={() => handleMergeClick(t.id)}
-                      title={`${KIND_LABEL[t.kind]} à ${dir.label}, ${t.effective}/${t.effectiveMax} hommes`}
-                      className="w-full flex items-center gap-2 text-[12px] px-2 py-1 border rounded-[2px] disabled:opacity-30 disabled:cursor-not-allowed enabled:hover:bg-blue-400/20 transition"
-                      style={{ borderColor: '#60a5fa', color: '#60a5fa' }}
-                    >
-                      <span className="text-[14px] leading-none">{dir.arrow}</span>
-                      <span className="flex-1 text-left">
-                        {KIND_LABEL[t.kind]} · {dir.label}
-                      </span>
-                      <span className="tabular-nums opacity-80">{t.effective}/{t.effectiveMax}</span>
-                    </button>
-                  )
-                })}
+              <div className="text-[12px] text-foreground text-center leading-relaxed">
+                Clique sur une unité <span className="text-blue-300 font-semibold">cerclée de bleu</span> sur la carte.
+                {!unit.hasMoved && (
+                  <> Si elle est <b>distante</b>, ton pion se déplacera automatiquement pour la rejoindre.</>
+                )}
+              </div>
+              <div className="text-[11px] text-muted-foreground text-center italic">
+                {mergeAvailableTargets} cible{mergeAvailableTargets > 1 ? 's' : ''} disponible{mergeAvailableTargets > 1 ? 's' : ''}.
               </div>
             </div>
           )}
@@ -574,17 +565,6 @@ function StatCell({
       </div>
     </div>
   )
-}
-
-// Convention TACTICA flat-top hex (cf. engine/hex/neighbors.ts HEX_DIRECTIONS)
-function hexDirection(dq: number, dr: number): { arrow: string; label: string } {
-  if (dq === +1 && dr ===  0) return { arrow: '→', label: 'Est' }
-  if (dq === +1 && dr === -1) return { arrow: '↗', label: 'N-E' }
-  if (dq ===  0 && dr === -1) return { arrow: '↖', label: 'N-O' }
-  if (dq === -1 && dr ===  0) return { arrow: '←', label: 'Ouest' }
-  if (dq === -1 && dr === +1) return { arrow: '↙', label: 'S-O' }
-  if (dq ===  0 && dr === +1) return { arrow: '↘', label: 'S-E' }
-  return { arrow: '·', label: `q${dq >= 0 ? '+' : ''}${dq} r${dr >= 0 ? '+' : ''}${dr}` }
 }
 
 function ActionLine({

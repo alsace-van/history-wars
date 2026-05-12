@@ -1,7 +1,7 @@
+// v3.24 (12/05/2026) — UX manœuvres : mergeMode global + clic cible map (move+merge) + scinder simplifié
 // v3.23 (12/05/2026) — UX : journal rapports combat replié par défaut + toast sur nouveau combat + bouton Topbar
 // v3.22 (12/05/2026) — MVP tweak : MVP_CUBES dynamique selon tactical.boardRadius (fallback 7)
 // v3.21 (11/05/2026) — Phase 2.6 C : useEngagement + ligne 3D + bouton Rompre + bloque mouvement standard
-// v3.20 (11/05/2026) — Phase 2.5 fix UX : passe support à BattleSidebar (affichage cohésion temps réel dans Inspector)
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -18,6 +18,7 @@ import { useSettings } from '@hooks/useSettings'
 import { useUnitCriticalActions } from '@hooks/useUnitCriticalActions'
 import { useBattleClickHandlers } from '@hooks/useBattleClickHandlers'
 import { useEngagement } from '@hooks/useEngagement'
+import { useUnitSizing } from '@hooks/useUnitSizing'
 import type { EngagementPair } from '@render/effects/EngagementOverlay'
 import {
   isHost,
@@ -177,6 +178,8 @@ export function Game() {
   }, [players])
 
   const [splitMode, setSplitMode] = useState<SplitRatio | null>(null)
+  // v3.24 — mode "choisir cible fusion sur la map" (toggle via Inspector ou clic sur unité cible)
+  const [mergeMode, setMergeMode] = useState(false)
   // Phase 2.5 C — modes UI actions critiques
   const [retreatMode, setRetreatMode] = useState(false)
   const [suicideMode, setSuicideMode] = useState(false)
@@ -233,6 +236,26 @@ export function Game() {
 
   const selectedCohesionState = selectedUnit ? cohesionStateMap.get(selectedUnit.id) : undefined
   const selectedSupport = selectedUnit ? supportMap.get(selectedUnit.id) : undefined
+
+  // v3.24 — Hook sizing centralisé pour exposer mergeTargets au plateau (highlights bleus)
+  // ET fournir performMerge utilisé par le click handler en mergeMode. Inspector instancie
+  // son propre useUnitSizing — la double instanciation est OK (les résultats sont identiques).
+  const sizing = useUnitSizing({
+    gameId: gameId ?? null,
+    unit: selectedUnit,
+    allUnits: unitStates,
+    isMyUnit: !!selectedUnit && selectedUnit.team === myTeam,
+    isMyTurn,
+  })
+  const mergeTargetUnitIds = useMemo<Set<string>>(() => {
+    if (!mergeMode) return new Set()
+    return new Set(sizing.mergeTargets.map(t => t.id))
+  }, [mergeMode, sizing.mergeTargets])
+  // Reset mergeMode si l'unité courante change / si la liste de cibles devient vide / si fin de tour.
+  useEffect(() => {
+    if (!mergeMode) return
+    if (!selectedUnit || sizing.mergeTargets.length === 0 || !isMyTurn) setMergeMode(false)
+  }, [mergeMode, selectedUnit, sizing.mergeTargets.length, isMyTurn])
 
   // Phase 2.6 C — Lookup unitId → UnitState pour récupérer positions + kind/team des opponents.
   const unitById = useMemo<Map<string, UnitState>>(() => {
@@ -367,6 +390,10 @@ export function Game() {
     retreatTargetKeys,
     suicideMode,
     suicideTargetIds,
+    mergeMode,
+    mergeTargetUnitIds,
+    performMerge: sizing.performMerge,
+    setMergeMode,
     selectedCohesionState,
     skipShakenWarning: uiSettings.skipShakenWarning,
     actionsBusy,
@@ -572,6 +599,7 @@ export function Game() {
               tileStates={showBattle ? tileStates : undefined}
               selectedUnitId={selectedUnitId}
               targetableUnitIds={showBattle ? targetableUnitIds : undefined}
+              mergeTargetUnitIds={showBattle ? mergeTargetUnitIds : undefined}
               exhaustedUnitIds={showBattle ? exhaustedUnitIds : undefined}
               highlightedUnitIds={showBattle ? highlightedUnitIds : undefined}
               cameraFocusCube={cameraFocusCube}
@@ -640,8 +668,12 @@ export function Game() {
                 allUnits={unitStates}
                 gameId={game.id}
                 splitActive={splitMode !== null}
-                onEnterSplitMode={ratio => setSplitMode(ratio)}
+                onEnterSplitMode={ratio => { setMergeMode(false); setSplitMode(ratio) }}
                 onExitSplitMode={() => setSplitMode(null)}
+                mergeActive={mergeMode}
+                mergeAvailableTargets={sizing.mergeTargets.length}
+                onEnterMergeMode={() => { setSplitMode(null); setMergeMode(true) }}
+                onExitMergeMode={() => setMergeMode(false)}
                 cohesionState={selectedCohesionState}
                 support={selectedSupport}
                 canRetreat={critical.canRetreat}
