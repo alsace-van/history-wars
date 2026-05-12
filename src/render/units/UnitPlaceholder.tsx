@@ -1,7 +1,7 @@
+// v2.4 (12/05/2026) — CavalryMesh dédié pour unit.kind === 'C' (cavalier.glb)
 // v2.3 (12/05/2026) — UX : prop mergeTarget (halo bleu cyan, cible fusion sélectionnable)
 // v2.2 (12/05/2026) — MVP tweak : vitesse anim par UnitKind (C rapide, I/A lents)
 // v2.1 (11/05/2026) — Phase 2.5 C.2 : ajout UnitStatusRing (état) + UnitSupportRing (soutien)
-// v2.0 (10/05/2026) — Phase 2 2E.1 : scale par effective/effectiveMax (Phase 2) + plage 0.35-1.0 amplifiee
 import { Suspense, useEffect, useMemo, useRef } from 'react'
 import { Billboard, Text } from '@react-three/drei'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
@@ -13,6 +13,7 @@ import type { UnitInstance } from '../types'
 import type { UnitKind } from '@/types/game'
 import { COLORS } from '../colors'
 import { SoldierMesh } from './SoldierMesh'
+import { CavalryMesh } from './CavalryMesh'
 import { UnitHealthBar } from './UnitHealthBar'
 import { UnitStatusRing } from './UnitStatusRing'
 import { UnitSupportRing } from './UnitSupportRing'
@@ -374,7 +375,11 @@ export function UnitPlaceholder({
 
       <group position={[0, soldierTranslateY, 0]} rotation={[0, facingY, 0]} scale={[soldierScale, soldierScale, soldierScale]}>
         <Suspense fallback={null}>
-          <SoldierMesh team={unit.team} opacity={opacity} selected={selected} />
+          {unit.kind === 'C' ? (
+            <CavalryMesh team={unit.team} opacity={opacity} selected={selected} />
+          ) : (
+            <SoldierMesh team={unit.team} opacity={opacity} selected={selected} />
+          )}
         </Suspense>
       </group>
 
