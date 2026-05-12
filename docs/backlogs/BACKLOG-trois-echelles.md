@@ -318,6 +318,74 @@ Cette discipline est ce qui garantit que TACTICA reste **livrable à chaque phas
 - **Architecture B (caméra unique)** : à reconsidérer Phase 13+ si perf et envie sont là.
 - **IA stratégique** : heuristiques pures ou MCTS léger ? Le stratégique est le plus combinatoire des 3.
 
+## 13. Boucle opérationnelle "campagne" (feedback user 12/05)
+
+Ajout de design : ce que doit pouvoir faire un joueur **en mode campagne opérationnelle**, indépendamment des batailles tactiques. Compatible avec § 1-12 ci-dessus, précise les briques manquantes.
+
+### 13.1 Objectifs sur la map
+- Chaque tile opérationnel peut porter un **objectif typé** : ville à prendre, pont à tenir, col à franchir, dépôt à piller, source d'eau à contrôler, signal à allumer.
+- Affichage permanent comme **marqueurs cliquables** sur la carte opérationnelle (icône + libellé + camp possesseur).
+- Pour chaque régiment, le joueur peut **assigner un objectif courant** (clic sur le pion → clic sur le marqueur). L'IA peut aussi en assigner via heuristiques (cf. § 9 risque IA opérationnelle).
+- Objectifs peuvent être **séquencés** : route ordonnée (atteindre A, puis B, puis C). Stocké côté `operational_units` en `route_q[]`, `route_r[]`.
+
+### 13.2 Marche automatique multi-jours
+- Une fois objectif assigné, le régiment **marche tout seul** chaque tour opérationnel selon sa vitesse + le terrain + sa fatigue.
+- Le joueur n'a plus à donner d'ordre tant que l'objectif n'est pas atteint, sauf intervention explicite (reroutage, halte forcée, repli).
+- Vitesse réaliste par kind (km/jour ou m/min selon échelle temporelle § 3) : infanterie 25 km/jour, cavalerie 50 km/jour, artillerie 15 km/jour, modifiés par terrain et météo.
+
+### 13.3 Cycle jour/nuit
+- Le tour opérationnel encode l'heure (`current_op_hour: 0-23`) en plus du jour (`current_op_day`).
+- **Jour (06h-18h)** : marche normale, vitesse pleine.
+- **Crépuscule (18h-20h)** : vitesse réduite, vigilance accrue (détection diminuée pour l'adversaire).
+- **Nuit (20h-06h)** : **bivouac automatique** sur le tile courant (sauf si ordre "marche forcée nocturne" → cohésion −, fatigue ++).
+  - Récupération cohésion + fatigue pendant le bivouac (cf. règle BACKLOG-formations sur fatigue).
+  - Repérage adverse réduit (cf. § 6.2 fog tactique : "brouillard opérationnel = vision réduite tactique" — extension : nuit = vision opérationnelle réduite aussi).
+- **Aube (06h)** : reprise auto de la marche selon route assignée.
+
+### 13.4 Détection de rencontre et bascule tactique
+- Pendant la marche, à chaque pas opérationnel, on vérifie les **rencontres** : régiments ennemis à portée de détection (rayon variable selon météo, terrain, vigilance, nuit).
+- Rencontre détectée → **modale joueur** ("Engager / Esquiver / Négocier" cf. § 5.4) avec timer si action requise.
+- Engagement → **bascule cinématique vers tactique** (cf. § 5.1) avec **héritage contexte** : direction d'arrivée, fatigue accumulée, météo, terrain dominant (cf. § 6.2 tableau).
+- Si plusieurs régiments alliés sont à portée mutuelle d'aide, ils peuvent **converger** sur le tactique (renforts qui arrivent en cours de combat, cf. § 2.1).
+
+### 13.5 Arrivée sur objectif
+- Régiment arrive sur tile objectif → 3 sous-cas :
+  - **Objectif inoccupé** : capture immédiate, état tile passe à `held_by` du régiment, bonus campagne (points méta cf. BACKLOG-points-meta).
+  - **Objectif occupé par ennemi** : bascule tactique forcée (siège, assaut). Pas d'esquive possible.
+  - **Objectif occupé par allié** : pas de combat, renfort de la garnison.
+
+### 13.6 Implications BDD additionnelles
+
+```sql
+-- Phase 8, en complément du § 8 plus haut
+operational_objectives
+  id, theater_id, position_q int, position_r int,
+  kind ('city' | 'bridge' | 'pass' | 'depot' | 'water' | 'beacon'),
+  held_by_team text, -- 'blue' | 'red' | 'neutral'
+  importance int, -- score campagne
+
+operational_units (ajouts)
+  route_q int[], route_r int[],         -- séquence d'objectifs
+  current_objective_idx int,             -- où en est-on dans la route
+  status_phase text,                     -- 'marching' | 'bivouacking' | 'engaged' | 'capturing' | 'resting'
+  fatigue float,                          -- 0.0 - 1.0
+  cohesion float                          -- 0.0 - 1.0 (cf. BACKLOG-regiments-cohesion)
+
+game_state (ajouts)
+  current_op_day int,
+  current_op_hour int,                   -- 0-23
+```
+
+### 13.7 Pré-requis Phase 8
+
+Cette boucle exige :
+- Architecture 3 niveaux (§ 4) en place.
+- Système messager (BACKLOG-communication-ordres) opérationnel (ordres de reroutage transitent par messager, pas instantanés).
+- Système fatigue (BACKLOG-formations § fatigue) opérationnel.
+- Système cohésion (BACKLOG-regiments-cohesion) opérationnel — étendu hors combat.
+
+Origine : feedback user 12/05 après session 20 (Phase 3.1 fog tactique livré). Cette boucle est ce qui transforme TACTICA d'un jeu de batailles en un jeu de **campagne** — différenciation forte vs Total War (qui fait la campagne au tour-par-tour figé).
+
 ## 12. Ce que ça apporte au jeu
 
 - **Niche structurellement défendable** : aucun jeu grand public ne fait les 3 niveaux. C'est pas un avantage marketing, c'est un avantage de design.
