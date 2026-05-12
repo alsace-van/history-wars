@@ -1,8 +1,8 @@
+// v3.23 (12/05/2026) — UX : journal rapports combat replié par défaut + toast sur nouveau combat + bouton Topbar
 // v3.22 (12/05/2026) — MVP tweak : MVP_CUBES dynamique selon tactical.boardRadius (fallback 7)
 // v3.21 (11/05/2026) — Phase 2.6 C : useEngagement + ligne 3D + bouton Rompre + bloque mouvement standard
 // v3.20 (11/05/2026) — Phase 2.5 fix UX : passe support à BattleSidebar (affichage cohésion temps réel dans Inspector)
-// v3.19 (11/05/2026) — Phase 2.5 C.2 : transmission cohesionStateMap + supportMap à TacticalScene (anneaux 3D)
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useRequireAuth } from '@hooks/useRequireAuth'
@@ -463,6 +463,41 @@ export function Game() {
     if (!finished) setEndModalDismissed(false)
   }, [finished, gameId])
 
+  // v3.23 — Journal des combats : replié par défaut, le bouton "Rapports" de
+  // GameTopBar le toggle. Chaque nouvelle notification déclenche un toast bref.
+  const [combatPanelOpen, setCombatPanelOpen] = useState(false)
+  const prevCombatNotifLenRef = useRef(0)
+  useEffect(() => {
+    const prev = prevCombatNotifLenRef.current
+    prevCombatNotifLenRef.current = combatNotifs.length
+    if (combatNotifs.length <= prev) return
+    // Nouvelle notif arrivée → toaste la dernière (ephemere, 4s)
+    const last = combatNotifs[combatNotifs.length - 1]
+    const phase = last.kind === 'charge' ? 'Charge cav' : last.kind === 'melee' ? 'Mêlée' : 'Tir'
+    const perspective = last.isMyAttack
+      ? `${phase} : ${last.attackerKindLabel} → ${last.defenderKindLabel} adverse`
+      : `${phase} subi : ${last.attackerKindLabel} adverse → ${last.defenderKindLabel}`
+    const losses = last.defenderLosses
+    const subtitle = losses.isKilled
+      ? `${last.defenderKindLabel} décimée`
+      : `${losses.killed} morts au combat`
+    toast(perspective, {
+      description: subtitle,
+      duration: 4000,
+      action: {
+        label: 'Détail',
+        onClick: () => setCombatPanelOpen(true),
+      },
+    })
+  }, [combatNotifs])
+  // Si le panel est ouvert et que la liste se vide (clear) → on ferme aussi.
+  useEffect(() => {
+    if (combatPanelOpen && combatNotifs.length === 0) setCombatPanelOpen(false)
+  }, [combatPanelOpen, combatNotifs.length])
+  const toggleCombatPanel = useCallback(() => {
+    setCombatPanelOpen(prev => !prev)
+  }, [])
+
   if (authLoading || !user || loading || !game) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -500,6 +535,9 @@ export function Game() {
         subtitleLabel={subtitleLabel}
         username={(user.user_metadata?.username as string | undefined) ?? user.email ?? 'soldat'}
         onBack={() => navigate('/lobby')}
+        combatReportsCount={showBattle ? combatNotifs.length : undefined}
+        combatReportsOpen={combatPanelOpen}
+        onToggleCombatReports={showBattle ? toggleCombatPanel : undefined}
       />
 
       <div className="flex flex-1 min-h-0">
@@ -550,13 +588,19 @@ export function Game() {
               supportMap={showBattle ? supportMap : undefined}
               engagements={showBattle ? enginePairs : undefined}
             />
-            <CombatResultPanel
-              notifications={combatNotifs}
-              onActiveChange={setActiveCombatNotif}
-              onRemove={removeCombatNotif}
-              onClear={clearCombatNotifs}
-              onFocusUnit={handleFocusUnit}
-            />
+            {combatPanelOpen && (
+              <CombatResultPanel
+                notifications={combatNotifs}
+                onActiveChange={setActiveCombatNotif}
+                onRemove={removeCombatNotif}
+                onClear={() => {
+                  clearCombatNotifs()
+                  setCombatPanelOpen(false)
+                }}
+                onClose={() => setCombatPanelOpen(false)}
+                onFocusUnit={handleFocusUnit}
+              />
+            )}
             {hoveredEnemy && selectedUnit && (
               <CombatPreviewTooltip attacker={selectedUnit} defender={hoveredEnemy} screenPos={mousePos} />
             )}

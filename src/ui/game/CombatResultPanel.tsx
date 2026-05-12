@@ -1,7 +1,7 @@
+// v3.4 (12/05/2026) — UX : bouton réduire ── (ferme sans vider) + monté seulement quand panel ouvert
 // v3.3 (12/05/2026) — Fog of war fix : effectif AVANT visible uniquement côté joueur (sinon déduction triviale)
 // v3.2 (12/05/2026) — Sprint UX : fix auto-select (useRef length) + effectif AVANT + tailles texte
 // v3.1 (11/05/2026) — Phase 2.5 fix : "Soldats restants" affiche effectiveAfter (absolu) au lieu de hpAfter (% legacy)
-// v3.0 (10/05/2026) — Phase 2 2D.3 : badge phase melee/ranged/charge + label tab "Charge" si applicable
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Team } from '@/types/game'
 import type { CombatNotification } from '@hooks/useCombatNotifications'
@@ -15,6 +15,8 @@ interface CombatResultPanelProps {
   onRemove: (id: string) => void
   /** Vide toutes les notifications (X global du panel). */
   onClear: () => void
+  /** v3.4 : ferme le panel sans vider la liste (bouton "réduire" ─). Le badge TopBar reste actif. */
+  onClose?: () => void
   /** Phase 1.5 : centre la caméra sur une unité (typiquement l'unité du viewer dans le combat actif). */
   onFocusUnit?: (unitId: string) => void
 }
@@ -29,7 +31,7 @@ const TEAM_NAME: Record<Team, string> = {
   red: 'Rouges',
 }
 
-export function CombatResultPanel({ notifications, onActiveChange, onRemove, onClear, onFocusUnit }: CombatResultPanelProps) {
+export function CombatResultPanel({ notifications, onActiveChange, onRemove, onClear, onClose, onFocusUnit }: CombatResultPanelProps) {
   // Onglet actif : par defaut le dernier (le plus recent)
   const [activeId, setActiveId] = useState<string | null>(null)
 
@@ -88,14 +90,26 @@ export function CombatResultPanel({ notifications, onActiveChange, onRemove, onC
               />
             ))}
           </div>
-          <button
-            onClick={onClear}
-            aria-label="Tout fermer"
-            className="shrink-0 w-6 h-6 flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-[rgba(239,68,68,0.10)] rounded-[2px] transition-colors text-[16px] leading-none"
-            title="Tout fermer"
-          >
-            ✕
-          </button>
+          <div className="shrink-0 flex items-center gap-1">
+            {onClose && (
+              <button
+                onClick={onClose}
+                aria-label="Réduire"
+                title="Réduire (garder les rapports en mémoire)"
+                className="w-6 h-6 flex items-center justify-center text-muted-foreground hover:text-tactica-amber hover:bg-tactica-amber/10 rounded-[2px] transition-colors text-[18px] leading-none"
+              >
+                ─
+              </button>
+            )}
+            <button
+              onClick={onClear}
+              aria-label="Tout fermer"
+              className="w-6 h-6 flex items-center justify-center text-muted-foreground hover:text-destructive hover:bg-[rgba(239,68,68,0.10)] rounded-[2px] transition-colors text-[16px] leading-none"
+              title="Vider et fermer"
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
         {/* Contenu de l'onglet actif */}
