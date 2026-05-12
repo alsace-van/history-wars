@@ -1,7 +1,7 @@
+// v3.3 (12/05/2026) — Fog of war fix : effectif AVANT visible uniquement côté joueur (sinon déduction triviale)
 // v3.2 (12/05/2026) — Sprint UX : fix auto-select (useRef length) + effectif AVANT + tailles texte
 // v3.1 (11/05/2026) — Phase 2.5 fix : "Soldats restants" affiche effectiveAfter (absolu) au lieu de hpAfter (% legacy)
 // v3.0 (10/05/2026) — Phase 2 2D.3 : badge phase melee/ranged/charge + label tab "Charge" si applicable
-// v2.1 (10/05/2026) — Phase 1.5 : bouton "Centrer la vue" sur l'onglet actif (focus camera mon unité)
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Team } from '@/types/game'
 import type { CombatNotification } from '@hooks/useCombatNotifications'
@@ -254,8 +254,12 @@ function LossesBlock({ team, unitLabel, losses, showFullDetail, isRiposte }: Los
       </div>
 
       <div className="space-y-1 text-[13px] tabular-nums">
-        {/* v3.2 : effectif AVANT visible pour les 2 perspectives — donne le repere brut */}
-        <Row icon="◐" label="Soldats avant" value={losses.effectiveBefore} color="#94a3b8" />
+        {/* v3.3 : effectif AVANT visible UNIQUEMENT côté joueur (showFullDetail).
+            Sinon le joueur déduit l'effectif courant ennemi par soustraction
+            (before - killed = after), trou de fog of war. */}
+        {showFullDetail && (
+          <Row icon="◐" label="Soldats avant" value={losses.effectiveBefore} color="#94a3b8" />
+        )}
         <Row icon="⚰" label="Morts au combat" value={losses.killed} color="#ef4444" />
         {showFullDetail && (
           <>
