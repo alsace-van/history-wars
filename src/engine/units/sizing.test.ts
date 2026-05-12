@@ -201,13 +201,24 @@ describe('engine/units/sizing — mergeUnits', () => {
     expect(result.killed).toBe(180)
   })
 
-  it('merge calcule morale ponderee par effective', () => {
+  it('merge calcule morale ponderee + bonus regroupement (cap moraleMax)', () => {
     const target = makeUnit({ id: 'a', effective: 800, morale: 100, position: cube(0, 0, 0) })
     const source = makeUnit({ id: 'b', effective: 200, morale: 50, position: cube(1, 0, -1) })
     const result = mergeUnits({ target, source })
     if (isSizingError(result)) throw new Error('unexpected error')
-    // Moyenne ponderee : (100*800 + 50*200) / 1000 = (80000 + 10000) / 1000 = 90
-    expect(result.morale).toBe(90)
+    // Moyenne pondérée : (100*800 + 50*200) / 1000 = 90, + bonus 25 = 115 → cap à 100.
+    expect(result.morale).toBe(100)
+  })
+
+  // v1.1 — bonus regroupement permet à 2 pions Brisés de sortir de la déroute
+  it('merge applique bonus +25 : 2 pions à moral 0 → moral 25, non routés', () => {
+    const target = makeUnit({ id: 'a', effective: 800, morale: 0, routed: true, position: cube(0, 0, 0) })
+    const source = makeUnit({ id: 'b', effective: 800, morale: 0, routed: true, position: cube(1, 0, -1) })
+    const result = mergeUnits({ target, source })
+    if (isSizingError(result)) throw new Error('unexpected error')
+    expect(result.morale).toBe(25)
+    // MORALE_ROUT_THRESHOLD = 25 → < 25 routed → exact 25 = non routed
+    expect(result.routed).toBe(false)
   })
 
   it('merge refuse si subKind different (ex: archer vs artillery)', () => {

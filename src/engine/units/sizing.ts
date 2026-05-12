@@ -1,11 +1,20 @@
+// v1.1 (12/05/2026) — Merge : bonus moral +25 + recalcul routed (regroupement remet en ordre)
 // v1.0 (10/05/2026) — Phase 2 2A.3 : split / merge de pions (effectif elastique)
 // Source : PLAN-PHASE-2-COMBAT-V2.md § 2A.3
 // Frontiere engine/ : zero React, zero Three, zero Supabase, zero rng
 
 import type { Cube } from '../hex'
 import { cubeDistance } from '../hex'
+import { MORALE_ROUT_THRESHOLD } from '../morale'
 import { resolveUnitStatsV2 } from './stats'
 import type { UnitState } from './types'
+
+/**
+ * Bonus de moral appliqué lors d'une fusion : représente le ralliement (les hommes
+ * voient renforts, ravitaillement, regroupement → reprennent confiance).
+ * Permet à 2 pions Brisés (moral 0) de se regrouper et sortir de la déroute.
+ */
+export const MERGE_MORALE_BONUS = 25
 
 /**
  * Ratios autorises pour scinder un pion :
@@ -211,12 +220,18 @@ export function mergeUnits(params: MergeParams): MergeResult | SizingError {
   // Cumuler le min permet aussi un seuil plus haut sur un pion gros.
   const mergedEffectiveMin = target.effectiveMin + source.effectiveMin
 
-  // Morale ponderee : moyenne ponderee par les effectifs (un gros bataillon impose son moral)
+  // Morale pondérée par les effectifs + bonus de regroupement (v1.1).
+  // Le bonus traduit le ralliement : renforts vus, repli ordonné, ravitaillement.
+  // Permet à 2 pions brisés (moral 0) de fusionner et sortir de la déroute (à 25).
   const weightedMorale = totalEffective > 0
     ? Math.round((target.morale * target.effective + source.morale * source.effective) / totalEffective)
     : Math.round((target.morale + source.morale) / 2)
+  const moraleMax = target.moraleMax // = source.moraleMax (constante 100 par kind)
+  const mergedMorale = Math.min(moraleMax, weightedMorale + MERGE_MORALE_BONUS)
+  // Routed recalculé sur le moral fusionné (et non plus AND legacy) → cohérent
+  // avec MORALE_ROUT_THRESHOLD partout dans le moteur.
+  const mergedRouted = mergedMorale < MORALE_ROUT_THRESHOLD
 
-  // Routed : le pion resultant est routé si les 2 l'étaient
   const merged: UnitState = {
     ...target,
     effective: totalEffective,
@@ -226,8 +241,8 @@ export function mergeUnits(params: MergeParams): MergeResult | SizingError {
     killed: totalKilled,
     hp: totalHp,
     hpMax: totalHpMax,
-    morale: weightedMorale,
-    routed: target.routed && source.routed,
+    morale: mergedMorale,
+    routed: mergedRouted,
     hasMoved: true,
     hasAttacked: true,
     lastMovePath: undefined,

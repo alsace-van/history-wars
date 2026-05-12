@@ -1,12 +1,16 @@
+// v2.2 (12/05/2026) — Merge : bonus moral +25 + recalcul routed (mirror src sizing v1.1)
 // v2.1 (12/05/2026) — MVP tweak : C movement 6→4 + A range 7→6 (mirror src/engine/units/stats.ts v2.2)
 // v2.0 (10/05/2026) — Phase 2 2C.1 : effective elastique (UnitState v2 + UNIT_STATS_V2 + sizing)
 // v1.2 (10/05/2026) — Phase 1.5 : ajout `wounded` a UnitState (mirror src/engine/units/types.ts v1.1)
-// v1.0 (09/05/2026) — Phase 1 L1B.2 : port engine/units pour Deno EF
 // Source de verite : src/engine/units/{stats.ts,types.ts,sizing.ts}. Duplication controlee (piege #12).
 
 import type { UnitKind, Team } from '../types.ts'
 import type { Cube } from './hex/index.ts'
 import { cubeDistance } from './hex/index.ts'
+import { MORALE_ROUT_THRESHOLD } from './morale/index.ts'
+
+/** Bonus moral à la fusion (mirror src v1.1) — voir engine/units/sizing.ts. */
+export const MERGE_MORALE_BONUS = 25
 
 export interface UnitStats {
   hpMax: number
@@ -253,6 +257,10 @@ export function mergeUnits(params: MergeParams): UnitState | SizingError {
   const weightedMorale = totalEffective > 0
     ? Math.round((target.morale * target.effective + source.morale * source.effective) / totalEffective)
     : Math.round((target.morale + source.morale) / 2)
+  // v2.2 — bonus regroupement + recalc routed (mirror src/engine/units/sizing.ts v1.1)
+  const moraleMax = target.moraleMax
+  const mergedMorale = Math.min(moraleMax, weightedMorale + MERGE_MORALE_BONUS)
+  const mergedRouted = mergedMorale < MORALE_ROUT_THRESHOLD
 
   const merged: UnitState = {
     ...target,
@@ -263,8 +271,8 @@ export function mergeUnits(params: MergeParams): UnitState | SizingError {
     killed: totalKilled,
     hp: totalHp,
     hpMax: totalHpMax,
-    morale: weightedMorale,
-    routed: target.routed && source.routed,
+    morale: mergedMorale,
+    routed: mergedRouted,
     hasMoved: true,
     hasAttacked: true,
     lastMovePath: undefined,
