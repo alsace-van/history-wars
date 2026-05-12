@@ -1,7 +1,7 @@
+// v1.4 (12/05/2026) — Phase 3.1 fix : hex hidden rendu en noir opaque (masque PageBackground qui leak à travers)
 // v1.3 (10/05/2026) — Phase 2 2D.6 : support state 'split-target' (ambre, case adjacente pour scinder)
 // v1.2 (10/05/2026) — P1-L1C4-04 : support state 'dangerous' (ZoC ennemie, orange amorti)
 // v1.1 (09/05/2026) — L1C.3 : support states 'reachable' (cyan) + 'targetable' (rouge, prepare L1C.4)
-// v1.0c (09/05/2026) — Fix : Shape + ExtrudeGeometry, sommets explicitement aux angles 0,60,...,300
 import { memo, useMemo } from 'react'
 import * as THREE from 'three'
 import type { Cube } from '@engine/hex'
@@ -90,7 +90,18 @@ function HexTileBase({
     return [w.x, elevation, w.y]
   }, [cube, hexSize, elevation])
 
-  if (visibility === 'hidden') return null
+  // v1.4 — hex hidden : rendu opaque noir (masque PageBackground qui transparait sinon).
+  // meshBasicMaterial : pas affecté par la lumière (uniformité parfaite). Pas d'edges, pas d'event handlers
+  // (le hex est invisible au joueur, autant ne pas le rendre cliquable/hoverable).
+  if (visibility === 'hidden') {
+    return (
+      <group position={position}>
+        <mesh geometry={HEX_GEOMETRY} scale={[hexSize, 1, hexSize]}>
+          <meshBasicMaterial color={0x000000} />
+        </mesh>
+      </group>
+    )
+  }
 
   return (
     <group position={position}>
