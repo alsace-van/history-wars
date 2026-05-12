@@ -1,13 +1,7 @@
+// v1.1 (12/05/2026) — Fix : utilise cubeKey() au lieu de "q,r,s" custom (mismatch boardKeys = q,r)
 // v1.0 (12/05/2026) — Phase 3.1-C : carte de visibilité client (fog évolué)
-// Calcule en un seul useMemo :
-//   - visibleTileMap : Map<cubeKey, HexTileVisibility> ('visible' pour les hex couverts, sinon absent = 'hidden').
-//   - enemyVisibility : Map<unitId, VisibilityLevel> pour les ennemis observés.
-//   - visibleEnemyIds : Set<unitId> dérivé (compat existing useTacticalSelection).
-//
-// Clé de mémo = unitStates + myTeam + boardKeys + activeTeam.
-// Recalculé à chaque tour (activeTeam change) ou à chaque modification de unitStates.
-// Pas de "mémoire de terrain" (state 'fog' pour hex précédemment vus) — réservé Phase 4.
 import { useMemo } from 'react'
+import { cubeKey } from '@engine/hex'
 import { visibleEnemiesFromTeam, visibleHexesFromTeam, type VisibilityLevel } from '@engine/vision'
 import type { UnitState } from '@engine/units'
 import type { HexTileVisibility } from '@render/types'
@@ -56,11 +50,11 @@ export function useVisionMap(p: UseVisionMapParams): UseVisionMapResult {
     for (const k of visibleTileKeys) visibleTileMap.set(k, 'visible')
 
     // L'hex de l'unité observatrice n'est pas dans son propre cover (cf. visibleHexesFromUnit) :
-    // on ajoute manuellement les positions des unités alliées non-routed (le joueur voit ses propres unités).
+    // on ajoute manuellement les positions des unités alliées (le joueur voit ses propres unités).
+    // v1.1 fix : utilise cubeKey() (= "q,r") pour matcher boardKeys, pas une clé "q,r,s" custom.
     for (const u of unitStates) {
       if (u.team !== myTeam) continue
-      // On retourne 'visible' même si routed (l'unité existe pour le joueur).
-      const k = `${u.position.q},${u.position.r},${u.position.s}`
+      const k = cubeKey(u.position)
       if (boardKeys.has(k)) {
         visibleTileMap.set(k, 'visible')
         visibleTileKeys.add(k)
@@ -75,7 +69,7 @@ export function useVisionMap(p: UseVisionMapParams): UseVisionMapResult {
       if (enemy.team === myTeam) continue
       const lvl = enemyVisibility.get(enemy.id)
       if (!lvl) continue
-      const k = `${enemy.position.q},${enemy.position.r},${enemy.position.s}`
+      const k = cubeKey(enemy.position)
       if (boardKeys.has(k)) {
         visibleTileMap.set(k, 'visible')
         visibleTileKeys.add(k)
