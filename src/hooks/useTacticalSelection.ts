@@ -1,7 +1,7 @@
+// v1.8 (12/05/2026) — Post-rupture : mouvement restreint aux hex qui éloignent de TOUS les ennemis adjacents
 // v1.7 (12/05/2026) — Override Brisée : attaque autorisée si ennemi strictement plus petit (mirror handleAttack EF v1.3)
 // v1.6 (11/05/2026) — Phase 2.6 C : engagedUnitIds bloque mouvement standard (Rompre obligatoire)
 // v1.5 (11/05/2026) — Phase 2.5 C : cohesionStateMap + supportMap exposés + bloque attaque standard si Brisé
-// v1.4 (11/05/2026) — Phase 2 hotfix soft-lock : autoriser l'attaque sur ennemi routé (coup de grâce)
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { computeCohesion, computeSupport, type CohesionState, type SupportCount } from '@engine/cohesion'
 import { cubeKey, cubeDistance, neighbors } from '@engine/hex'
@@ -108,6 +108,21 @@ export function useTacticalSelection(
     return computeEnemyZoc(unitStates, selectedUnit.team)
   }, [selectedUnit, isSelectedMine, unitStates])
 
+  // v1.8 — heuristique post-rupture : hasAttacked && !hasMoved + ennemi(s) adjacent(s)
+  // → l'unité vient de Rompre ce tour. Pas de migration BDD nécessaire car aucun
+  // autre flux ne laisse ce triplet d'état (artillerie ne tire pas adjacent, mêlée
+  // crée un engagement → impossible de bouger sans rompre).
+  const postRuptureAdjacentEnemies = useMemo<UnitState[]>(() => {
+    if (!selectedUnit || !isSelectedMine) return []
+    if (!selectedUnit.hasAttacked || selectedUnit.hasMoved) return []
+    const adj: UnitState[] = []
+    for (const u of unitStates) {
+      if (u.team === selectedUnit.team) continue
+      if (cubeDistance(selectedUnit.position, u.position) === 1) adj.push(u)
+    }
+    return adj
+  }, [selectedUnit, isSelectedMine, unitStates])
+
   const reachableMap = useMemo<Map<string, number>>(() => {
     if (!selectedUnit || !isSelectedMine || !isMyTurn) return new Map()
     if (selectedUnit.hasMoved || selectedUnit.routed) return new Map()
@@ -125,13 +140,35 @@ export function useTacticalSelection(
     })
     const startKey = cubeKey(selectedUnit.position)
     const out = new Map<string, number>()
+
+    // v1.8 — post-rupture : ne garder que les hex qui s'éloignent STRICTEMENT de tous
+    // les ennemis ex-engagés (= adjacents au moment de la rupture, puisque l'unité
+    // n'a pas bougé depuis).
+    const filterPostRupture = postRuptureAdjacentEnemies.length > 0
     for (const [k, c] of raw) {
       if (k === startKey) continue
       if (!boardKeys.has(k)) continue
+      if (filterPostRupture) {
+        // Recompose la position depuis raw — bfsReachable expose le hex en clé. On a
+        // besoin du cube ; on utilise la map des positions atteintes.
+        // raw retourne Map<cubeKey, cost>. Pour récupérer le hex, on parse la clé
+        // (format q,r,s).
+        const parts = k.split(',').map(Number)
+        const destCube = { q: parts[0], r: parts[1], s: parts[2] }
+        let isAwayFromAll = true
+        for (const enemy of postRuptureAdjacentEnemies) {
+          if (cubeDistance(destCube, enemy.position) <= 1) {
+            // toujours adjacent à au moins un ex-ennemi → interdit
+            isAwayFromAll = false
+            break
+          }
+        }
+        if (!isAwayFromAll) continue
+      }
       out.set(k, c)
     }
     return out
-  }, [selectedUnit, isSelectedMine, isMyTurn, unitStates, enemyZoc, boardKeys, engagedUnitIds])
+  }, [selectedUnit, isSelectedMine, isMyTurn, unitStates, enemyZoc, boardKeys, engagedUnitIds, postRuptureAdjacentEnemies])
 
   // Phase 2.5 — précalcule cohésion + support pour toutes les unités (single pass).
   // Permet : (1) bloquer attaque standard si Brisé, (2) UI panneau critique,

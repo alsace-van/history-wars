@@ -1,3 +1,4 @@
+// v1.1 (12/05/2026) — Post-rupture : refuse les dest qui restent adjacentes à un ex-engagé
 // v1.0 (10/05/2026) — Phase 2 2C.6 : extrait depuis index.ts + tracking last_move_path pour charge cav
 // Source : PLAN-PHASE-2-COMBAT-V2.md § 2C.2, 2C.6
 
@@ -75,6 +76,28 @@ export async function handleMove(args: HandleMoveArgs): Promise<Response> {
   const cost = reachable.get(destKey)
   if (cost === undefined) {
     return errorResponse(ERROR_CODES.INVALID_MOVE, `destination ${destKey} not reachable`, 400)
+  }
+
+  // v1.1 — post-rupture : si l'unité vient de Rompre ce tour (hasAttacked=true,
+  // hasMoved=false, ennemi adjacent), elle DOIT s'éloigner. Refuse toute dest qui
+  // reste adjacente à un ex-engagé (= ennemi actuellement adjacent à la position
+  // de départ). Cohérent avec useTacticalSelection v1.8 côté client.
+  if (unit.has_attacked) {
+    const adjacentEnemies = units.filter(u =>
+      u.team !== userTeam && cubeDistance(cube(u.q, u.r), start) === 1
+    )
+    if (adjacentEnemies.length > 0) {
+      const stuckTouchEnemy = adjacentEnemies.some(
+        e => cubeDistance(cube(e.q, e.r), dest) <= 1
+      )
+      if (stuckTouchEnemy) {
+        return errorResponse(
+          ERROR_CODES.INVALID_MOVE,
+          'post-break move must leave melee contact — destination still adjacent to an enemy',
+          400,
+        )
+      }
+    }
   }
 
   // Phase 2 : reconstruction du path effectif start → dest pour `last_move_path`.
