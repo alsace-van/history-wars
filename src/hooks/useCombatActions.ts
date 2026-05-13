@@ -1,13 +1,13 @@
+// v2.4 (13/05/2026) — Phase 3.2-bis : exposition engagementTicks dans la réponse de endTurn (UI clarté combat continu)
 // v2.3 (13/05/2026) — Phase 3.2 C4 : toast des ordres conditionnels déclenchés à la fin de end_turn
 // v2.2 (11/05/2026) — Phase 2.6 C : BreakCombatAction + code erreur NOT_ENGAGED
 // v2.1 (11/05/2026) — Phase 2.5 C : RetreatAction + SurrenderAction + SuicideAction + codes erreur cohésion
-// v2.0 (10/05/2026) — Phase 2 2D.5 : ajout SplitAction + MergeAction + nouveaux error codes humanises
 import { useCallback, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { supabase } from '@lib/supabase'
 import { genUUID } from '@lib/uuid'
 
-const TAG = '[useCombatActions v2.2]'
+const TAG = '[useCombatActions v2.4]'
 
 // ----------------------------------------------------------------------------
 // Types payload UI (côté client). Identique aux MovePayload/AttackPayload des EF
@@ -71,6 +71,30 @@ interface OrderTriggeredLogUI {
   skipped?: string | null
 }
 
+/** Phase 3.2-bis — type minimal local pour parser engagement_ticks dans EndTurnResult. */
+export interface EngagementTickEventUI {
+  engagement_id: string
+  started_turn: number
+  resolved_at_turn: number
+  side_a: {
+    unit_id: string
+    team: 'blue' | 'red'
+    kind: 'I' | 'C' | 'A'
+    killed: number
+    wounded_add: number
+    dissolved: boolean
+  }
+  side_b: {
+    unit_id: string
+    team: 'blue' | 'red'
+    kind: 'I' | 'C' | 'A'
+    killed: number
+    wounded_add: number
+    dissolved: boolean
+  }
+  engagement_dissolved: boolean
+}
+
 export interface BreakCombatAction {
   type: 'break_combat'
   payload: { unit_id: string }
@@ -94,11 +118,17 @@ export interface ActionResponse<T = unknown> {
   message?: string
 }
 
+/** Réponse spécifique de endTurn (Phase 3.2-bis : expose ticks bruts pour Game.tsx). */
+export interface EndTurnResponse extends ActionResponse {
+  /** Ticks d'engagement (un par paire engagée résolue ce tour). */
+  engagementTicks?: EngagementTickEventUI[]
+}
+
 interface UseCombatActionsResult {
   busy: boolean
   startBattle: (gameId: string) => Promise<ActionResponse>
   submitAction: (gameId: string, action: GameAction) => Promise<ActionResponse>
-  endTurn: (gameId: string, scale?: 'tactical' | 'operational' | 'strategic') => Promise<ActionResponse>
+  endTurn: (gameId: string, scale?: 'tactical' | 'operational' | 'strategic') => Promise<EndTurnResponse>
 }
 
 // ----------------------------------------------------------------------------
@@ -266,7 +296,7 @@ export function useCombatActions(): UseCombatActionsResult {
     async (
       gameId: string,
       scale: 'tactical' | 'operational' | 'strategic' = 'tactical'
-    ): Promise<ActionResponse> => {
+    ): Promise<EndTurnResponse> => {
       return guarded(async () => {
         const res = await invokeEF('resolve_turn', {
           game_id: gameId,
@@ -275,10 +305,15 @@ export function useCombatActions(): UseCombatActionsResult {
         })
         if (!res.ok) {
           toast.error(humanizeError(res.code, res.message))
-          return res
+          return res as EndTurnResponse
         }
+        const payload = res.data as {
+          result?: {
+            orders_triggered?: OrderTriggeredLogUI[]
+            engagement_ticks?: EngagementTickEventUI[]
+          }
+        } | undefined
         // Phase 3.2 C4 : toaster les ordres conditionnels déclenchés en début du tour entrant.
-        const payload = res.data as { result?: { orders_triggered?: OrderTriggeredLogUI[] } } | undefined
         const events = payload?.result?.orders_triggered
         if (events && events.length > 0) {
           for (const ev of events) {
@@ -288,7 +323,8 @@ export function useCombatActions(): UseCombatActionsResult {
             toast(phrase, { duration: 5000 })
           }
         }
-        return res
+        // Phase 3.2-bis : expose les ticks d'engagement à l'UI (toast + DamageFloater).
+        return { ...res, engagementTicks: payload?.result?.engagement_ticks }
       })
     },
     [guarded]

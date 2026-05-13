@@ -1,3 +1,4 @@
+// v1.1 (13/05/2026) — Phase 3.2-bis : badge T+N (tours engagés) au milieu de la ligne
 // v1.0 (11/05/2026) — Phase 2.6 C : ligne 3D rouge entre 2 pions engagés en mêlée persistante
 // Source : docs/PLAN-ENGAGEMENT-PERSISTENT.md § 8 (indicateur visuel engagement)
 //
@@ -6,6 +7,7 @@
 
 import { useMemo, useRef } from 'react'
 import { useFrame } from '@react-three/fiber'
+import { Billboard, Text } from '@react-three/drei'
 import * as THREE from 'three'
 import { cubeToWorld, type Cube } from '@engine/hex'
 
@@ -14,6 +16,8 @@ export interface EngagementPair {
   id: string
   positionA: Cube
   positionB: Cube
+  /** Phase 3.2-bis : nombre de tours écoulés depuis le début de l'engagement (1 = ce tour). */
+  turnsActive?: number
 }
 
 interface EngagementOverlayProps {
@@ -55,14 +59,32 @@ export function EngagementOverlay({
           3,
         ),
       )
-      return { id: e.id, geometry }
+      const midX = (wa.x + wb.x) / 2
+      const midZ = (wa.y + wb.y) / 2
+      return { id: e.id, geometry, turnsActive: e.turnsActive, midX, midZ }
     })
   }, [engagements, hexSize, liftY])
 
   return (
     <group renderOrder={3}>
       {segments.map(s => (
-        <PulsingLine key={s.id} geometry={s.geometry} color={color} />
+        <group key={s.id}>
+          <PulsingLine geometry={s.geometry} color={color} />
+          {s.turnsActive != null && s.turnsActive > 0 && (
+            <Billboard position={[s.midX, liftY + 0.6, s.midZ]} follow>
+              <Text
+                fontSize={0.32}
+                color="#fef3c7"
+                outlineWidth={0.04}
+                outlineColor="#7f1d1d"
+                anchorX="center"
+                anchorY="middle"
+              >
+                {`⚔ T+${s.turnsActive}`}
+              </Text>
+            </Billboard>
+          )}
+        </group>
       ))}
     </group>
   )

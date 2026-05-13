@@ -86,7 +86,7 @@ Exception : confiance < 95 % AVANT de coder → plan détaillé + questions auto
 
 Ne jamais demander un re-upload si le fichier est accessible via une de ces sources.
 
-## 7. État courant (13/05/2026 — session 20 clôturée)
+## 7. État courant (13/05/2026 — session 21 clôturée)
 
 - Phase 0 ✅ 13/13
 - Phase 1 ✅ 13/13 — combat MVP tactique complet
@@ -94,22 +94,27 @@ Ne jamais demander un re-upload si le fichier est accessible via une de ces sour
 - **Phase 2 ✅** refonte combat v2 livrée (sessions 15-16)
 - **Phase 2.5 ✅** moral / cohésion / soutien livrée prod (session 17)
 - **Phase 2.6 ✅** engagement persistant livrée + testée humain (sessions 18-19). Tag `phase-2-complete`.
-- **Phase 3.1 ✅** fog of war évolué (vision range + LoS + niveaux hidden/spotted/identified) livrée + testée humain (session 20). Tag `phase-3-1-complete`.
-- **Session 20 livré aussi** (en pré-Phase 3.1) :
-  - QW1 refacto : Game.tsx 740 → 562 lignes (extraction 5 hooks + 3 composants).
-  - QW2 : inspection unité ennemie (clic ennemi → EnemyUnitPanel read-only, catégorie effectif, cohésion label).
-  - Fix render hidden hex : noir opaque au lieu de `return null` (masque PageBackground qui transparait).
-  - Fix vision : `cubeKey()` (q,r) cohérent partout (était mismatch q,r,s manuel dans useVisionMap).
-- Phase 3.2 ⬜ pré-postures / ordres conditionnels (next).
+- **Phase 3.1 ✅** fog of war évolué livrée + testée humain (session 20). Tag `phase-3-1-complete`.
+- **Phase 3.2 ✅** ordres conditionnels livrés + déployés (session 21). Migrations 019+020 prod. EF `submit_orders` v2, `resolve_turn` v9+. Test humain 5 scénarios = session 22.
+- **Phase 3.2-bis ✅** (session 21) — Sprint UX + balance suite test humain :
+  - **Engagement clarity** : `engagement_ticks` dans EndTurnResult → toasts "Combat continu (T+N)" + DamageFloaters tick + badge `⚔ T+N` sur EngagementOverlay + lerp 600ms UnitHealthBar.
+  - **Routed décorrélé du moral** : `routed = effective < 20% effectiveMax` (`ROUT_EFFECTIVE_RATIO`). `applyMoraleDelta` + `isRouted` + sites de recompute mis à jour engine + Deno. Server handlers retreat/suicide/surrender acceptent désormais `routed OR cohesion broken`.
+  - **Dominance asymétrique tick** : `dominance = damageNoFloor_A/B`. Côté gagnant prend `clamp(1/dominance, 0.25, 1)` × dégâts. Fatigue moral -2 → -1.
+  - **Vision routed** : ennemi engagé en mêlée toujours `identified` (force depuis engagementRows). spiral(movement) inclus dans visibleTileKeys pour permettre repli.
+  - **Sidebar refondue** : voyant lumineux (couleur active team), nom joueur fixé sur MON camp (couleur team), ligne par pion `[I.1 ⚔⬢ ████ 200/400]` clickable (recentre caméra), `ParticipantsPanel` collapsible (host = dot vert, moi = highlight ambre). GameTopBar nom officier coloré team.
+  - **Helper `computeOrdinalLabels`** (`src/engine/units/labels.ts`) : `${kind}.${N}` par team+kind. Affiché au-dessus pion 3D + dans sidebar (cohérence).
+  - **Icônes ordres** ⚔/⬢ : 3D au-dessus du pion (gauche/droite du label) + HTML inline sidebar. Helper colorimétrique partagé. Remplace section textuelle "Ordres disponibles".
+  - **UnitStatusRing** : routed = orange clignotement lent (distinct broken rapide).
+  - **Bug critique fixé** : `resolve_turn` v7 crashait au boot (import `spiral` manquant dans port Deno hex/index). Piège §12 à ajouter (imports manquants Deno = crash silencieux sans log EF).
 - Phase 3.3 ⬜ polish / balance fin de Phase 3.
 - Phase 4 ⬜ IA solo + fog server-side RLS (vue SQL filtrée units).
-- Phase 5 ⬜ profondeur tactique (formations, fatigue, ravitaillement, Infirmier, météo).
+- Phase 5 ⬜ profondeur tactique (formations, fatigue/endurance dédiée, ravitaillement, Infirmier, météo).
 - Phases 6-15 ⬜
 
-Prochaine action session 21 — Phase 3.2 (pré-postures) :
-- Spec à produire en début de Phase 3.2 (PLAN-MASTER ne détaille pas encore le sous-bloc).
-- Concept : ordres conditionnels assignés en pré-tour, résolution simultanée en début de tour.
-- Probable : nouvelle table `unit_pre_orders` + EF `submit_orders` + nouveau hook `usePreOrderEngine`.
+Prochaine action session 22 :
+- Test humain Phase 3.2 ordres conditionnels (5 scénarios : enemy_in_range+fire, on_attacked+retreat, cohesion_broken+hold, garde-fou 4ᵉ ordre, privacy RLS).
+- Possible QW : Game.tsx ~640 lignes (un peu au-dessus 600), extraction supplémentaire.
+- Possible Phase 3.3 (polish balance).
 
 Feedback UX user sauvegardé en mémoire : `~/.claude/projects/.../memory/ux_tactica_lisibilite.md`
-Vision long-terme campagne opérationnelle sauvegardée : `~/.claude/projects/.../memory/vision_operational_campaign.md`
+Vision long-terme campagne opérationnelle : `~/.claude/projects/.../memory/vision_operational_campaign.md`

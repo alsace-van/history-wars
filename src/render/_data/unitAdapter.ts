@@ -6,7 +6,7 @@ import type { UnitInstance } from '../types'
 import type { Team, UnitKind } from '@/types/game'
 import type { UnitState, UnitSubKind } from '@engine/units'
 import type { Cube } from '@engine/hex'
-import { UNIT_STATS_V2 } from '@engine/units'
+import { UNIT_STATS_V2, computeOrdinalLabels } from '@engine/units'
 
 /**
  * Forme brute renvoyee par SELECT * FROM units (table publique migration 007 + 011 + 012).
@@ -63,6 +63,9 @@ export function unitRowToInstance(row: UnitRow): UnitInstance {
     count: effective,
     effective,
     effectiveMax,
+    routed: row.routed,
+    hasMoved: row.has_moved,
+    hasAttacked: row.has_attacked,
   }
 }
 
@@ -110,9 +113,11 @@ export function unitRowToState(row: UnitRow): UnitState {
   }
 }
 
-/** Helper : convertit un tableau de UnitRow en UnitInstance[]. */
+/** Helper : convertit un tableau de UnitRow en UnitInstance[]. Phase 3.2-bis :
+ *  injecte ordinalLabel calculé par team+kind dans l'ordre du tableau. */
 export function unitRowsToInstances(rows: UnitRow[]): UnitInstance[] {
-  return rows.map(unitRowToInstance)
+  const labels = computeOrdinalLabels(rows.map(r => ({ id: r.id, kind: r.kind, team: r.team })))
+  return rows.map(r => ({ ...unitRowToInstance(r), ordinalLabel: labels.get(r.id) }))
 }
 
 /** Helper : convertit un tableau de UnitRow en UnitState[]. */

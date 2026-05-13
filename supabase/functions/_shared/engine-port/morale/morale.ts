@@ -1,3 +1,4 @@
+// v1.2 (13/05/2026) — Phase 3.2-bis : routed basé sur effectif (<20%), pas morale
 // v1.1 (11/05/2026) — Phase 2.5 : recoverMoraleEndTurnV2 + moraleCombatLossMultiplier
 // v1.0 (09/05/2026) — Phase 1 L1B.4a : port morale pour Deno EF
 // Source de verite : src/engine/morale/morale.ts. Duplication controlee (piege #12).
@@ -5,6 +6,7 @@
 import type { SupportCount } from '../cohesion/types.ts'
 import type { UnitState } from '../units.ts'
 
+/** @deprecated Phase 3.2-bis — routed ne dépend plus du moral. Conservé export. */
 export const MORALE_ROUT_THRESHOLD = 25
 export const MORALE_RECOVER_PER_TURN = 5
 export const MORALE_RECOVER_BONUS_PER_ADJACENT = 1
@@ -12,17 +14,25 @@ export const MORALE_RECOVER_BONUS_PER_NEARBY = 0.5
 export const MORALE_COMBAT_LOSS_PER_ADJACENT = 0.1
 export const MORALE_COMBAT_LOSS_MULT_FLOOR = 0.7
 
+/** Phase 3.2-bis — seuil effectif < 20% = déroute. */
+export const ROUT_EFFECTIVE_RATIO = 0.20
+
+export function computeRouted(effective: number, effectiveMax: number): boolean {
+  if (effectiveMax <= 0) return true
+  return effective / effectiveMax < ROUT_EFFECTIVE_RATIO
+}
+
 export function applyMoraleDelta(unit: UnitState, delta: number): UnitState {
   const newMorale = Math.max(0, Math.min(unit.moraleMax, unit.morale + delta))
   return {
     ...unit,
     morale: newMorale,
-    routed: newMorale < MORALE_ROUT_THRESHOLD,
+    routed: computeRouted(unit.effective, unit.effectiveMax),
   }
 }
 
 export function isRouted(unit: UnitState): boolean {
-  return unit.morale < MORALE_ROUT_THRESHOLD
+  return computeRouted(unit.effective, unit.effectiveMax)
 }
 
 export function moraleCombatBonus(unit: UnitState): number {

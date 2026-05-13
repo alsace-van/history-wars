@@ -2,6 +2,117 @@
 
 ---
 
+## Session 21 (clôture) &mdash; 13/05/2026 &mdash; Phase 3.2 (ordres conditionnels) + Phase 3.2-bis (clarté UX engagement + refonte sidebar + routed effectif-based)
+
+**Phase 3.2 livrée et déployée** : ordres conditionnels (charge/fire/retreat/hold sur triggers on_attacked / enemy_in_range / cohesion_broken / enemy_los), max 3 par unité, résolus serveur en début de tour entrant via `resolve_turn §10.5`. RLS owner-only sur `unit_orders` (privacy). EFs prod : `submit_orders` v2, `resolve_turn` v9+, `resolve_action` v16+.
+
+**Phase 3.2-bis livrée** (gros sprint UX + balance suite test humain) : refonte profonde UX sidebar, décorrélation `routed` du moral → basé sur effectif (<20%), réduction dégâts engagement côté dominant, animation barres PV, icônes d'ordres au-dessus des pions, etc.
+
+### Phase 3.2 — Vagues A→D livrées
+
+- **Vague A engine** : module `src/engine/orders/` (types, triggers, actions, evaluate). 20 tests Vitest (293 → 313). Port Deno miroir complet.
+- **Vague B backend** : migration `019_unit_orders.sql` + `020_action_type_order_triggered.sql`. EF `submit_orders` (CRUD batch + validation + swap priorités). `resolve_turn §10.5` `_evaluateOrders.ts` : snapshot-then-resolve post-tick post-morale, applique retreat/charge/fire/hold, log `game_actions(order_triggered)`.
+- **Vague C UI** : hook `usePreOrders` (CRUD via EF), composant `OrdersPanel` (au-dessus de UnitInspector), wiring `Game.tsx` + `BattleSidebar` v1.8, toast ordres adverses déclenchés dans `useCombatActions.endTurn` v2.3.
+- **Vague D test humain** : crash EF résolu (cf. ci-dessous), puis test concluant.
+
+### Bug critique session 21 — EF resolve_turn v7 crashait au boot Deno
+
+**Symptôme** : "Failed to send a request to the Edge Function" côté client. AUCUN log côté EF. Le client `supabase-js` reçoit un network error avant même que la fn ne loggue.
+
+**Diagnostic** : `_evaluateOrders.ts` et `vision/visibility.ts` (port Deno) importaient `spiral` depuis `engine-port/hex/index.ts`, mais le port Deno de `hex/neighbors.ts` ne contenait que `HEX_DIRECTIONS` + `neighbors` (pas `spiral`/`ring`/`neighbor`). ImportError au boot → fonction down sans trace.
+
+**Fix** : port complet de `neighbor` + `ring` + `spiral` dans `supabase/functions/_shared/engine-port/hex/neighbors.ts` v1.1 + export dans index v1.2. Redéploy `resolve_turn` v8 + `submit_orders` v2.
+
+**Piège à ajouter §12** : les imports manquants au port Deno crashent silencieusement (pas de log EF). Toujours vérifier que chaque import nommé depuis `engine-port/` est exporté côté Deno avant déploiement.
+
+### Phase 3.2-bis — Clarté UX engagement (feedback user "pertes inexpliquées")
+
+**Décision** : rendre lisible le tick d'engagement persistant (Phase 2.6). User : "j'attaque, je fais fin de tour, je perds des hommes sans explication".
+
+- **`EngagementTickEvent[]`** ajouté à `EndTurnResult` (server `resolve_turn` v1.5). Pour chaque paire engagée résolue : engagement_id, started_turn, side_a/b (unit_id, kind, team, killed, wounded_add, dissolved).
+- **Client `useCombatActions.endTurn`** v2.4 : retourne `engagementTicks` dans la réponse. Callback `onEndTurnSuccess` dans `useGameLifecycle` v1.1 → Game.tsx push toasts + DamageFloaters.
+- **Toasts** "Combat continu (T+N) — Ton Infanterie : −80 · Cavalerie adverse : −50" (relativisé `myTeam`).
+- **DamageFloaters réutilisés** sur tick (queue séparée `tickFloaters` dans Game.tsx, concat avec `damageFloaters` standard, removal multi-source).
+- **EngagementOverlay v1.1** : badge `⚔ T+N` au-dessus du milieu de la ligne (visible direct sur la map). `useEngagementDerivations` v1.2 injecte `turnsActive`.
+- **UnitHealthBar v2.1** : lerp imperatif 600ms easeOutCubic (zéro re-render React, `useFrame` + `mesh.scale.x`). Snap au premier mount.
+
+### Phase 3.2-bis — Refonte règle routed (effectif-based, pas moral-based)
+
+**Décision** : feedback user "je suis routed à 286/800 (36%), je peux plus rien faire, c'est trop restrictif". Décorréler routed du moral.
+
+- **`ROUT_EFFECTIVE_RATIO = 0.20`** + helper `computeRouted(effective, effectiveMax)` dans `engine/morale/morale.ts` v1.2 + port Deno v1.2.
+- **`applyMoraleDelta`** ne dérive plus `routed` du moral. Routed = effectif < 20% effectiveMax.
+- **`isRouted(unit)`** miroir.
+- **Sites de recompute** : `sizing.ts` (merge), `engagement/index.ts` (breakCombat), `engagement/tick.ts` (`routedAfter` recomputé depuis effectiveAfter post-tick), `combat/v2/contact.ts` (defender/attacker post-damage). Idem côté port Deno.
+- **Server handlers** : `handleRetreat` / `handleSurrender` / `handleSuicide` acceptent désormais `unit.routed === true` OR `cohesion broken` (avant uniquement broken). Erreur message mise à jour.
+- **Tests** : `morale.test.ts` réécrit (1 test ajouté, 2 mis à jour). 314/314 verts.
+
+### Phase 3.2-bis — Garde-fous vision pour unités routed
+
+- **Bug 1** : unité routed seule = vision globale = 0 → tout `hidden`. Fix `useVisionMap` v1.2 : ennemi engagé en mêlée avec une de mes unités est toujours `'identified'` (force depuis `engagementRows`), même si mon obs est routed. On voit forcément qui nous frappe.
+- **Bug 2** : reachableMap filtré par `visibleTileKeys` → routed = 0 hex visible → impossible de bouger. Fix v1.3 : on inclut `spiral(myUnit.position, movement)` dans `visibleTileKeys` pour chaque allié → l'unité peut toujours voir où elle peut marcher.
+- **Auto-retreatMode** : Game.tsx déclenche `setRetreatMode(true)` automatiquement quand selectedUnit est routed + !engaged + !hasMoved + canRetreat. L'utilisateur voit immédiatement les cases adjacentes au lieu de cliquer "Retraite" manuellement.
+
+### Phase 3.2-bis — Réduction dégâts engagement côté dominant (B)
+
+**Décision** : feedback user "j'avais presque gagné le combat et la fin de tour m'a exterminé".
+
+- **`engagement/tick.ts` v1.1** : `computeAttritionDamage` expose `damageNoFloor` (= power − resistance avant plancher).
+- **`resolveEngagementTick`** : calcule `dominanceA = (aToB.damageNoFloor + 1) / (bToA.damageNoFloor + 1)`. Multiplicateur dégâts subis = `clamp(1/dominance, 0.25, 1)`. Côté gagnant prend jusqu'à 75% de pertes en moins.
+- **`DOMINANCE_DAMAGE_FLOOR = 0.25`** exposé dans `engagement/types.ts`.
+- **`ENGAGEMENT_MORALE_DELTA_PER_TURN`** abaissé de −2 → −1 (fatigue moral plus douce).
+- Mirror complet côté port Deno. Redeploy `resolve_turn` v9+ et `resolve_action` v16+.
+
+### Phase 3.2-bis — Refonte sidebar (FoW strict + lisibilité)
+
+Feedback user : sidebar "trop chargée, je ne dois pas voir l'adversaire".
+
+- **Cartouche du haut** :
+  - "TOUR N" + voyant lumineux 10px (couleur active team, glow intense si mon tour, discret sinon). PLUS de texte "À toi de jouer / Tour adverse".
+  - Nom du joueur actif **fixé sur MON camp** (jamais l'adversaire) — couleur team.
+  - **Ligne par pion** : `[I.1] ⚔⬢ [progress bar PV] [200/400]`. Click → recentrage caméra (réutilise `handleFocusUnit`). Plus de total cumulé par kind, plus de "Bleus 1900 / Rouges 1900".
+  - Helper unique `computeOrdinalLabels(units)` dans `src/engine/units/labels.ts` (`${kind}.${N}` par team+kind) → utilisé par `unitRowsToInstances` ET `BattleSidebar` (cohérence sidebar ↔ map).
+- **ParticipantsPanel** (nouveau composant) : volet collapsible en bas, 1 ligne/joueur, point vert lumineux = hôte, ton nom surligné ambre + "(toi)". Remplace les 2 gros `TeamPanel`.
+- **GameTopBar v1.2** : nom officier coloré dans la team color.
+- **`UnitInspector`** : supprimé section textuelle "Ordres disponibles" (remplacée par icônes). Supprimé coords debug `q=,r=`. Ajouté bandeau "En déroute" contextuel.
+- **Icônes ordres** ⚔/⬢ rendues :
+  - **En 3D au-dessus du pion** (UnitPlaceholder v2.8) : de part et d'autre du label (`⚔ A.1 ⬢`), pas en-dessous (conflit barre PV).
+  - **En HTML dans la sidebar** : inline entre label ordinal et progress bar.
+  - **Logique colorimétrique partagée** (helper `resolveAttackIconColor` / `resolveMoveIconColor`) : vert dispo, orange (engagé OR routed = mouvement limité), rouge consommé.
+
+### Phase 3.2-bis — UnitStatusRing v1.1 (déroute visuelle distincte)
+
+`routed` (effectif < 20%) → anneau orange clignotement lent (~1.6 Hz). `cohesion broken` → orange foncé clignotement rapide (~4.2 Hz, conservé). Conflit résolu via priorité broken > routed > pertes brutes.
+
+### Déploiements EF prod (session 21)
+
+| EF | Avant | Après | Raison |
+|---|---|---|---|
+| `submit_orders` | — | v2 | Création + fix import spiral + redeploy |
+| `resolve_turn` | v6 | v9+ | Crash boot v7 → fix v8 → engagement_ticks v9 → dominance + routed effectif-based v10 |
+| `resolve_action` | v15 | v16+ | Handlers retreat/suicide/surrender acceptent routed |
+
+### Stats fin session
+
+- **314/314 tests Vitest verts** (+1 vs session 20 : ROUT_EFFECTIVE_RATIO + computeRouted + moral.test.ts refondu).
+- `tsc` 0 erreur.
+- Migrations BDD : 019 + 020 appliquées sur `history wars` (prod).
+- Game.tsx : ~640 lignes (un peu au-dessus de 600 — extraction supplémentaire à faire en QW session 22).
+
+### Decisions backlog session 21
+
+- **Stabilisation ordinal labels** (`I.1` se décale quand un pion meurt) : à persister via `units.ordinal_index INTEGER` BDD si demande utilisateur claire. Pas urgent.
+- **Jauge d'endurance dédiée** : prévue Phase 5 (formations, fatigue, ravitaillement, Infirmier, météo). Aujourd'hui simulée via `ENGAGEMENT_MORALE_DELTA_PER_TURN=-1`.
+- **Test humain Phase 3.2** : pré-postures non encore testées en partie réelle (combat clarity prioritisé).
+
+### Prochaine étape — Session 22
+
+- **Test humain Phase 3.2 ordres conditionnels** (5 scénarios) : enemy_in_range+fire, on_attacked+retreat, cohesion_broken+hold, garde-fou 4ᵉ ordre, privacy RLS.
+- Possible **Phase 3.3** : balance combat + polish fin Phase 3.
+- Backlog : stabilisation ordinal labels, animation combat 3D (au-delà du damage floater), recompute one-shot routed pour parties existantes (SQL).
+
+---
+
 ## Session 20 (clôture) &mdash; 13/05/2026 &mdash; Phase 3.1 livrée (fog évolué + détection range) + QW1 refacto Game.tsx + QW2 inspection ennemi
 
 **Phase 3.1 clôturée.** Fog of war client-side avec range vision par UnitKind, LoS team-agnostic (piège #15), 3 niveaux d'identification (`hidden`/`spotted`/`identified`). 12 nouveaux tests engine + 4 tests UI helper. Tag `phase-3-1-complete` posé. Pas de migration BDD (server-side reporté Phase 4).

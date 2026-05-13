@@ -1,7 +1,8 @@
+// v1.1 (13/05/2026) — Phase 3.2-bis : callback onEndTurnSuccess avec payload (engagementTicks)
 // v1.0 (12/05/2026) — QW1 : extraction des handlers cycle de vie (leave/kick/start/endTurn/breakCombat) de Game.tsx
 import { useCallback } from 'react'
 import { toast } from 'sonner'
-import type { GameAction } from '@hooks/useCombatActions'
+import type { GameAction, EndTurnResponse } from '@hooks/useCombatActions'
 import type { UnitState } from '@engine/units'
 
 interface ActionResult {
@@ -21,13 +22,15 @@ interface UseGameLifecycleParams {
   isMyTurn: boolean
   actionsBusy: boolean
   startBattle: (gameId: string) => Promise<{ ok: boolean }>
-  endTurn: (gameId: string) => Promise<{ ok: boolean }>
+  endTurn: (gameId: string) => Promise<EndTurnResponse>
   submitAction: (gameId: string, action: GameAction) => Promise<{ ok: boolean }>
   refresh: () => Promise<void>
   clearSelection: () => void
   selectedUnit: UnitState | null
   engagedUnitIds: Set<string>
   navigate: (path: string) => void
+  /** Phase 3.2-bis : invoqué après endTurn ok pour dispatcher les ticks d'engagement (toasts + floaters). */
+  onEndTurnSuccess?: (res: EndTurnResponse) => void
 }
 
 export interface UseGameLifecycleResult {
@@ -43,7 +46,7 @@ export function useGameLifecycle(p: UseGameLifecycleParams): UseGameLifecycleRes
     gameId, iAmHost, busy, setBusy, deleteGame, leaveGame, kickPlayer,
     canStart, inProgress, isMyTurn, actionsBusy,
     startBattle, endTurn, submitAction, refresh, clearSelection,
-    selectedUnit, engagedUnitIds, navigate,
+    selectedUnit, engagedUnitIds, navigate, onEndTurnSuccess,
   } = p
 
   const handleLeave = useCallback(async () => {
@@ -90,8 +93,9 @@ export function useGameLifecycle(p: UseGameLifecycleParams): UseGameLifecycleRes
       // Phase 2.5 fix : ne pas dépendre uniquement de Realtime (qui peut décrocher).
       void refresh()
       toast.success('Tour terminé.')
+      onEndTurnSuccess?.(res)
     }
-  }, [gameId, inProgress, isMyTurn, actionsBusy, endTurn, clearSelection, refresh])
+  }, [gameId, inProgress, isMyTurn, actionsBusy, endTurn, clearSelection, refresh, onEndTurnSuccess])
 
   const handleBreakCombat = useCallback(async () => {
     if (!gameId || !selectedUnit || !isMyTurn || actionsBusy) return

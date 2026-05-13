@@ -79,11 +79,11 @@ export async function handleSuicide(args: HandleSuicideArgs): Promise<Response> 
     return errorResponse(ERROR_CODES.OUT_OF_RANGE, 'suicide attack requires adjacent target', 400)
   }
 
-  // Validation cohésion attaquant : Brisé requis
+  // Phase 3.2-bis : suicide réservé aux routed (effectif < 20%) ou cohésion broken.
   const coh = computeCohesionFor(attackerId, units)
   if (!coh) return errorResponse(ERROR_CODES.INTERNAL, 'cohesion lookup failed', 500)
-  if (coh.cohesion.state !== 'broken') {
-    return errorResponse(ERROR_CODES.COHESION_NOT_BROKEN, 'suicide attack reserved for broken units', 400)
+  if (!attackerRow.routed && coh.cohesion.state !== 'broken') {
+    return errorResponse(ERROR_CODES.COHESION_NOT_BROKEN, 'suicide attack reserved for routed or broken units', 400)
   }
 
   // Validation encerclement : tous voisins libres in-board sont occupés par des ennemis,

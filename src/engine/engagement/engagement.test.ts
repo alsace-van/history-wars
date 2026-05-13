@@ -405,7 +405,7 @@ describe('engine/engagement — constantes plan figé', () => {
     expect(BREAK_COMBAT_COST_RATIO).toBe(0.1)
   })
 
-  it('ENGAGEMENT_MORALE_DELTA_PER_TURN === -2 (fatigue tour engagé plan § 7)', () => {
-    expect(ENGAGEMENT_MORALE_DELTA_PER_TURN).toBe(-2)
+  it('ENGAGEMENT_MORALE_DELTA_PER_TURN === -1 (Phase 3.2-bis : abaissé de -2 pour fatigue plus douce)', () => {
+    expect(ENGAGEMENT_MORALE_DELTA_PER_TURN).toBe(-1)
   })
 })

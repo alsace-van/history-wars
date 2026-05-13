@@ -1,9 +1,14 @@
+// v1.2 (13/05/2026) — Phase 3.2-bis : nom officier coloré par équipe (top-right)
 // v1.1 (12/05/2026) — UX : bouton notif rapports combat (badge + toggle panel)
 // v1.0 (10/05/2026) — extraction du header global Game.tsx (réduction Game.tsx < 600 lignes)
+
+import type { Team } from '@/types/game'
 
 interface GameTopBarProps {
   subtitleLabel: string
   username: string
+  /** Phase 3.2-bis : couleur du nom officier = couleur de son équipe (FoW : self only). */
+  myTeam?: Team | null
   onBack: () => void
   /**
    * Nombre de rapports combat dans le journal. Si > 0 → badge ambré sur le bouton notif.
@@ -16,17 +21,19 @@ interface GameTopBarProps {
   onToggleCombatReports?: () => void
 }
 
-const TAG = '[GameTopBar v1.1]'
+const TAG = '[GameTopBar v1.2]'
 void TAG
 
 export function GameTopBar({
   subtitleLabel,
   username,
+  myTeam,
   onBack,
   combatReportsCount,
   combatReportsOpen = false,
   onToggleCombatReports,
 }: GameTopBarProps) {
+  const nameColor = myTeam === 'blue' ? '#60a5fa' : myTeam === 'red' ? '#f87171' : undefined
   const hasBadge = (combatReportsCount ?? 0) > 0
   return (
     <header className="relative flex items-center justify-between px-10 py-[18px] border-b border-[rgba(226,232,240,0.18)] bg-gradient-to-b from-[rgba(8,12,24,0.85)] to-transparent shrink-0">
@@ -72,7 +79,13 @@ export function GameTopBar({
           </button>
         )}
         <span className="text-[12px] text-muted-foreground tracking-[0.05em]">
-          Officier <strong className="text-foreground font-semibold">{username}</strong>
+          Officier{' '}
+          <strong
+            className="font-semibold"
+            style={{ color: nameColor ?? undefined }}
+          >
+            {username}
+          </strong>
         </span>
       </div>
       <div

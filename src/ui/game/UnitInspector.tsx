@@ -143,9 +143,6 @@ export function UnitInspector({
   const teamColor = unit.team === 'blue' ? '#3b82f6' : '#ef4444'
   const teamLabel = unit.team === 'blue' ? 'Bleus' : 'Rouges'
 
-  const canMove = !unit.hasMoved && !unit.routed
-  const canAttack = !unit.hasAttacked && !unit.routed
-
   const freeAdjacentCount = sizing.splitTargets.filter(t => t.free).length
 
   // v2.6 — Scinder simplifié : un clic sur un ratio entre directement en mode
@@ -187,7 +184,7 @@ export function UnitInspector({
           )}
         </div>
         <div className="text-[12px] uppercase tracking-[0.12em] text-muted-foreground mt-1">
-          Camp {teamLabel} · q={unit.position.q} r={unit.position.r}
+          Camp {teamLabel}
         </div>
       </div>
 
@@ -236,6 +233,17 @@ export function UnitInspector({
             }}
           />
         </div>
+        {/* Phase 3.2-bis : déroute = effectif sous 20% effectiveMax (rule décorrélée du moral).
+            Repli 1 hex/tour ou fusion avec un allié adjacent même type. */}
+        {unit.routed && (
+          <div className="mt-2 text-[11px] leading-snug text-red-300/90 border-l-2 border-red-500/60 pl-2 py-[2px]">
+            En déroute · effectif sous {Math.round(unit.effectiveMax * 0.20)}/{unit.effectiveMax}
+            <div className="text-muted-foreground mt-[2px]">
+              Repli 1 hex/tour. Fusionne avec une troupe alliée du même type pour
+              regrouper l'effectif et sortir de déroute.
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Phase 2.5 v2.3 : Cohésion + Soutien (temps réel) */}
@@ -286,34 +294,19 @@ export function UnitInspector({
         />
       </div>
 
-      {/* Actions disponibles */}
-      <div className="border-t border-[rgba(226,232,240,0.10)] pt-2">
-        <div className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground mb-1">
-          {isMyUnit && isMyTurn ? 'Ordres disponibles' : 'Ordres'}
+      {/* Phase 3.2-bis : la section "Ordres disponibles" textuelle a été remplacée par
+          les icônes ⚔ / ⬢ au-dessus du pion 3D (et dans la sidebar). Conservé : message
+          contextuel discret pour les unités adverses ou hors-tour. */}
+      {!isMyUnit && (
+        <div className="text-[11px] text-muted-foreground italic">
+          Unité adverse — lecture seule
         </div>
-        <ul className="space-y-1 text-[13px]">
-          <ActionLine
-            label="Se déplacer"
-            available={canMove && isMyUnit && isMyTurn}
-            done={unit.hasMoved}
-          />
-          <ActionLine
-            label={stats.range === 1 ? 'Attaquer (mêlée)' : 'Tirer'}
-            available={canAttack && isMyUnit && isMyTurn}
-            done={unit.hasAttacked}
-          />
-        </ul>
-        {!isMyUnit && (
-          <div className="text-[12px] text-muted-foreground italic mt-2">
-            Unité adverse — lecture seule
-          </div>
-        )}
-        {isMyUnit && !isMyTurn && (
-          <div className="text-[12px] text-muted-foreground italic mt-2">
-            Attends ton tour pour agir
-          </div>
-        )}
-      </div>
+      )}
+      {isMyUnit && !isMyTurn && (
+        <div className="text-[11px] text-muted-foreground italic">
+          Attends ton tour pour agir
+        </div>
+      )}
 
       {/* Manoeuvre Phase 2 : split + merge */}
       {isMyUnit && isMyTurn && (sizing.canSplit || sizing.canMerge || mergeAvailableTargets > 0) && (
@@ -567,30 +560,3 @@ function StatCell({
   )
 }
 
-function ActionLine({
-  label,
-  available,
-  done,
-}: {
-  label: string
-  available: boolean
-  done: boolean
-}) {
-  let dot = '○'
-  let cls = 'text-muted-foreground'
-  if (done) {
-    dot = '✓'
-    cls = 'text-muted-foreground line-through opacity-60'
-  } else if (available) {
-    dot = '●'
-    cls = 'text-tactica-amber'
-  }
-  return (
-    <li className={`flex items-center gap-2 ${cls}`}>
-      <span aria-hidden className="w-3 text-center">
-        {dot}
-      </span>
-      <span>{label}</span>
-    </li>
-  )
-}

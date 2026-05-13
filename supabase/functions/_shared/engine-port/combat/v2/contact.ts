@@ -3,7 +3,7 @@
 // Source de verite : src/engine/combat/v2/contact.ts. Duplication controlee (piege #12).
 
 import type { SupportCount } from '../../cohesion/types.ts'
-import { applyMoraleDelta, moraleCombatBonus, moraleCombatLossMultiplier } from '../../morale/morale.ts'
+import { applyMoraleDelta, computeRouted, moraleCombatBonus, moraleCombatLossMultiplier } from '../../morale/morale.ts'
 import { TERRAIN_CAPS } from '../../terrain/caps.ts'
 import type { TerrainType } from '../../terrain/types.ts'
 import { resolveUnitStatsV2, type UnitState } from '../../units.ts'
@@ -115,8 +115,9 @@ export function resolveContact(input: ContactInput): CombatResultV2 {
     defenderMoraleDelta,
     attackerMoraleAfter: attackerAfter.morale,
     defenderMoraleAfter: defenderAfter.morale,
-    attackerRouted: attackerAfter.routed,
-    defenderRouted: defenderAfter.routed,
+    // Phase 3.2-bis : routed dérivé de l'effectif (attaquant inchangé en mêlée 1 sens).
+    attackerRouted: computeRouted(attacker.effective, attacker.effectiveMax),
+    defenderRouted: computeRouted(defenderEffectiveAfter, defender.effectiveMax),
     defenderKilled,
     rollUsed: rollRaw,
     attackPhase: phase,

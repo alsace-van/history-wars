@@ -4,7 +4,7 @@
 // Source : docs/PLAN-MORAL-COHESION.md § 2 + PLAN-PHASE-2-COMBAT-V2.md § 2A.6
 
 import type { SupportCount } from '../../cohesion/types'
-import { applyMoraleDelta, moraleCombatBonus, moraleCombatLossMultiplier } from '../../morale/morale'
+import { applyMoraleDelta, computeRouted, moraleCombatBonus, moraleCombatLossMultiplier } from '../../morale/morale'
 import { TERRAIN_CAPS } from '../../terrain/caps'
 import type { TerrainType } from '../../terrain/types'
 import { resolveUnitStatsV2 } from '../../units/stats'
@@ -198,8 +198,9 @@ export function resolveContact(input: ContactInput): CombatResultV2 {
     defenderMoraleDelta,
     attackerMoraleAfter: attackerAfter.morale,
     defenderMoraleAfter: defenderAfter.morale,
-    attackerRouted: attackerAfter.routed,
-    defenderRouted: defenderAfter.routed,
+    // Phase 3.2-bis : attacker n'a pas perdu d'effectif ici (mêlée 1 sens), defender oui.
+    attackerRouted: computeRouted(attacker.effective, attacker.effectiveMax),
+    defenderRouted: computeRouted(defenderEffectiveAfter, defender.effectiveMax),
     defenderKilled,
     rollUsed: rollRaw,
     attackPhase: phase,

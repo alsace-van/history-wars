@@ -21,3 +21,4 @@ export {
   type MergeResult,
   type SizingError,
 } from './sizing'
+export { computeOrdinalLabels } from './labels'

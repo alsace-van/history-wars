@@ -1,7 +1,7 @@
+// v1.5 (13/05/2026) — Phase 3.2-bis : émission engagement_ticks dans EndTurnResult (UI clarité)
 // v1.4 (13/05/2026) — Phase 3.2 Vague B3 : §10.5 évaluation ordres conditionnels (pré-postures)
 // v1.3 (11/05/2026) — Phase 2.6 Vague B : tick engagements actifs avant récup moral (combat continu)
 // v1.2 (11/05/2026) — Phase 2.5 B : recoverMoraleEndTurnV2 modulée par soutien (alliés rayon 1+2)
-// v1.1 (10/05/2026) — Phase 2 2C.6 : reset last_move_path en debut de tour (detection charge cav)
 //
 // Logique :
 // 1. CORS / POST only
@@ -32,6 +32,7 @@ import {
   type GameStateV1,
   type EndTurnBody,
   type EndTurnResult,
+  type EngagementTickEvent,
   type Scale,
 } from '../_shared/types.ts'
 import { UNIT_STATS_V2, type UnitState, type UnitSubKind } from '../_shared/engine-port/units.ts'
@@ -51,7 +52,7 @@ import {
 import { seededRng } from '../_shared/engine-port/combat/rng.ts'
 import { evaluateAndApplyOrders } from './_evaluateOrders.ts'
 
-const TAG = '[resolve_turn v1.4]'
+const TAG = '[resolve_turn v1.5]'
 
 interface EngagementRow {
   id: string
@@ -250,6 +251,7 @@ Deno.serve(async (req: Request) => {
     }>()
     const dissolvedUnitIds = new Set<string>()
     const engagementsToDelete: string[] = []
+    const tickEvents: EngagementTickEvent[] = []
     const liveUnitStates: Map<string, UnitState> = new Map(
       units.map(u => [u.id, buildUnitState(u)]),
     )
@@ -334,6 +336,30 @@ Deno.serve(async (req: Request) => {
       if (tick.dissolved) {
         engagementsToDelete.push(eng.id)
       }
+
+      // Phase 3.2-bis : événement tick pour UI (toast + DamageFloater + clarté).
+      tickEvents.push({
+        engagement_id: eng.id,
+        started_turn: eng.started_turn,
+        resolved_at_turn: turnBefore,
+        side_a: {
+          unit_id: a.id,
+          team: a.team,
+          kind: a.kind as UnitKind,
+          killed: tick.sideA.killed,
+          wounded_add: tick.sideA.woundedAdd,
+          dissolved: tick.sideA.dissolved,
+        },
+        side_b: {
+          unit_id: b.id,
+          team: b.team,
+          kind: b.kind as UnitKind,
+          killed: tick.sideB.killed,
+          wounded_add: tick.sideB.woundedAdd,
+          dissolved: tick.sideB.dissolved,
+        },
+        engagement_dissolved: tick.dissolved,
+      })
     }
 
     // 7.7. Applique les UPDATE/DELETE units consécutifs aux ticks (séquentiel).
@@ -514,6 +540,7 @@ Deno.serve(async (req: Request) => {
       finished,
       winner,
       orders_triggered: ordersResult.events.length > 0 ? ordersResult.events : undefined,
+      engagement_ticks: tickEvents.length > 0 ? tickEvents : undefined,
     }
 
     // 14. INSERT game_actions

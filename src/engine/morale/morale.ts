@@ -1,3 +1,4 @@
+// v1.2 (13/05/2026) — Phase 3.2-bis : routed désormais basé sur effectif (<20%), pas morale (balance UX)
 // v1.1 (11/05/2026) — Phase 2.5 : recoverMoraleEndTurnV2 + moraleCombatMultiplier modulés par soutien
 // v1.0 (09/05/2026) — Phase 1 L1A.1 : moral MVP (D7)
 // Source : docs/PLAN-MORAL-COHESION.md § 2 + PLAN-PHASE-1.md § 2.2
@@ -5,8 +6,28 @@
 import type { SupportCount } from '../cohesion/types'
 import type { UnitState } from '../units/types'
 
-/** Sous ce seuil de moral, l'unite est en deroute (routed). */
+/**
+ * @deprecated Phase 3.2-bis — `routed` ne dépend plus du moral mais de l'effectif
+ * (cf. ROUT_EFFECTIVE_RATIO). Conservé pour rétrocompat de l'export public.
+ * Le moral reste un compteur séparé (combat bonus/malus + récupération).
+ */
 export const MORALE_ROUT_THRESHOLD = 25
+
+/**
+ * Phase 3.2-bis — seuil d'effectif sous lequel une unité passe en déroute.
+ * 0.20 = 20% de l'effectif max. Décorrelé du moral pour éviter le routing trop
+ * agressif lié au combat continu (ex : 286/800 = 36% effectif n'est plus routed).
+ */
+export const ROUT_EFFECTIVE_RATIO = 0.20
+
+/**
+ * Phase 3.2-bis — calcule le flag `routed` à partir de l'effectif d'une unité.
+ * Centralisé pour qu'aucun call site n'oublie la règle.
+ */
+export function computeRouted(effective: number, effectiveMax: number): boolean {
+  if (effectiveMax <= 0) return true
+  return effective / effectiveMax < ROUT_EFFECTIVE_RATIO
+}
 
 /** Recuperation passive de moral en fin de tour (hors combat / hors ZdC). */
 export const MORALE_RECOVER_PER_TURN = 5
@@ -40,13 +61,14 @@ export function applyMoraleDelta(unit: UnitState, delta: number): UnitState {
   return {
     ...unit,
     morale: newMorale,
-    routed: newMorale < MORALE_ROUT_THRESHOLD,
+    // Phase 3.2-bis : routed dérive de l'effectif (pas du moral).
+    routed: computeRouted(unit.effective, unit.effectiveMax),
   }
 }
 
-/** True si l'unite est sous le seuil de deroute. */
+/** True si l'unite est en deroute (effectif < ROUT_EFFECTIVE_RATIO * effectiveMax). */
 export function isRouted(unit: UnitState): boolean {
-  return unit.morale < MORALE_ROUT_THRESHOLD
+  return computeRouted(unit.effective, unit.effectiveMax)
 }
 
 /**

@@ -1,3 +1,4 @@
+// v1.2 (13/05/2026) — Phase 3.2-bis : injection turnsActive sur enginePairs (badge T+N EngagementOverlay)
 // v1.1 (12/05/2026) — QW2 : ajout engagementsForInspected (lookup pour EnemyUnitPanel)
 // v1.0 (12/05/2026) — QW1 : extraction des dérivations engagements (unitById + enginePairs + engagementsForSelected)
 import { useMemo } from 'react'
@@ -19,6 +20,8 @@ interface UseEngagementDerivationsParams {
   engagementsByUnit: Map<string, EngagementRow[]>
   selectedUnit: UnitState | null
   inspectedEnemy: UnitState | null
+  /** Phase 3.2-bis : tour courant pour calculer turnsActive = currentTurn - startedTurn + 1. */
+  currentTurn?: number
 }
 
 export interface UseEngagementDerivationsResult {
@@ -53,7 +56,7 @@ function buildEngagementsForUnit(
 export function useEngagementDerivations(
   p: UseEngagementDerivationsParams,
 ): UseEngagementDerivationsResult {
-  const { unitStates, engagementRows, engagementsByUnit, selectedUnit, inspectedEnemy } = p
+  const { unitStates, engagementRows, engagementsByUnit, selectedUnit, inspectedEnemy, currentTurn } = p
 
   const unitById = useMemo<Map<string, UnitState>>(() => {
     const m = new Map<string, UnitState>()
@@ -67,10 +70,13 @@ export function useEngagementDerivations(
       const a = unitById.get(e.unit_a_id)
       const b = unitById.get(e.unit_b_id)
       if (!a || !b) continue
-      out.push({ id: e.id, positionA: a.position, positionB: b.position })
+      const turnsActive = currentTurn != null
+        ? Math.max(1, currentTurn - e.started_turn + 1)
+        : undefined
+      out.push({ id: e.id, positionA: a.position, positionB: b.position, turnsActive })
     }
     return out
-  }, [engagementRows, unitById])
+  }, [engagementRows, unitById, currentTurn])
 
   const engagementsForSelected = useMemo<EngagementSummary[] | undefined>(
     () => buildEngagementsForUnit(selectedUnit, engagementsByUnit, unitById),

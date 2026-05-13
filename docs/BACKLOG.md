@@ -6,6 +6,13 @@ Format : 1-2 lignes par item, étiquettes entre crochets.
 
 ---
 
+## Phase 3.2-bis — issues différées (session 21)
+
+- **[bdd — petite migration]** Stabilisation `ordinal_index` des pions (`I.1`, `I.2`...). Aujourd'hui calculé à l'affichage par `computeOrdinalLabels(units)` dans l'ordre `created_at` → si un pion meurt, les n° suivants se décalent (`I.2` devient `I.1`). Persister via colonne `units.ordinal_index INTEGER NOT NULL` set à start_battle, ne change jamais. Pas urgent, feedback user requis si la décalage gêne.
+- **[ux/render Phase 5]** Vraie animation de combat 3D (au-delà du DamageFloater) : pulse rouge sur unité engagée, particules de cliquetis entre les 2 hexes, son. Évoqué session 21 lors de la clarté engagement.
+- **[gameplay Phase 5]** Jauge d'endurance dédiée distincte du moral (cf. PLAN-MASTER-V2 Phase 5). Aujourd'hui simulée via `ENGAGEMENT_MORALE_DELTA_PER_TURN=-1` (fatigue continue). User a demandé une vraie jauge si on s'éloigne du système moral combiné.
+- **[bdd one-shot]** SQL recompute `routed` pour parties existantes : avec le changement Phase 3.2-bis (routed basé sur effectif), les parties en cours peuvent avoir `routed=true` stocké par l'ancienne règle (morale<25). Auto-corrigé au prochain `resolve_turn`, mais possible de forcer via `UPDATE units SET routed = (effective::float / effective_max) < 0.20` si demande user pour parties bloquées.
+
 ## Phase 2.6 — engagement persistant (design figé)
 
 - **[design figé]** Combat continu : engagement entre 2 unités adjacentes = état persistant, attrition par tour, relève 10 % depuis les réserves arrière. Origine : feedback user 11/05 "une fois qu'un combat est entamé ça va jusqu'au bout". Voir [`PLAN-ENGAGEMENT-PERSISTENT.md`](./PLAN-ENGAGEMENT-PERSISTENT.md). ~5 jours.

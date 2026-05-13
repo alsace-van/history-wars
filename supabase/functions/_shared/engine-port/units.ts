@@ -7,7 +7,7 @@
 import type { UnitKind, Team } from '../types.ts'
 import type { Cube } from './hex/index.ts'
 import { cubeDistance } from './hex/index.ts'
-import { MORALE_ROUT_THRESHOLD } from './morale/index.ts'
+import { computeRouted } from './morale/index.ts'
 
 /** Bonus moral à la fusion (mirror src v1.1) — voir engine/units/sizing.ts. */
 export const MERGE_MORALE_BONUS = 25
@@ -263,9 +263,10 @@ export function mergeUnits(params: MergeParams): UnitState | SizingError {
     ? Math.round((target.morale * target.effective + source.morale * source.effective) / totalEffective)
     : Math.round((target.morale + source.morale) / 2)
   // v2.2 — bonus regroupement + recalc routed (mirror src/engine/units/sizing.ts v1.1)
+  // v2.3 (Phase 3.2-bis) — routed dérive de l'effectif fusionné, pas du moral.
   const moraleMax = target.moraleMax
   const mergedMorale = Math.min(moraleMax, weightedMorale + MERGE_MORALE_BONUS)
-  const mergedRouted = mergedMorale < MORALE_ROUT_THRESHOLD
+  const mergedRouted = computeRouted(totalEffective, mergedEffectiveMax)
 
   const merged: UnitState = {
     ...target,

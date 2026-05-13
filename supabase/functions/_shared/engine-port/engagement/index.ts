@@ -1,8 +1,10 @@
+// v1.2 (13/05/2026) — Phase 3.2-bis : recompute routed après break (mirror src v1.2)
 // v1.1 (12/05/2026) — Rompre ne consomme plus hasMoved (mirror src v1.1)
 // v1.0 (11/05/2026) — Phase 2.6 Vague B : barrel engagement engine-port Deno
 // Source de verite : src/engine/engagement/index.ts. Duplication controlee (piege #12).
 
 import { splitCasualties } from '../combat/types.ts'
+import { computeRouted } from '../morale/index.ts'
 import type { UnitState } from '../units.ts'
 import {
   BREAK_COMBAT_COST_RATIO,
@@ -73,6 +75,8 @@ export function breakCombat(unit: UnitState): BreakCombatResult {
       killed: unit.killed + split.killed,
       // v1.1 : hasMoved conservé (l'unité peut se replier après rompre)
       hasAttacked: true,
+      // v1.2 (Phase 3.2-bis) : routed recalculé depuis l'effectif après perte.
+      routed: computeRouted(effectiveAfter, unit.effectiveMax),
     },
     actualDamage: split.actualDamage,
     killed: split.killed,

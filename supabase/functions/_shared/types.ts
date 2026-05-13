@@ -431,6 +431,34 @@ export interface EndTurnBody {
   scale: Scale
 }
 
+/**
+ * Phase 3.2-bis : événement de tick d'attrition d'engagement persistant émis
+ * par resolve_turn pour qu'on puisse surfacer en UI (toast + DamageFloater).
+ */
+export interface EngagementTickEvent {
+  engagement_id: string
+  started_turn: number
+  /** Tour AVANT bascule (= le tour pendant lequel les pertes sont infligées). */
+  resolved_at_turn: number
+  side_a: {
+    unit_id: string
+    team: Team
+    kind: UnitKind
+    killed: number
+    wounded_add: number
+    dissolved: boolean
+  }
+  side_b: {
+    unit_id: string
+    team: Team
+    kind: UnitKind
+    killed: number
+    wounded_add: number
+    dissolved: boolean
+  }
+  engagement_dissolved: boolean
+}
+
 /** Snapshot D13 stocke dans game_actions.result pour end_turn. */
 export interface EndTurnResult {
   scale: Scale
@@ -443,6 +471,8 @@ export interface EndTurnResult {
   winner: Team | null
   /** Phase 3.2 : événements d'ordres conditionnels déclenchés en début de tour entrant. */
   orders_triggered?: OrderTriggeredLog[]
+  /** Phase 3.2-bis : ticks d'engagement persistant infligés pendant le tour résolu. */
+  engagement_ticks?: EngagementTickEvent[]
 }
 
 /** Payload stocke dans game_actions.payload pour end_turn (utile replay). */

@@ -23,4 +23,13 @@ export interface UnitInstance {
   // Phase 2 v2 : effectif elastique (source de verite UI)
   readonly effective?: number
   readonly effectiveMax?: number
+  /** Phase 3.2-bis : moral < 25 → anneau orange clignotant lent (signal détresse). */
+  readonly routed?: boolean
+  /** Phase 3.2-bis : étiquette ordinale "I.1", "C.2"… (calculée par team+kind). */
+  readonly ordinalLabel?: string
+  /** Phase 3.2-bis : flags d'état d'ordres pour icônes au-dessus du pion (FoW : self only). */
+  readonly hasMoved?: boolean
+  readonly hasAttacked?: boolean
+  /** True si l'unité est dans au moins un engagement actif (mouvement = Rompre requis). */
+  readonly engaged?: boolean
 }

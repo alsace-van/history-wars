@@ -67,4 +67,7 @@ export const RESERVE_RELIEF_RATE = 0.1
 export const BREAK_COMBAT_COST_RATIO = 0.1
 export const ENGAGEMENT_VARIANCE_LOW = 0.95
 export const ENGAGEMENT_VARIANCE_RANGE = 0.10
-export const ENGAGEMENT_MORALE_DELTA_PER_TURN = -2
+// Phase 3.2-bis : abaissé -2 → -1 (fatigue plus douce, feedback user).
+export const ENGAGEMENT_MORALE_DELTA_PER_TURN = -1
+// Phase 3.2-bis : plancher du multiplicateur de dégâts subis côté dominant.
+export const DOMINANCE_DAMAGE_FLOOR = 0.25

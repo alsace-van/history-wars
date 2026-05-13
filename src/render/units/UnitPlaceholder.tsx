@@ -274,6 +274,7 @@ export function UnitPlaceholder({
           liftY={statusRingLift}
           effectiveRatio={cohesionRatio}
           cohesionState={cohesionState}
+          routed={unit.routed === true}
           prominent={selected || highlighted}
         />
       )}
@@ -415,10 +416,39 @@ export function UnitPlaceholder({
       )}
 
       <Billboard position={[0, soldierScale * MESH_TOP_HEIGHT_BY_KIND[unit.kind] + 0.3, 0]} follow lockX={false} lockY={false} lockZ={false}>
-        {/* v2.6 : "?" en mode silhouette (kind inconnu de l'observateur). */}
+        {/* v2.7 : ordinalLabel (I.1, C.2…) si dispo, sinon kind ; "?" en silhouette. */}
         <Text fontSize={0.32} color="#ffffff" anchorX="center" anchorY="middle" outlineWidth={0.025} outlineColor="#000000">
-          {silhouette ? '?' : unit.kind}
+          {silhouette ? '?' : (unit.ordinalLabel ?? unit.kind)}
         </Text>
+        {/* v2.8 (Phase 3.2-bis) : icônes d'état d'ordres EN LIGNE de part et d'autre du label
+            (au lieu d'au-dessus, qui rentrait en conflit avec la barre PV).
+            ⚔ gauche = attaque · ⬢ droite = mouvement. Vert dispo · orange limité · rouge consommé. */}
+        {!silhouette && showHealthBar && (
+          <>
+            <Text
+              position={[-0.45, 0.02, 0]}
+              fontSize={0.28}
+              anchorX="center"
+              anchorY="middle"
+              outlineWidth={0.028}
+              outlineColor="#000000"
+              color={resolveAttackIconColor(unit)}
+            >
+              ⚔
+            </Text>
+            <Text
+              position={[0.45, 0.02, 0]}
+              fontSize={0.28}
+              anchorX="center"
+              anchorY="middle"
+              outlineWidth={0.028}
+              outlineColor="#000000"
+              color={resolveMoveIconColor(unit)}
+            >
+              ⬢
+            </Text>
+          </>
+        )}
         {/* Phase 1.5 : effectif chiffre visible uniquement pour mes propres unites (fog of war partiel). */}
         {!silhouette && showHealthBar && unit.count !== undefined && (
           <Text position={[0, -0.32, 0]} fontSize={0.18} color="#e2e8f0" anchorX="center" anchorY="middle" outlineWidth={0.018} outlineColor="#000000">
@@ -428,4 +458,24 @@ export function UnitPlaceholder({
       </Billboard>
     </group>
   )
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3.2-bis : couleurs d'état d'ordres (utilisé par UnitPlaceholder ET BattleSidebar).
+// ---------------------------------------------------------------------------
+const ICON_GREEN = '#22c55e'
+const ICON_ORANGE = '#fb923c'
+const ICON_RED = '#ef4444'
+
+export function resolveAttackIconColor(unit: UnitInstance): string {
+  if (unit.routed) return ICON_RED
+  if (unit.hasAttacked) return ICON_RED
+  return ICON_GREEN
+}
+
+export function resolveMoveIconColor(unit: UnitInstance): string {
+  if (unit.hasMoved) return ICON_RED
+  if (unit.routed) return ICON_ORANGE  // déroute : 1 hex / tour (mouvement limité)
+  if (unit.engaged) return ICON_ORANGE  // engagement : Rompre requis avant mouvement
+  return ICON_GREEN
 }

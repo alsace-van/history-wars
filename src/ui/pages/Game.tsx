@@ -1,7 +1,7 @@
+// v3.27 (13/05/2026) — Phase 3.2-bis : tick floaters + toast "Combat continu (T+N)" pour engagement persistant
 // v3.26 (12/05/2026) — Phase 3.1-C : useVisionMap câblé + tileVisibility + enemyVisibility propagés
 // v3.25 (12/05/2026) — QW1 : extraction useGameLifecycle + useCombatToastFeed + BattleHeader/Footer
 // v3.24 (12/05/2026) — UX manœuvres : mergeMode global + clic cible map (move+merge) + scinder simplifié
-// v3.23 (12/05/2026) — UX : journal rapports combat replié par défaut + toast sur nouveau combat + bouton Topbar
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -10,10 +10,10 @@ import { useGame } from '@hooks/useGame'
 import { useGameRealtime } from '@hooks/useGameRealtime'
 import { useOnlineStatus } from '@hooks/useOnlineStatus'
 import { useBattleUnits } from '@hooks/useBattleUnits'
-import { useCombatActions } from '@hooks/useCombatActions'
+import { useCombatActions, type EndTurnResponse } from '@hooks/useCombatActions'
 import { useTacticalSelection } from '@hooks/useTacticalSelection'
 import { useCombatNotifications } from '@hooks/useCombatNotifications'
-import { useCombatAnimator } from '@hooks/useCombatAnimator'
+import { useCombatAnimator, type DamageFloaterEntry } from '@hooks/useCombatAnimator'
 import { useSettings } from '@hooks/useSettings'
 import { useUnitCriticalActions } from '@hooks/useUnitCriticalActions'
 import { useBattleClickHandlers } from '@hooks/useBattleClickHandlers'
@@ -39,7 +39,7 @@ import { GameHUD } from '@ui/game/GameHUD'
 import { GameTopBar } from '@ui/game/GameTopBar'
 import { BattleHeader } from '@ui/game/BattleHeader'
 import { BattleSidebarFooter } from '@ui/game/BattleSidebarFooter'
-import { getScaleLabel, getStatusLabel } from '@ui/game/gameLabels'
+import { getScaleLabel, getStatusLabel, getKindLabel } from '@ui/game/gameLabels'
 import { BattleModals } from '@ui/game/BattleModals'
 import { CombatPreviewTooltip } from '@ui/game/CombatPreviewTooltip'
 import { CombatResultPanel } from '@ui/game/CombatResultPanel'
@@ -194,6 +194,13 @@ export function Game() {
   // Phase 2.6 C — engagements actifs (table engagements migration 017 + Realtime).
   const { engagements: engagementRows, engagedUnitIds, engagementsByUnit } = useEngagement(gameId, showBattle)
 
+  // Phase 3.2-bis — enrichit chaque UnitInstance avec `engaged` pour que UnitPlaceholder
+  // affiche l'icône d'état mouvement correcte (orange si engagé = "Rompre" requis).
+  const renderUnitsEnriched = useMemo(
+    () => renderUnits.map(u => ({ ...u, engaged: engagedUnitIds.has(u.id) })),
+    [renderUnits, engagedUnitIds],
+  )
+
   // Phase 3.1-C : fog client (vision range + LoS). Doit être appelé AVANT useTacticalSelection
   // car ses outputs alimentent visibleTileKeys + enemyVisibility (filtre reachable/targetable).
   const { visibleTileMap, enemyVisibility, visibleEnemyIds, visibleTileKeys } = useVisionMap({
@@ -201,6 +208,7 @@ export function Game() {
     unitStates,
     boardKeys: mvpBoardKeys,
     activeTeam,
+    engagementRows,
   })
 
   const {
@@ -254,6 +262,19 @@ export function Game() {
   const selectedCohesionState = selectedUnit ? cohesionStateMap.get(selectedUnit.id) : undefined
   const selectedSupport = selectedUnit ? supportMap.get(selectedUnit.id) : undefined
 
+  // Phase 3.2-bis — auto-activation du mode "Retraite" si l'unité est en déroute
+  // (= effectif < 20% effectiveMax désormais, cf. computeRouted). Cohérent avec la
+  // règle serveur : handleRetreat exige cohesionState='broken' qui se déclenche
+  // sous effectiveMin — qu'on ait aligné via ROUT_EFFECTIVE_RATIO=20% des effectifs.
+  useEffect(() => {
+    if (!isMyTurn || !selectedUnit) return
+    if (!selectedUnit.routed) return
+    if (selectedUnit.hasMoved) return
+    if (engagedUnitIds.has(selectedUnit.id)) return
+    if (!critical.canRetreat) return
+    setRetreatMode(prev => (prev ? prev : true))
+  }, [isMyTurn, selectedUnit, engagedUnitIds, critical.canRetreat])
+
   // v3.24 — Hook sizing centralisé pour exposer mergeTargets au plateau (highlights bleus)
   // ET fournir performMerge utilisé par le click handler en mergeMode. Inspector instancie
   // son propre useUnitSizing — la double instanciation est OK (les résultats sont identiques).
@@ -276,6 +297,7 @@ export function Game() {
 
   const { enginePairs, engagementsForSelected, engagementsForInspected } = useEngagementDerivations({
     unitStates, engagementRows, engagementsByUnit, selectedUnit, inspectedEnemy,
+    currentTurn: tactical?.currentTurn ?? game?.turn_number,
   })
 
   const inspectedEnemyCohesion = inspectedEnemy ? cohesionStateMap.get(inspectedEnemy.id) : undefined
@@ -291,7 +313,78 @@ export function Game() {
     })
 
   const { settings: uiSettings, setSkipShakenWarning, animationDurationMs } = useSettings()
-  const { floaters: damageFloaters, removeFloater } = useCombatAnimator({ notifications: combatNotifs, unitStates, animationDurationMs, enabled: showBattle })
+  const { floaters: damageFloaters, removeFloater: removeCombatFloater } = useCombatAnimator({ notifications: combatNotifs, unitStates, animationDurationMs, enabled: showBattle })
+
+  // Phase 3.2-bis : queue dédiée des DamageFloaters issus des ticks d'engagement persistant.
+  // Découplée de useCombatAnimator pour ne pas mélanger Realtime CombatNotification (attaques)
+  // avec les ticks renvoyés synchronement par resolve_turn (attrition mêlée continue).
+  const [tickFloaters, setTickFloaters] = useState<DamageFloaterEntry[]>([])
+  const removeTickFloater = useCallback((id: string) => {
+    setTickFloaters(prev => prev.filter(f => f.id !== id))
+  }, [])
+  const removeFloater = useCallback((id: string) => {
+    if (id.startsWith('tick-')) removeTickFloater(id)
+    else removeCombatFloater(id)
+  }, [removeCombatFloater, removeTickFloater])
+  const allFloaters = useMemo<ReadonlyArray<DamageFloaterEntry>>(
+    () => (tickFloaters.length === 0 ? damageFloaters : [...damageFloaters, ...tickFloaters]),
+    [damageFloaters, tickFloaters],
+  )
+
+  const handleEndTurnSuccess = useCallback((res: EndTurnResponse) => {
+    const ticks = res.engagementTicks
+    if (!ticks || ticks.length === 0) return
+    const newFloaters: DamageFloaterEntry[] = []
+    for (const t of ticks) {
+      const turnsActive = t.resolved_at_turn - t.started_turn + 1
+      // Toast relativisé à myTeam (ton camp en premier).
+      const sides = [t.side_a, t.side_b]
+      const mine = sides.find(s => s.team === myTeam)
+      const enemy = sides.find(s => s.team !== myTeam)
+      const parts: string[] = []
+      if (mine && (mine.killed > 0 || mine.dissolved)) {
+        const label = getKindLabel(mine.kind)
+        parts.push(mine.dissolved ? `Ton ${label} décimée` : `Ton ${label} : −${mine.killed}`)
+      }
+      if (enemy && (enemy.killed > 0 || enemy.dissolved)) {
+        const label = getKindLabel(enemy.kind)
+        parts.push(enemy.dissolved ? `${label} adverse décimée` : `${label} adverse : −${enemy.killed}`)
+      }
+      if (parts.length > 0) {
+        toast(`Combat continu (T+${turnsActive})`, {
+          description: parts.join(' · '),
+          duration: 4500,
+        })
+      }
+      // DamageFloaters : un par côté qui prend des pertes, position = unité avant tick.
+      if (animationDurationMs > 0) {
+        const aUnit = unitStates.find(u => u.id === t.side_a.unit_id)
+        const bUnit = unitStates.find(u => u.id === t.side_b.unit_id)
+        const stamp = performance.now()
+        if (aUnit && (t.side_a.killed > 0 || t.side_a.wounded_add > 0)) {
+          newFloaters.push({
+            id: `tick-${t.engagement_id}-a-${stamp}`,
+            cube: aUnit.position,
+            killed: t.side_a.killed,
+            wounded: t.side_a.wounded_add,
+            startedAt: stamp,
+          })
+        }
+        if (bUnit && (t.side_b.killed > 0 || t.side_b.wounded_add > 0)) {
+          newFloaters.push({
+            id: `tick-${t.engagement_id}-b-${stamp}`,
+            cube: bUnit.position,
+            killed: t.side_b.killed,
+            wounded: t.side_b.wounded_add,
+            startedAt: stamp,
+          })
+        }
+      }
+    }
+    if (newFloaters.length > 0) {
+      setTickFloaters(prev => [...prev, ...newFloaters])
+    }
+  }, [myTeam, unitStates, animationDurationMs])
 
   // Highlight unitéIds = mon unité + ennemi du rapport actif (ennemi filtré par fog of war : LoS depuis n'importe laquelle de mes unités).
   const [activeCombatNotif, setActiveCombatNotif] = useState<CombatNotification | null>(null)
@@ -367,6 +460,7 @@ export function Game() {
     canStart, inProgress, isMyTurn, actionsBusy,
     startBattle, endTurn, submitAction, refresh, clearSelection,
     selectedUnit, engagedUnitIds, navigate,
+    onEndTurnSuccess: handleEndTurnSuccess,
   })
 
   // Modal de fin : ouverte automatiquement sur status='finished',
@@ -407,6 +501,7 @@ export function Game() {
       <GameTopBar
         subtitleLabel={subtitleLabel}
         username={(user.user_metadata?.username as string | undefined) ?? user.email ?? 'soldat'}
+        myTeam={showBattle ? myTeam : null}
         onBack={() => navigate('/lobby')}
         combatReportsCount={showBattle ? combatNotifs.length : undefined}
         combatReportsOpen={combatPanelOpen}
@@ -431,7 +526,7 @@ export function Game() {
             <TacticalScene
               scale={game.current_scale}
               cubes={mvpCubes}
-              units={renderUnits}
+              units={renderUnitsEnriched}
               viewerTeam={showBattle ? myTeam : null}
               tileStates={showBattle ? tileStates : undefined}
               selectedUnitId={selectedUnitId}
@@ -446,7 +541,7 @@ export function Game() {
               onUnitClick={showBattle ? handleUnitClick : undefined}
               onUnitPointerOver={showBattle ? handleUnitPointerOver : undefined}
               onUnitPointerOut={showBattle ? handleUnitPointerOut : undefined}
-              damageFloaters={showBattle ? damageFloaters : undefined}
+              damageFloaters={showBattle ? allFloaters : undefined}
               damageFloaterDurationMs={animationDurationMs}
               onDamageFloaterDone={removeFloater}
               cohesionStateMap={showBattle ? cohesionStateMap : undefined}
@@ -542,6 +637,8 @@ export function Game() {
                 redSlots={redSlots}
                 hostUserId={hostUserId}
                 currentUserId={user.id}
+                onFocusUnit={handleFocusUnit}
+                engagedUnitIds={engagedUnitIds}
               />
             ) : (
               <>

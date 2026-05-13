@@ -141,11 +141,24 @@ export const ENGAGEMENT_VARIANCE_RANGE = 0.10
 
 /**
  * Phase 2.6 — delta moral additionnel par tour engagé.
+ * Phase 3.2-bis : abaissé de -2 → -1 (fatigue plus douce, feedback user).
  * Modélise la fatigue / stress du combat continu. S'additionne au delta
  * combat classique (perte par pertes effective, modulée par soutien).
  *
- * Une unité Nominale en engagement long (10+ tours) descend en Ébranlée
- * naturellement : -2 × 10 = -20 moral, combiné aux pertes effective fait
+ * Une unité Nominale en engagement long (20+ tours) descend en Ébranlée
+ * naturellement : -1 × 20 = -20 moral, combiné aux pertes effective fait
  * basculer cohesion < 0.5.
  */
-export const ENGAGEMENT_MORALE_DELTA_PER_TURN = -2
+export const ENGAGEMENT_MORALE_DELTA_PER_TURN = -1
+
+/**
+ * Phase 3.2-bis — réduction des dégâts subis pour le côté dominant.
+ * Calcul : dominance = power_self_no_floor / power_enemy_no_floor.
+ * Multiplicateur appliqué aux dégâts SUBIS = clamp(1 / dominance, FLOOR, 1).
+ *  - dominance = 1.0 → 1.0 (pas de réduction)
+ *  - dominance = 1.5 → 0.67 (subit 33% de moins)
+ *  - dominance = 2.0 → 0.50 (subit 50% de moins)
+ *  - dominance ≥ 4   → 0.25 (clampé)
+ * Récompense la victoire tactique sans rendre le combat trivialement déséquilibré.
+ */
+export const DOMINANCE_DAMAGE_FLOOR = 0.25

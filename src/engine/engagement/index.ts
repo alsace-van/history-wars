@@ -1,9 +1,11 @@
+// v1.2 (13/05/2026) — Phase 3.2-bis : recompute routed après break (effective réduit)
 // v1.1 (12/05/2026) — Rompre ne consomme plus hasMoved (mouvement conservé pour repli)
 // v1.0 (11/05/2026) — Phase 2.6 Vague A : barrel engine/engagement + helpers start / break / lookup
 // Source : docs/PLAN-ENGAGEMENT-PERSISTENT.md § 1, 3, 6
 // Frontière engine/ : zéro React, zéro Three, zéro Supabase
 
 import { splitCasualties } from '../combat/types'
+import { computeRouted } from '../morale'
 import type { UnitId, UnitState } from '../units/types'
 import {
   BREAK_COMBAT_COST_RATIO,
@@ -115,6 +117,8 @@ export function breakCombat(unit: UnitState): BreakCombatResult {
       // v1.1 : hasMoved reste à sa valeur d'origine (souvent false) → l'unité peut
       // se déplacer après rompre. hasAttacked passe à true → on consomme l'action.
       hasAttacked: true,
+      // v1.2 (Phase 3.2-bis) : routed recalculé depuis l'effectif après perte.
+      routed: computeRouted(effectiveAfter, unit.effectiveMax),
     },
     actualDamage: split.actualDamage,
     killed: split.killed,

@@ -40,11 +40,13 @@ export async function handleRetreat(args: HandleRetreatArgs): Promise<Response> 
   if (!unit) return errorResponse(ERROR_CODES.UNIT_NOT_FOUND, `unit ${unitId} not found`, 404)
   if (unit.team !== userTeam) return errorResponse(ERROR_CODES.UNIT_NOT_OWNED, 'unit belongs to another team', 403)
 
-  // Validation cohésion : retreat est réservé aux Brisées
+  // Phase 3.2-bis : retreat est désormais réservé aux unités en déroute (routed,
+  // = effectif < 20% effectiveMax) — la cohésion 'broken' reste accessoirement
+  // valide pour rétrocompat (peut se déclencher sur cohésion totale très basse).
   const coh = computeCohesionFor(unitId, units)
   if (!coh) return errorResponse(ERROR_CODES.INTERNAL, 'cohesion lookup failed', 500)
-  if (coh.cohesion.state !== 'broken') {
-    return errorResponse(ERROR_CODES.COHESION_NOT_BROKEN, 'retreat reserved for broken units', 400)
+  if (!unit.routed && coh.cohesion.state !== 'broken') {
+    return errorResponse(ERROR_CODES.COHESION_NOT_BROKEN, 'retreat reserved for routed or broken units', 400)
   }
 
   // Validation destination : adjacent (distance 1), in-board, libre

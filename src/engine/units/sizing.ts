@@ -5,7 +5,7 @@
 
 import type { Cube } from '../hex'
 import { cubeDistance } from '../hex'
-import { MORALE_ROUT_THRESHOLD } from '../morale'
+import { computeRouted } from '../morale'
 import { resolveUnitStatsV2 } from './stats'
 import type { UnitState } from './types'
 
@@ -230,9 +230,8 @@ export function mergeUnits(params: MergeParams): MergeResult | SizingError {
     : Math.round((target.morale + source.morale) / 2)
   const moraleMax = target.moraleMax // = source.moraleMax (constante 100 par kind)
   const mergedMorale = Math.min(moraleMax, weightedMorale + MERGE_MORALE_BONUS)
-  // Routed recalculé sur le moral fusionné (et non plus AND legacy) → cohérent
-  // avec MORALE_ROUT_THRESHOLD partout dans le moteur.
-  const mergedRouted = mergedMorale < MORALE_ROUT_THRESHOLD
+  // Phase 3.2-bis : routed dérive désormais de l'effectif fusionné, pas du moral.
+  const mergedRouted = computeRouted(totalEffective, mergedEffectiveMax)
 
   const merged: UnitState = {
     ...target,

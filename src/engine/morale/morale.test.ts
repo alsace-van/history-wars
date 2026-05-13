@@ -1,3 +1,4 @@
+// v1.2 (13/05/2026) — Phase 3.2-bis : routed désormais basé sur effectif (<20%), pas moral
 // v1.1 (11/05/2026) — Phase 2.5 : tests recoverMoraleEndTurnV2 + moraleCombatLossMultiplier
 // v1.0 (09/05/2026) — Phase 1 L1A.1 : tests moral
 
@@ -8,8 +9,9 @@ import type { UnitState } from '../units/types'
 import {
   MORALE_COMBAT_LOSS_MULT_FLOOR,
   MORALE_RECOVER_PER_TURN,
-  MORALE_ROUT_THRESHOLD,
+  ROUT_EFFECTIVE_RATIO,
   applyMoraleDelta,
+  computeRouted,
   isRouted,
   moraleCombatBonus,
   moraleCombatLossMultiplier,
@@ -43,11 +45,12 @@ function makeUnit(overrides: Partial<UnitState> = {}): UnitState {
 }
 
 describe('engine/morale', () => {
-  it('delta negatif : baisse mais ne descend pas sous 0', () => {
+  it('delta negatif : baisse mais ne descend pas sous 0 ; routed ne dépend plus du moral (Phase 3.2-bis)', () => {
     const u = makeUnit({ morale: 10 })
     const r = applyMoraleDelta(u, -50)
     expect(r.morale).toBe(0)
-    expect(r.routed).toBe(true)
+    // Phase 3.2-bis : effectif plein (100/100) → pas routed même si moral=0.
+    expect(r.routed).toBe(false)
   })
 
   it('delta positif : monte mais ne depasse pas moraleMax', () => {
@@ -57,15 +60,24 @@ describe('engine/morale', () => {
     expect(r.routed).toBe(false)
   })
 
-  it('sous le seuil → routed:true ; au seuil exact → routed:false', () => {
-    const sub = applyMoraleDelta(makeUnit({ morale: 50 }), -(50 - MORALE_ROUT_THRESHOLD + 1))
-    expect(sub.morale).toBe(MORALE_ROUT_THRESHOLD - 1)
-    expect(sub.routed).toBe(true)
-    expect(isRouted(sub)).toBe(true)
+  it('routed dépend de l\'effectif : <20% effectiveMax → routed, ≥20% → non', () => {
+    // Effectif 15/100 = 15% → routed
+    const lowEff = makeUnit({ effective: 15, effectiveMax: 100, morale: 100 })
+    expect(computeRouted(15, 100)).toBe(true)
+    expect(isRouted(lowEff)).toBe(true)
+    // Effectif 20/100 = 20% pile → seuil strict, non routed (< 0.20, pas ≤)
+    const onThreshold = makeUnit({ effective: 20, effectiveMax: 100, morale: 0 })
+    expect(computeRouted(20, 100)).toBe(false)
+    expect(isRouted(onThreshold)).toBe(false)
+    // Effectif 19/100 = 19% → routed
+    expect(computeRouted(19, 100)).toBe(true)
+    // applyMoraleDelta propage cette règle
+    const result = applyMoraleDelta(lowEff, +50)
+    expect(result.routed).toBe(true)
+  })
 
-    const onThreshold = applyMoraleDelta(makeUnit({ morale: 50 }), -(50 - MORALE_ROUT_THRESHOLD))
-    expect(onThreshold.morale).toBe(MORALE_ROUT_THRESHOLD)
-    expect(onThreshold.routed).toBe(false)
+  it('ROUT_EFFECTIVE_RATIO = 0.20 (= 20% effectiveMax)', () => {
+    expect(ROUT_EFFECTIVE_RATIO).toBe(0.20)
   })
 
   it('recover end-turn : ignore si combat ou ZdC ennemie, applique sinon', () => {

@@ -40,10 +40,11 @@ export async function handleSurrender(args: HandleSurrenderArgs): Promise<Respon
   if (!unit) return errorResponse(ERROR_CODES.UNIT_NOT_FOUND, `unit ${unitId} not found`, 404)
   if (unit.team !== userTeam) return errorResponse(ERROR_CODES.UNIT_NOT_OWNED, 'unit belongs to another team', 403)
 
+  // Phase 3.2-bis : surrender réservé aux routed (effectif < 20%) ou cohésion broken.
   const coh = computeCohesionFor(unitId, units)
   if (!coh) return errorResponse(ERROR_CODES.INTERNAL, 'cohesion lookup failed', 500)
-  if (coh.cohesion.state !== 'broken') {
-    return errorResponse(ERROR_CODES.COHESION_NOT_BROKEN, 'surrender reserved for broken units', 400)
+  if (!unit.routed && coh.cohesion.state !== 'broken') {
+    return errorResponse(ERROR_CODES.COHESION_NOT_BROKEN, 'surrender reserved for routed or broken units', 400)
   }
 
   // 1. DELETE l'unité qui se rend

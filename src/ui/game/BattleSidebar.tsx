@@ -1,11 +1,13 @@
+// v1.9 (13/05/2026) — Phase 3.2-bis : refonte UX sidebar — cartouche allégée (Tour N + joueur actif + récap unités MON camp seulement) + ParticipantsPanel collapsible
 // v1.8 (13/05/2026) — Phase 3.2 C2 : OrdersPanel intégré sous UnitInspector
 // v1.7 (12/05/2026) — QW2 : prop inspectedEnemy → EnemyUnitPanel (priorité selectedUnit > inspectedEnemy > fallback)
 // v1.6 (12/05/2026) — UX : propage mergeMode + handlers à Inspector (fusion par clic map)
-// v1.5 (12/05/2026) — Sprint UX : tailles texte 10px → 12px (lisibilité Sidebar)
 import type { Team } from '@/types/game'
 import type { CohesionState, SupportCount } from '@engine/cohesion'
 import type { UnitState, SplitRatio } from '@engine/units'
-import { TeamPanel, type SlotData } from '@ui/game/TeamPanel'
+import { computeOrdinalLabels } from '@engine/units'
+import type { SlotData } from '@ui/game/TeamPanel'
+import { ParticipantsPanel } from '@ui/game/ParticipantsPanel'
 import { UnitInspector } from '@ui/game/UnitInspector'
 import { EnemyUnitPanel, type EnemyEngagementInfo } from '@ui/game/EnemyUnitPanel'
 import { OrdersPanel } from '@ui/game/OrdersPanel'
@@ -75,6 +77,10 @@ export interface BattleSidebarProps {
   redSlots: SlotData[]
   hostUserId: string
   currentUserId: string
+  /** Phase 3.2-bis : clic sur un pion de la liste effectif → recentre caméra. */
+  onFocusUnit?: (unitId: string) => void
+  /** Phase 3.2-bis : set des unitId engagés (pour icône mouvement orange). */
+  engagedUnitIds?: Set<string>
 }
 
 export function BattleSidebar({
@@ -82,6 +88,8 @@ export function BattleSidebar({
   activeTeam,
   myTeam,
   isMyTurn,
+  onFocusUnit,
+  engagedUnitIds,
   selectedUnit,
   allUnits,
   gameId,
@@ -122,15 +130,31 @@ export function BattleSidebar({
   hostUserId,
   currentUserId,
 }: BattleSidebarProps) {
-  const activeLabel = activeTeam === 'blue' ? 'Bleus' : 'Rouges'
+  // v1.11 — voyant lumineux (couleur de l'équipe qui joue), récap effectif par pion (I.1, C.1...)
+  // Cartouche fixée sur MON camp (FoW). Le voyant indique qui joue, sans texte ni fuite d'info.
+  const myColor = myTeam === 'blue' ? '#3b82f6' : myTeam === 'red' ? '#ef4444' : '#94a3b8'
   const activeColor = activeTeam === 'blue' ? '#3b82f6' : '#ef4444'
+  const mySlots = myTeam === 'blue' ? blueSlots : myTeam === 'red' ? redSlots : []
+  const myPlayer =
+    mySlots.find(s => s.role === 'general' && s.player !== null)?.player
+    ?? mySlots.find(s => s.player !== null)?.player
+    ?? null
+  const myPlayerName = myPlayer?.username ?? 'Toi'
 
-  // Phase 2 : effectif total cumule par camp (somme des effective vivants)
-  let blueEffectiveTotal = 0
-  let redEffectiveTotal = 0
+  // Récap MON camp pion par pion (I.1, I.2, C.1...). Ordre = ordre d'apparition
+  // dans allUnits (= created_at côté useBattleUnits). Si une unité meurt, les n°
+  // suivants se décalent (acceptable MVP, stabilisation backlog ultérieur).
+  // Le label est calculé par le même helper que celui utilisé pour l'affichage 3D
+  // au-dessus des pions (computeOrdinalLabels) → cohérence sidebar ↔ map garantie.
+  const ordinalLabels = computeOrdinalLabels(allUnits)
+  const myUnitRows: Array<{ unit: UnitState; label: string; engaged: boolean }> = []
   for (const u of allUnits) {
-    if (u.team === 'blue') blueEffectiveTotal += u.effective
-    else if (u.team === 'red') redEffectiveTotal += u.effective
+    if (u.team !== myTeam) continue
+    myUnitRows.push({
+      unit: u,
+      label: ordinalLabels.get(u.id) ?? u.kind,
+      engaged: engagedUnitIds?.has(u.id) ?? false,
+    })
   }
 
   return (
@@ -138,33 +162,69 @@ export function BattleSidebar({
       <div
         className="relative px-3 py-3 border rounded-[2px]"
         style={{
-          borderColor: activeColor,
-          background: `linear-gradient(180deg, ${activeColor}22 0%, transparent 100%)`,
+          borderColor: myColor,
+          background: `linear-gradient(180deg, ${myColor}22 0%, transparent 100%)`,
         }}
       >
-        <div className="text-[12px] uppercase tracking-[0.16em] text-muted-foreground mb-1">
-          Tour {turn}
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+            Tour {turn}
+          </span>
+          <span
+            className="inline-block w-[10px] h-[10px] rounded-full shrink-0"
+            style={{
+              background: activeColor,
+              boxShadow: isMyTurn
+                ? `0 0 8px ${activeColor}, 0 0 2px ${activeColor}`
+                : `0 0 4px ${activeColor}aa`,
+            }}
+            title={isMyTurn ? 'À toi de jouer' : 'Tour adverse'}
+          />
         </div>
         <div
-          className="text-[14px] font-semibold uppercase tracking-[0.08em]"
-          style={{ color: activeColor }}
+          className="text-[14px] font-semibold tracking-[0.04em] truncate"
+          style={{ color: myColor }}
+          title={myPlayerName}
         >
-          {isMyTurn ? 'À toi de jouer' : `Tour des ${activeLabel}`}
+          {myPlayerName}
         </div>
-        {myTeam && (
-          <div className="text-[12px] text-muted-foreground mt-1 uppercase tracking-[0.08em]">
-            Ton camp : {myTeam === 'blue' ? 'Bleus' : 'Rouges'}
+        {myUnitRows.length > 0 && (
+          <div className="mt-2 space-y-[2px]">
+            {myUnitRows.map(({ unit, label, engaged }) => {
+              const ratio = unit.effectiveMax > 0 ? unit.effective / unit.effectiveMax : 0
+              const barColor = ratio > 0.6 ? '#22c55e' : ratio > 0.3 ? '#eab308' : '#ef4444'
+              const atkColor = computeAttackIconColor(unit)
+              const moveColor = computeMoveIconColor(unit, engaged)
+              return (
+                <button
+                  key={unit.id}
+                  type="button"
+                  onClick={() => onFocusUnit?.(unit.id)}
+                  className="w-full grid grid-cols-[42px_auto_1fr_auto] gap-2 items-center px-2 py-[3px] rounded-[2px] hover:bg-[rgba(226,232,240,0.06)] transition-colors text-left"
+                  title={`Centrer la caméra sur ${label}`}
+                >
+                  <span className="text-[11px] font-semibold tabular-nums" style={{ color: myColor }}>
+                    {label}
+                  </span>
+                  <span className="flex items-center gap-[3px] text-[11px] leading-none">
+                    <span style={{ color: atkColor }} title="Attaque">⚔</span>
+                    <span style={{ color: moveColor }} title="Mouvement">⬢</span>
+                  </span>
+                  <span className="h-[4px] bg-[rgba(15,23,42,0.6)] rounded-[1px] overflow-hidden">
+                    <span
+                      className="block h-full"
+                      style={{ width: `${Math.round(ratio * 100)}%`, background: barColor }}
+                    />
+                  </span>
+                  <span className="text-[10px] tabular-nums text-muted-foreground/90">
+                    <span className="text-foreground">{unit.effective}</span>
+                    <span className="opacity-50">/{unit.effectiveMax}</span>
+                  </span>
+                </button>
+              )
+            })}
           </div>
         )}
-        {/* Phase 2 : effectifs totaux */}
-        <div className="mt-2 grid grid-cols-2 gap-2 text-[12px] tabular-nums">
-          <div className="px-2 py-1 border border-blue-400/40 rounded-[2px] bg-blue-400/10 text-blue-300">
-            <span className="opacity-70 mr-1">Bleus</span>{blueEffectiveTotal}
-          </div>
-          <div className="px-2 py-1 border border-red-400/40 rounded-[2px] bg-red-400/10 text-red-300">
-            <span className="opacity-70 mr-1">Rouges</span>{redEffectiveTotal}
-          </div>
-        </div>
       </div>
 
       {selectedUnit && orders !== undefined && onCreateOrder && onDeleteOrder && onReorderOrder && (
@@ -225,24 +285,27 @@ export function BattleSidebar({
         </div>
       )}
 
-      <TeamPanel
-        team="blue"
-        slots={blueSlots}
+      <ParticipantsPanel
+        blueSlots={blueSlots}
+        redSlots={redSlots}
         hostUserId={hostUserId}
         currentUserId={currentUserId}
-        canKick={false}
-        onKick={() => undefined}
-        compact
-      />
-      <TeamPanel
-        team="red"
-        slots={redSlots}
-        hostUserId={hostUserId}
-        currentUserId={currentUserId}
-        canKick={false}
-        onKick={() => undefined}
-        compact
       />
     </div>
   )
+}
+
+// ---------------------------------------------------------------------------
+// Phase 3.2-bis — couleurs icônes d'état (cohérent avec UnitPlaceholder.resolve*).
+// ---------------------------------------------------------------------------
+function computeAttackIconColor(unit: UnitState): string {
+  if (unit.routed || unit.hasAttacked) return '#ef4444'
+  return '#22c55e'
+}
+
+function computeMoveIconColor(unit: UnitState, engaged: boolean): string {
+  if (unit.hasMoved) return '#ef4444'
+  if (unit.routed) return '#fb923c'
+  if (engaged) return '#fb923c'
+  return '#22c55e'
 }

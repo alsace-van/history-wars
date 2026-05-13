@@ -1,3 +1,4 @@
+// v1.1 (13/05/2026) — Phase 3.2-bis : réduction dégâts côté dominant (mirror src v1.1)
 // v1.0 (11/05/2026) — Phase 2.6 Vague B : port engagement/tick pour Deno
 // Source de verite : src/engine/engagement/tick.ts. Duplication controlee (piege #12).
 
@@ -5,12 +6,13 @@ import type { SupportCount } from '../cohesion/types.ts'
 import { splitCasualties } from '../combat/types.ts'
 import { getMatchupCoef } from '../combat/v2/matchup.ts'
 import { DEFAULT_BASE_ATTRITION_RATE, DEFAULT_COMBAT_CONFIG, type CombatConfig } from '../combat/v2/types.ts'
-import { applyMoraleDelta, moraleCombatBonus, moraleCombatLossMultiplier } from '../morale/index.ts'
+import { applyMoraleDelta, computeRouted, moraleCombatBonus, moraleCombatLossMultiplier } from '../morale/index.ts'
 import { TERRAIN_CAPS } from '../terrain/caps.ts'
 import type { TerrainType } from '../terrain/types.ts'
 import { resolveUnitStatsV2 } from '../units.ts'
 import type { UnitState } from '../units.ts'
 import {
+  DOMINANCE_DAMAGE_FLOOR,
   ENGAGEMENT_MORALE_DELTA_PER_TURN,
   ENGAGEMENT_VARIANCE_LOW,
   ENGAGEMENT_VARIANCE_RANGE,
@@ -27,7 +29,7 @@ function computeAttritionDamage(
   terrain: TerrainType,
   rng: () => number,
   config: CombatConfig,
-): { rawDamage: number; rollUsed: number } {
+): { rawDamage: number; rollUsed: number; damageNoFloor: number } {
   const aStats = resolveUnitStatsV2(attacker.kind, attacker.subKind)
   const dStats = resolveUnitStatsV2(defender.kind, defender.subKind)
 
@@ -66,7 +68,10 @@ function computeAttritionDamage(
     ? Math.max(baseAttrition, Math.round(damageRaw * variance))
     : Math.max(0, Math.round(damageRaw * variance))
 
-  return { rawDamage: damageFinal, rollUsed: rollRaw }
+  // Phase 3.2-bis : damageNoFloor pour calcul de dominance dans resolveEngagementTick.
+  const damageNoFloor = Math.max(0, Math.round(damageRawNoFloor * variance))
+
+  return { rawDamage: damageFinal, rollUsed: rollRaw, damageNoFloor }
 }
 
 function applyAttritionToSide(
@@ -105,7 +110,8 @@ function applyAttritionToSide(
     moraleBefore: unit.morale,
     moraleAfter: unitAfter.morale,
     moraleDelta,
-    routedAfter: unitAfter.routed,
+    // Phase 3.2-bis : routed depuis effectif POST-tick.
+    routedAfter: computeRouted(effectiveAfter, unit.effectiveMax),
     dissolved,
     rollUsed,
   }
@@ -119,8 +125,16 @@ export function resolveEngagementTick(input: EngagementTickInput): EngagementTic
   const aToB = computeAttritionDamage(input.sideA, input.sideB, input.terrain, input.rng, config)
   const bToA = computeAttritionDamage(input.sideB, input.sideA, input.terrain, input.rng, config)
 
-  const resultA = applyAttritionToSide(input.sideA, bToA.rawDamage, contactCap, input.supportA, bToA.rollUsed)
-  const resultB = applyAttritionToSide(input.sideB, aToB.rawDamage, contactCap, input.supportB, aToB.rollUsed)
+  // Phase 3.2-bis : réduction côté dominant (cf. src/engine/engagement/tick.ts v1.1).
+  const eps = 1
+  const dominanceA = (aToB.damageNoFloor + eps) / (bToA.damageNoFloor + eps)
+  const reductionA = Math.max(DOMINANCE_DAMAGE_FLOOR, Math.min(1, 1 / dominanceA))
+  const reductionB = Math.max(DOMINANCE_DAMAGE_FLOOR, Math.min(1, dominanceA))
+  const damageToA = Math.round(bToA.rawDamage * reductionA)
+  const damageToB = Math.round(aToB.rawDamage * reductionB)
+
+  const resultA = applyAttritionToSide(input.sideA, damageToA, contactCap, input.supportA, bToA.rollUsed)
+  const resultB = applyAttritionToSide(input.sideB, damageToB, contactCap, input.supportB, aToB.rollUsed)
 
   const dissolved = resultA.dissolved || resultB.dissolved
   let dissolutionReason: EngagementDissolutionReason

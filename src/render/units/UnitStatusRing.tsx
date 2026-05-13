@@ -1,3 +1,4 @@
+// v1.1 (13/05/2026) — Phase 3.2-bis : routed (déroute) → orange + clignotement lent (signal détresse)
 // v1.0 (11/05/2026) — Phase 2.5 C.2 : anneau d'état permanent sous l'unité (couleur selon pertes + cohésion)
 // Source : docs/PLAN-MORAL-COHESION.md § 6 (système visuel multi-anneaux)
 import { useMemo, useRef } from 'react'
@@ -12,8 +13,10 @@ interface UnitStatusRingProps {
   liftY: number
   /** Ratio effectif vivant / effectiveMax (∈ [0, 1]). */
   effectiveRatio: number
-  /** État cohésion. Si 'broken' → orange foncé clignotant. */
+  /** État cohésion. Si 'broken' → orange foncé clignotant rapide. */
   cohesionState: CohesionState
+  /** Phase 3.2-bis : si true (moral < 25), force orange + clignotement lent. */
+  routed?: boolean
   /** Si true, opacité augmentée (sélection ou hover). */
   prominent?: boolean
 }
@@ -35,29 +38,35 @@ export function UnitStatusRing({
   liftY,
   effectiveRatio,
   cohesionState,
+  routed = false,
   prominent = false,
 }: UnitStatusRingProps) {
   const matRef = useRef<THREE.MeshBasicMaterial>(null)
 
-  // Décision couleur — combine pertes + état cohésion. cohesion 'broken' force orange foncé.
+  // Décision couleur — combine pertes + état cohésion + déroute.
+  //   broken (cohésion) > routed (moral) > pertes brutes (effective ratio).
   const color = useMemo<number>(() => {
-    if (cohesionState === 'broken') return 0xc2410c  // orange foncé (Tailwind orange-700)
+    if (cohesionState === 'broken') return 0xc2410c  // orange foncé (broken)
+    if (routed) return 0xfb923c                      // orange clair (déroute moral)
     const losses = 1 - effectiveRatio  // 0 = intact, 1 = mort
-    if (cohesionState === 'shaken') return 0xeab308  // jaune (= shaken déjà)
+    if (cohesionState === 'shaken') return 0xeab308  // jaune (shaken)
     if (losses < 0.25) return 0x22c55e  // vert
     if (losses < 0.5) return 0xeab308   // jaune
     if (losses < 0.75) return 0xfb923c  // orange clair
     return 0xc2410c                     // orange foncé
-  }, [effectiveRatio, cohesionState])
+  }, [effectiveRatio, cohesionState, routed])
 
   const baseOpacity = prominent ? 0.8 : 0.4
 
-  // Clignotement subtil si Brisé (1.5s période, amplitude ±0.15).
+  // Clignotement : Brisée = rapide (4.2 Hz), Routed = lent (1.6 Hz), sinon stable.
   useFrame((state) => {
     if (!matRef.current) return
     if (cohesionState === 'broken') {
-      const breath = (Math.sin(state.clock.elapsedTime * 4.2) + 1) / 2  // [0, 1]
+      const breath = (Math.sin(state.clock.elapsedTime * 4.2) + 1) / 2
       matRef.current.opacity = baseOpacity * (0.75 + 0.25 * breath)
+    } else if (routed) {
+      const breath = (Math.sin(state.clock.elapsedTime * 1.6) + 1) / 2
+      matRef.current.opacity = baseOpacity * (0.65 + 0.35 * breath)
     } else {
       matRef.current.opacity = baseOpacity
     }
