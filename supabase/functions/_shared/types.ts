@@ -321,6 +321,71 @@ export interface BreakCombatPayload {
   unit_id: string
 }
 
+// ----------------------------------------------------------------------------
+// Phase 3.2 — Pré-postures / ordres conditionnels (table unit_orders, EF submit_orders)
+// ----------------------------------------------------------------------------
+
+export type OrderTriggerKindDTO = 'on_attacked' | 'enemy_in_range' | 'cohesion_broken' | 'enemy_los'
+export type OrderActionKindDTO = 'charge' | 'fire' | 'retreat' | 'hold'
+
+export interface OrderTriggerDTO {
+  kind: OrderTriggerKindDTO
+  params?: { range?: number }
+}
+
+export interface OrderActionDTO {
+  kind: OrderActionKindDTO
+  params?: Record<string, unknown>
+}
+
+/** Row brute table unit_orders (snake_case BDD, transformée côté client si besoin). */
+export interface UnitOrderRow {
+  id: string
+  game_id: string
+  unit_id: string
+  owner_user_id: string
+  priority: number
+  trigger: OrderTriggerDTO
+  action: OrderActionDTO
+  active: boolean
+  created_at: string
+}
+
+/**
+ * Body POST EF submit_orders. Batch d'opérations CRUD pour une unité.
+ *  - `create` : INSERT (priority obligatoire, libre tant que pas en conflit ; trigger/action obligatoires).
+ *  - `update` : UPDATE par order_id (champs optionnels).
+ *  - `delete` : DELETE par order_id.
+ */
+export interface SubmitOrdersBody {
+  game_id: string
+  unit_id: string
+  operations: Array<
+    | { op: 'create'; priority: number; trigger: OrderTriggerDTO; action: OrderActionDTO; active?: boolean }
+    | { op: 'update'; order_id: string; priority?: number; trigger?: OrderTriggerDTO; action?: OrderActionDTO; active?: boolean }
+    | { op: 'delete'; order_id: string }
+  >
+}
+
+export interface SubmitOrdersResult {
+  ok: true
+  orders: UnitOrderRow[]
+}
+
+/**
+ * Log d'un ordre déclenché lors de resolve_turn (sauvegardé dans game_actions
+ * avec action_type='order_triggered' pour replay + UI rapport).
+ */
+export interface OrderTriggeredLog {
+  unit_id: string
+  posture_id: string
+  resolved_action: OrderActionKindDTO
+  target_unit_id?: string | null
+  dest_q?: number | null
+  dest_r?: number | null
+  skipped?: 'broken' | 'has_moved' | 'has_attacked' | 'no_target' | 'routed' | null
+}
+
 /** Snapshot D13 stocke dans game_actions.result pour break_combat. */
 export interface BreakCombatResultSnapshot {
   unit_id: string
@@ -376,6 +441,8 @@ export interface EndTurnResult {
   units_recovered_count: number
   finished: boolean
   winner: Team | null
+  /** Phase 3.2 : événements d'ordres conditionnels déclenchés en début de tour entrant. */
+  orders_triggered?: OrderTriggeredLog[]
 }
 
 /** Payload stocke dans game_actions.payload pour end_turn (utile replay). */
@@ -433,6 +500,13 @@ export const ERROR_CODES = {
   SUICIDE_CAMP_TOO_LOW: 'SUICIDE_CAMP_TOO_LOW',
   // Phase 2.6 — engagement persistant
   NOT_ENGAGED: 'NOT_ENGAGED',
+  // Phase 3.2 — pré-postures / ordres conditionnels
+  ORDERS_LIMIT_EXCEEDED: 'ORDERS_LIMIT_EXCEEDED',
+  INVALID_TRIGGER: 'INVALID_TRIGGER',
+  INVALID_ACTION: 'INVALID_ACTION',
+  INVALID_PRIORITY: 'INVALID_PRIORITY',
+  PRIORITY_CONFLICT: 'PRIORITY_CONFLICT',
+  ORDER_NOT_FOUND: 'ORDER_NOT_FOUND',
   // generique
   INTERNAL: 'INTERNAL',
 } as const

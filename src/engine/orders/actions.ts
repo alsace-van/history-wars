@@ -1,0 +1,138 @@
+// v1.0 (13/05/2026) — Phase 3.2 Vague A : résolution cible/destination par action d'ordre
+// Frontière engine/ : zéro React, zéro Three, zéro Supabase.
+
+import { cubeKey, cubeDistance, neighbors, type Cube } from '../hex'
+import { hasLineOfSight } from '../los'
+import { getUnitStatsV2, resolveUnitStatsV2, type UnitState } from '../units'
+import type { EvaluateOrdersContext, OrderActionKind } from './types'
+
+interface PickResult {
+  readonly targetUnitId?: string | null
+  readonly destHex?: Cube | null
+}
+
+/**
+ * `charge` : choisir l'ennemi visible le plus menaçant à portée mouvement.
+ * Heuristique : ennemi le plus proche (distance min). Si égalité, plus grand
+ * `effective` (cible la plus dangereuse). La destination est un hex adjacent à
+ * cet ennemi, choisi parmi les voisins libres et accessibles.
+ *
+ * Retourne `null/null` si aucune cible n'est joignable.
+ */
+function pickChargeTarget(unit: UnitState, ctx: EvaluateOrdersContext): PickResult {
+  const stats = getUnitStatsV2(unit.kind)
+  const reach = stats.movement
+  let best: { enemy: UnitState; dist: number } | null = null
+
+  for (const enemy of ctx.allUnits) {
+    if (enemy.team === unit.team) continue
+    if (!ctx.visibleEnemyIds.has(enemy.id)) continue
+    const dist = cubeDistance(unit.position, enemy.position)
+    if (dist > reach + 1) continue
+    if (!best || dist < best.dist || (dist === best.dist && enemy.effective > best.enemy.effective)) {
+      best = { enemy, dist }
+    }
+  }
+  if (!best) return { targetUnitId: null, destHex: null }
+
+  if (best.dist === 1) {
+    return { targetUnitId: best.enemy.id, destHex: unit.position }
+  }
+  const occupied = new Set<string>()
+  for (const u of ctx.allUnits) {
+    if (u.id === unit.id) continue
+    occupied.add(cubeKey(u.position))
+  }
+  let bestNeighbor: { hex: Cube; dist: number } | null = null
+  for (const nb of neighbors(best.enemy.position)) {
+    const k = cubeKey(nb)
+    if (!ctx.visibleTileKeys.has(k)) continue
+    if (occupied.has(k)) continue
+    const d = cubeDistance(unit.position, nb)
+    if (d > reach) continue
+    if (!bestNeighbor || d < bestNeighbor.dist) bestNeighbor = { hex: nb, dist: d }
+  }
+  if (!bestNeighbor) return { targetUnitId: null, destHex: null }
+  return { targetUnitId: best.enemy.id, destHex: bestNeighbor.hex }
+}
+
+/**
+ * `fire` : choisir l'ennemi visible avec LoS dégagée + distance ∈ [minRange, range].
+ * Heuristique : ennemi avec effective le plus haut (cible prioritaire = la plus dense).
+ *
+ * Pas de mouvement induit (l'action `fire` est immobile, comme attack_ranged).
+ */
+function pickFireTarget(unit: UnitState, ctx: EvaluateOrdersContext): PickResult {
+  const stats = resolveUnitStatsV2(unit.kind, unit.subKind)
+  if (stats.range <= 1) return { targetUnitId: null, destHex: null }
+  let best: UnitState | null = null
+  for (const enemy of ctx.allUnits) {
+    if (enemy.team === unit.team) continue
+    if (!ctx.visibleEnemyIds.has(enemy.id)) continue
+    const dist = cubeDistance(unit.position, enemy.position)
+    if (dist < stats.minRange || dist > stats.range) continue
+    const blockers = new Set<string>()
+    for (const u of ctx.allUnits) {
+      if (u.id === unit.id || u.id === enemy.id) continue
+      blockers.add(cubeKey(u.position))
+    }
+    if (!hasLineOfSight(unit.position, enemy.position, blockers)) continue
+    if (!best || enemy.effective > best.effective) best = enemy
+  }
+  return best ? { targetUnitId: best.id, destHex: null } : { targetUnitId: null, destHex: null }
+}
+
+/**
+ * `retreat` : choisir l'hex voisin libre (rayon 1, type `retreat` Phase 2.5 C)
+ * qui MAXIMISE la distance minimale aux ennemis visibles. Si plusieurs ennemis
+ * adjacents, on s'éloigne du barycentre. Pas d'hex hors `visibleTileKeys`.
+ *
+ * Retourne `null` si aucun voisin libre (encerclement total).
+ */
+function pickRetreatHex(unit: UnitState, ctx: EvaluateOrdersContext): PickResult {
+  const visibleEnemies: UnitState[] = []
+  for (const enemy of ctx.allUnits) {
+    if (enemy.team === unit.team) continue
+    if (ctx.visibleEnemyIds.has(enemy.id)) visibleEnemies.push(enemy)
+  }
+  const occupied = new Set<string>()
+  for (const u of ctx.allUnits) {
+    if (u.id === unit.id) continue
+    occupied.add(cubeKey(u.position))
+  }
+  let best: { hex: Cube; score: number } | null = null
+  for (const nb of neighbors(unit.position)) {
+    const k = cubeKey(nb)
+    if (!ctx.visibleTileKeys.has(k)) continue
+    if (occupied.has(k)) continue
+    let minDist = Number.POSITIVE_INFINITY
+    for (const enemy of visibleEnemies) {
+      const d = cubeDistance(nb, enemy.position)
+      if (d < minDist) minDist = d
+    }
+    const score = visibleEnemies.length === 0 ? 1 : minDist
+    if (!best || score > best.score) best = { hex: nb, score }
+  }
+  return best ? { targetUnitId: null, destHex: best.hex } : { targetUnitId: null, destHex: null }
+}
+
+/** Dispatcher : retourne cible/destination pour une action donnée. */
+export function resolveActionTarget(
+  unit: UnitState,
+  actionKind: OrderActionKind,
+  ctx: EvaluateOrdersContext,
+): PickResult {
+  switch (actionKind) {
+    case 'charge': return pickChargeTarget(unit, ctx)
+    case 'fire': return pickFireTarget(unit, ctx)
+    case 'retreat': return pickRetreatHex(unit, ctx)
+    case 'hold': return { targetUnitId: null, destHex: null }
+    default: {
+      const _exhaustive: never = actionKind
+      return _exhaustive
+    }
+  }
+}
+
+// Exports nommés pour tests unitaires fins (ciblage par action).
+export { pickChargeTarget, pickFireTarget, pickRetreatHex }

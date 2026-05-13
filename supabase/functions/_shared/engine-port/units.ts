@@ -53,6 +53,8 @@ export interface UnitStatsV2 {
   minRange: number
   movement: number
   moraleMax: number
+  /** Phase 3.1-A : portée vision hex (mirror src v2.3). */
+  vision: number
   archerOverride?: SubKindOverride
 }
 
@@ -60,20 +62,20 @@ export const UNIT_STATS_V2: Record<UnitKind, UnitStatsV2> = Object.freeze({
   I: Object.freeze({
     effectiveMax: 800, effectiveMin: 100,
     attack: 1.0, defense: 1.0, rangedPower: 0,
-    range: 1, minRange: 0, movement: 3, moraleMax: 100,
+    range: 1, minRange: 0, movement: 3, moraleMax: 100, vision: 3,
   }),
   C: Object.freeze({
     effectiveMax: 180, effectiveMin: 25,
     // Phase 2.5 balance : nerf attack/defense (cf. src v2.1)
     attack: 1.1, defense: 0.9, rangedPower: 0,
     // v2.1 mirror : movement 6→4 (rééquilibrage MVP)
-    range: 1, minRange: 0, movement: 4, moraleMax: 100,
+    range: 1, minRange: 0, movement: 4, moraleMax: 100, vision: 5,
   }),
   A: Object.freeze({
     effectiveMax: 120, effectiveMin: 30,
     attack: 0.5, defense: 0.3, rangedPower: 4.0,
     // v2.1 mirror : range 7→6 (rééquilibrage MVP)
-    range: 6, minRange: 2, movement: 2, moraleMax: 100,
+    range: 6, minRange: 2, movement: 2, moraleMax: 100, vision: 4,
     archerOverride: Object.freeze({ range: 4, minRange: 0, rangedPower: 2.5 }),
   }),
 }) as Record<UnitKind, UnitStatsV2>

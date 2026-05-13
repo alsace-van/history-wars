@@ -1,7 +1,7 @@
+// v1.4 (13/05/2026) — Phase 3.2 Vague B3 : §10.5 évaluation ordres conditionnels (pré-postures)
 // v1.3 (11/05/2026) — Phase 2.6 Vague B : tick engagements actifs avant récup moral (combat continu)
 // v1.2 (11/05/2026) — Phase 2.5 B : recoverMoraleEndTurnV2 modulée par soutien (alliés rayon 1+2)
 // v1.1 (10/05/2026) — Phase 2 2C.6 : reset last_move_path en debut de tour (detection charge cav)
-// v1.0 (09/05/2026) — Phase 1 L1B.4c : EF resolve_turn (bascule activeTeam, recup morale, end-condition)
 //
 // Logique :
 // 1. CORS / POST only
@@ -49,8 +49,9 @@ import {
   type TerrainType,
 } from '../_shared/engine-port/terrain/index.ts'
 import { seededRng } from '../_shared/engine-port/combat/rng.ts'
+import { evaluateAndApplyOrders } from './_evaluateOrders.ts'
 
-const TAG = '[resolve_turn v1.3]'
+const TAG = '[resolve_turn v1.4]'
 
 interface EngagementRow {
   id: string
@@ -442,6 +443,30 @@ Deno.serve(async (req: Request) => {
       }
     }
 
+    // 10.5 Phase 3.2 — Évaluation des ordres conditionnels de toTeam.
+    //
+    // Snapshot-then-resolve : on évalue sur l'état post-tick post-morale.
+    // Pour les ordres exécutables, on applique :
+    //   - retreat → UPDATE position + DELETE engagements de l'unité.
+    //   - charge  → UPDATE position + INSERT engagement (paire triée).
+    //   - fire    → flag has_attacked (damage différé Phase 3.3).
+    //   - hold    → no-op.
+    // Chaque évaluation (skipped ou non) est loggée en game_actions(order_triggered)
+    // pour rapport UI (Vague C4) + replay déterministe.
+    //
+    // Les engagements actifs APRÈS dissolution = engagements - engagementsToDelete (déduit).
+    const activeEngagements = engagements.filter(e => !engagementsToDelete.includes(e.id))
+    const ordersResult = await evaluateAndApplyOrders({
+      admin,
+      gameId,
+      toTeam,
+      units: Array.from(liveUnitStates.values()),
+      engagements: activeEngagements,
+      boardRadius,
+      currentTurn: turnAfter,
+      actorUserId: user.userId,
+    })
+
     // 11. End-condition — basé sur le snapshot POST-tick (dissolutions appliquées).
     let blueCount = 0
     let redCount = 0
@@ -488,6 +513,7 @@ Deno.serve(async (req: Request) => {
       units_recovered_count: unitsRecoveredCount,
       finished,
       winner,
+      orders_triggered: ordersResult.events.length > 0 ? ordersResult.events : undefined,
     }
 
     // 14. INSERT game_actions
