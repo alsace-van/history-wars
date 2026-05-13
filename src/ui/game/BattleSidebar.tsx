@@ -1,13 +1,15 @@
+// v1.8 (13/05/2026) — Phase 3.2 C2 : OrdersPanel intégré sous UnitInspector
 // v1.7 (12/05/2026) — QW2 : prop inspectedEnemy → EnemyUnitPanel (priorité selectedUnit > inspectedEnemy > fallback)
 // v1.6 (12/05/2026) — UX : propage mergeMode + handlers à Inspector (fusion par clic map)
 // v1.5 (12/05/2026) — Sprint UX : tailles texte 10px → 12px (lisibilité Sidebar)
-// v1.4 (11/05/2026) — Phase 2.6 C : propage engagements + currentTurn + onBreakCombat à Inspector
 import type { Team } from '@/types/game'
 import type { CohesionState, SupportCount } from '@engine/cohesion'
 import type { UnitState, SplitRatio } from '@engine/units'
 import { TeamPanel, type SlotData } from '@ui/game/TeamPanel'
 import { UnitInspector } from '@ui/game/UnitInspector'
 import { EnemyUnitPanel, type EnemyEngagementInfo } from '@ui/game/EnemyUnitPanel'
+import { OrdersPanel } from '@ui/game/OrdersPanel'
+import type { UnitOrderRow, SubmitOrdersOp } from '@hooks/usePreOrders'
 
 export interface BattleSidebarProps {
   turn: number
@@ -61,6 +63,14 @@ export interface BattleSidebarProps {
   inspectedEnemyCohesion?: CohesionState
   /** Engagements de l'ennemi inspecté (lookup côté parent dans engagementsByUnit). */
   inspectedEnemyEngagements?: ReadonlyArray<EnemyEngagementInfo>
+  // -------- Phase 3.2 C : ordres conditionnels (pré-postures) de l'unité sélectionnée --------
+  orders?: UnitOrderRow[]
+  ordersBusy?: boolean
+  ordersError?: string | null
+  onCreateOrder?: (trigger: SubmitOrdersOp['trigger'], action: SubmitOrdersOp['action']) => Promise<boolean>
+  onUpdateOrder?: (orderId: string, patch: Omit<SubmitOrdersOp, 'op' | 'order_id'>) => Promise<boolean>
+  onDeleteOrder?: (orderId: string) => Promise<boolean>
+  onReorderOrder?: (orderId: string, newPriority: number) => Promise<boolean>
   blueSlots: SlotData[]
   redSlots: SlotData[]
   hostUserId: string
@@ -100,6 +110,13 @@ export function BattleSidebar({
   inspectedEnemy,
   inspectedEnemyCohesion,
   inspectedEnemyEngagements,
+  orders,
+  ordersBusy,
+  ordersError,
+  onCreateOrder,
+  onUpdateOrder,
+  onDeleteOrder,
+  onReorderOrder,
   blueSlots,
   redSlots,
   hostUserId,
@@ -149,6 +166,19 @@ export function BattleSidebar({
           </div>
         </div>
       </div>
+
+      {selectedUnit && orders !== undefined && onCreateOrder && onDeleteOrder && onReorderOrder && (
+        <OrdersPanel
+          isMyUnit={selectedUnit.team === myTeam}
+          orders={orders}
+          busy={!!ordersBusy}
+          error={ordersError ?? null}
+          onCreate={onCreateOrder}
+          onUpdate={onUpdateOrder ?? (async () => false)}
+          onDelete={onDeleteOrder}
+          onReorder={onReorderOrder}
+        />
+      )}
 
       {selectedUnit ? (
         <UnitInspector

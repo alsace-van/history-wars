@@ -25,6 +25,7 @@ import { useEnemyHoverTooltip } from '@hooks/useEnemyHoverTooltip'
 import { useUnitPathAnimation } from '@hooks/useUnitPathAnimation'
 import { useEngagementDerivations } from '@hooks/useEngagementDerivations'
 import { useVisionMap } from '@hooks/useVisionMap'
+import { usePreOrders } from '@hooks/usePreOrders'
 import {
   isHost,
   isPlayerInGame,
@@ -378,6 +379,14 @@ export function Game() {
   // v3.23 — Journal des combats : extrait dans useCombatToastFeed (QW1).
   const { combatPanelOpen, setCombatPanelOpen, toggleCombatPanel } = useCombatToastFeed({ combatNotifs })
 
+  // Phase 3.2 C — ordres conditionnels (pré-postures) de l'unité sélectionnée.
+  // Hook en queue (cf. règle CLAUDE.md). Désactivé hors bataille pour ne pas fetcher inutile.
+  const preOrders = usePreOrders({
+    gameId,
+    unitId: selectedUnit && selectedUnit.team === myTeam ? selectedUnit.id : null,
+    enabled: showBattle,
+  })
+
   if (authLoading || !user || loading || !game) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -522,6 +531,13 @@ export function Game() {
                 inspectedEnemy={inspectedEnemy}
                 inspectedEnemyCohesion={inspectedEnemyCohesion}
                 inspectedEnemyEngagements={engagementsForInspected}
+                orders={preOrders.orders}
+                ordersBusy={preOrders.busy}
+                ordersError={preOrders.error}
+                onCreateOrder={preOrders.createOrder}
+                onUpdateOrder={preOrders.updateOrder}
+                onDeleteOrder={preOrders.deleteOrder}
+                onReorderOrder={preOrders.reorderOrder}
                 blueSlots={blueSlots}
                 redSlots={redSlots}
                 hostUserId={hostUserId}

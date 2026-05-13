@@ -1,7 +1,7 @@
+// v2.3 (13/05/2026) — Phase 3.2 C4 : toast des ordres conditionnels déclenchés à la fin de end_turn
 // v2.2 (11/05/2026) — Phase 2.6 C : BreakCombatAction + code erreur NOT_ENGAGED
 // v2.1 (11/05/2026) — Phase 2.5 C : RetreatAction + SurrenderAction + SuicideAction + codes erreur cohésion
 // v2.0 (10/05/2026) — Phase 2 2D.5 : ajout SplitAction + MergeAction + nouveaux error codes humanises
-// v1.0 (09/05/2026) — L1C.1 : wrappers EF start_battle / resolve_action / resolve_turn
 import { useCallback, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { supabase } from '@lib/supabase'
@@ -60,6 +60,17 @@ export interface SuicideAction {
 }
 
 /** Phase 2.6 C — rupture volontaire d'engagement(s). Coût 10% effective, action consommée. */
+/** Phase 3.2 C4 — type minimal local pour parser orders_triggered dans EndTurnResult. */
+interface OrderTriggeredLogUI {
+  unit_id: string
+  posture_id: string
+  resolved_action: 'charge' | 'fire' | 'retreat' | 'hold'
+  target_unit_id?: string | null
+  dest_q?: number | null
+  dest_r?: number | null
+  skipped?: string | null
+}
+
 export interface BreakCombatAction {
   type: 'break_combat'
   payload: { unit_id: string }
@@ -264,6 +275,18 @@ export function useCombatActions(): UseCombatActionsResult {
         })
         if (!res.ok) {
           toast.error(humanizeError(res.code, res.message))
+          return res
+        }
+        // Phase 3.2 C4 : toaster les ordres conditionnels déclenchés en début du tour entrant.
+        const payload = res.data as { result?: { orders_triggered?: OrderTriggeredLogUI[] } } | undefined
+        const events = payload?.result?.orders_triggered
+        if (events && events.length > 0) {
+          for (const ev of events) {
+            const phrase = ev.skipped
+              ? `Ordre adverse ${ev.resolved_action} bloqué (${ev.skipped})`
+              : `Ordre adverse déclenché : ${ev.resolved_action}`
+            toast(phrase, { duration: 5000 })
+          }
         }
         return res
       })
