@@ -86,34 +86,30 @@ Exception : confiance < 95 % AVANT de coder → plan détaillé + questions auto
 
 Ne jamais demander un re-upload si le fichier est accessible via une de ces sources.
 
-## 7. État courant (12/05/2026 — session 19 clôturée)
+## 7. État courant (13/05/2026 — session 20 clôturée)
 
 - Phase 0 ✅ 13/13
 - Phase 1 ✅ 13/13 — combat MVP tactique complet
 - Phase 1.5 ✅ polish wounded + visuels asymétriques + toasts combat
 - **Phase 2 ✅** refonte combat v2 livrée (sessions 15-16)
 - **Phase 2.5 ✅** moral / cohésion / soutien livrée prod (session 17)
-- **Phase 2.6 ✅** engagement persistant livrée + testée humain (sessions 18-19) — Vague A engine, Vague B BDD+EF, Vague C UI, Vague D test ✅. Tag git `phase-2-complete` posé.
-- **Session 19 livré aussi** (en plus du plan original) :
-  - MVP tweak board radius 7 + 8 unités en colonnes + C move 4 + A range 6 + anim vitesse par kind
-  - Refonte journal combats (toast bref + bouton TopBar + panel scrollable sous le bouton)
-  - Garde-fou Brisée : effective ≥ 1.5 × min → max shaken
-  - Override attaque Brisée : autorisée si ennemi strictement plus petit
-  - Rompre : conserve le mouvement + repli forcé (dest doit s'éloigner du contact)
-  - UX manœuvres : scinder = clic ratio direct, fusion = clic sur la map (move auto si distant)
-  - Fusion : bonus moral +25 (sort de la déroute) + effectiveMin ne cumule plus
-  - CavalryMesh dédié (cavalier.glb optimisé 41 MB → 2.9 MB via gltf-transform)
-- Phase 3 ⬜ moteur de tour : brouillard évolué, détection, pré-postures
-- Phase 4 ⬜ IA solo
-- Phase 5 ⬜ Profondeur tactique (formations, fatigue, ravitaillement, Infirmier, météo)
+- **Phase 2.6 ✅** engagement persistant livrée + testée humain (sessions 18-19). Tag `phase-2-complete`.
+- **Phase 3.1 ✅** fog of war évolué (vision range + LoS + niveaux hidden/spotted/identified) livrée + testée humain (session 20). Tag `phase-3-1-complete`.
+- **Session 20 livré aussi** (en pré-Phase 3.1) :
+  - QW1 refacto : Game.tsx 740 → 562 lignes (extraction 5 hooks + 3 composants).
+  - QW2 : inspection unité ennemie (clic ennemi → EnemyUnitPanel read-only, catégorie effectif, cohésion label).
+  - Fix render hidden hex : noir opaque au lieu de `return null` (masque PageBackground qui transparait).
+  - Fix vision : `cubeKey()` (q,r) cohérent partout (était mismatch q,r,s manuel dans useVisionMap).
+- Phase 3.2 ⬜ pré-postures / ordres conditionnels (next).
+- Phase 3.3 ⬜ polish / balance fin de Phase 3.
+- Phase 4 ⬜ IA solo + fog server-side RLS (vue SQL filtrée units).
+- Phase 5 ⬜ profondeur tactique (formations, fatigue, ravitaillement, Infirmier, météo).
 - Phases 6-15 ⬜
 
-Prochaine action session 20 — Phase 3 ou pré-Phase 3 (au choix) :
-- Préparation : revue rapide `PLAN-MASTER-V2.md` § Phase 3 (fog of war évolué, postures, détection)
-- Quick wins backlog avant Phase 3 (~1-2h chacun) :
-  1. **[ux]** Inspection unité ennemie en cliquant (lecture seule stats publiques)
-  2. **[balance]** Pondération `baseAttritionRate` 0.08 à revoir selon retour humain élargi
-  3. **[refacto]** Sortir `handleTileClick` vers `useTacticalSelection` (Game.tsx repasse < 600 lignes)
-  4. **[asset]** Compresser `soldier.glb` 5 MB → < 500 KB (pipeline gltf-transform identique cavalier)
+Prochaine action session 21 — Phase 3.2 (pré-postures) :
+- Spec à produire en début de Phase 3.2 (PLAN-MASTER ne détaille pas encore le sous-bloc).
+- Concept : ordres conditionnels assignés en pré-tour, résolution simultanée en début de tour.
+- Probable : nouvelle table `unit_pre_orders` + EF `submit_orders` + nouveau hook `usePreOrderEngine`.
 
 Feedback UX user sauvegardé en mémoire : `~/.claude/projects/.../memory/ux_tactica_lisibilite.md`
+Vision long-terme campagne opérationnelle sauvegardée : `~/.claude/projects/.../memory/vision_operational_campaign.md`

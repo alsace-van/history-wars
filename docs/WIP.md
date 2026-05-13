@@ -2,6 +2,56 @@
 
 ---
 
+## Session 20 (clôture) &mdash; 13/05/2026 &mdash; Phase 3.1 livrée (fog évolué + détection range) + QW1 refacto Game.tsx + QW2 inspection ennemi
+
+**Phase 3.1 clôturée.** Fog of war client-side avec range vision par UnitKind, LoS team-agnostic (piège #15), 3 niveaux d'identification (`hidden`/`spotted`/`identified`). 12 nouveaux tests engine + 4 tests UI helper. Tag `phase-3-1-complete` posé. Pas de migration BDD (server-side reporté Phase 4).
+
+### Pré-Phase 3.1 — Quick wins
+- **QW1 (refacto Game.tsx 740 → 562 lignes)** : extraction `useGameLifecycle`, `useCombatToastFeed`, `useEnemyHoverTooltip`, `useUnitPathAnimation`, `useEngagementDerivations` + composants `BattleHeader`, `BattleSidebarFooter` + helpers `gameLabels`.
+- **QW2 (inspection ennemi)** : clic sur unité ennemie → `EnemyUnitPanel` read-only avec kind, **catégorie effectif** (`<100/100-300/300-600/600+` → pas de chiffre exact), label cohésion, engagements. État `inspectedEnemyId` ajouté en queue dans `useTacticalSelection`. Prop `visibilityLevel='spotted'` prévoit l'affichage dégradé "Identification incomplète" (utilisé en Phase 3.1-B silhouettes).
+
+### Phase 3.1 — 4 vagues livrées
+- **Vague A (engine pur)** : `UNIT_STATS_V2.vision` ajouté (I=3, C=5, A=4 — calibrage humain Vague D). Nouveau module `src/engine/vision/visibility.ts` (zéro React/Three/Supabase) : `visibleHexesFromUnit`, `visibleHexesFromTeam`, `visibleEnemiesFromTeam`. 12 tests Vitest verts (LoS bloquée par allié, observateur routed exclu, meilleur niveau gagne, etc.).
+- **Vague B (render)** : `HexGrid.tileVisibility` prop, `UnitPlaceholder.silhouette` prop (opacity 0.35, label `?`, anneaux + healthbar masqués). `TacticalScene` filtre les ennemis `hidden` et passe `silhouette={true}` aux `spotted`.
+- **Vague C (intégration)** : nouveau hook `useVisionMap` (orchestre `visibleTileMap` + `enemyVisibility` + `visibleEnemyIds`). Branché AVANT `useTacticalSelection` (filtre `reachableMap` + `targetableUnitIds`). `visibleEnemyIds` déplacé d'`useTacticalSelection` vers `useVisionMap` (single source of truth).
+- **Vague D (test humain)** : OK après 2 fixes visuels identifiés par user.
+
+### Bugs visuels détectés à Vague D et corrigés
+- **Bug 1 — hex sous unité noir** : `useVisionMap` construisait les clés en `"q,r,s"` alors que `cubeKey()` retourne `"q,r"` → les positions alliées/ennemies n'étaient JAMAIS réinjectées dans `visibleTileMap` (lookup `boardKeys.has(k)` échouait silencieusement). Fix `27f90cb`.
+- **Bug 2 — texture sable/dirt sur hex hidden** : `return null` sur `visibility='hidden'` laissait transparaître le `<PageBackground />` (peinture Austerlitz) → certains hex masqués apparaissaient texturés. Fix `3307588` : rendu d'un mesh noir opaque (`meshBasicMaterial`, sans event handlers).
+
+### Commits livrés (4 sur `main`)
+
+| # | Sujet | Catégorie |
+|---|---|---|
+| ca9714c | feat: Phase 3.1 fog of war + QW1/QW2 (session 20) | feat |
+| dd96abe | docs(backlog): boucle opérationnelle campagne (Phase 8) — feedback user | docs |
+| 27f90cb | fix(vision): hex sous les unités noir — mismatch format cubeKey | fix |
+| 3307588 | fix(render): hex hidden rendus en noir opaque (masque PageBackground) | fix |
+
+### Stats fin session
+
+- 293/293 tests verts (+16 vs session 19 : 12 vision + 4 effectiveCategory).
+- `tsc` 0 erreur.
+- `vite build` PWA OK.
+- Game.tsx : 562 lignes (< 600).
+
+### Pas de déploiement Supabase
+
+Phase 3.1 est 100% client. Pas de migration, pas d'EF redéployée. Fog server-side prévu Phase 4 (RLS units).
+
+### Decisions backlog session 20
+
+- **Boucle opérationnelle campagne (Phase 8)** : `docs/backlogs/BACKLOG-trois-echelles.md § 13` ajouté suite feedback user 12/05 — objectifs cliquables sur map, marche auto multi-jours, cycle jour/nuit, bascule auto vers tactique. Mémoire projet sauvegardée (`vision_operational_campaign.md`).
+
+### Prochaine étape — Session 21
+
+**Phase 3.2** : pré-postures / ordres conditionnels. Spec à produire (PLAN-MASTER ne détaille pas encore le sous-bloc).
+- Probable : nouvelle table `unit_pre_orders` + EF `submit_orders` + hook `usePreOrderEngine` + UI panel "Ordres conditionnels" dans `UnitInspector`.
+- Concept gameplay : "tiens position SAUF SI attaqué", "charge SI ennemi à portée 3", "replie SI cohésion brisée", etc. Résolution simultanée en début de tour avant les actions joueur manuelles.
+
+---
+
 ## Session 19 (clôture) &mdash; 12/05/2026 &mdash; Phase 2.6 Vague D testée + clôture Phase 2 complète + nombreux fixes UX/gameplay
 
 **Phase 2 (Phase 2 + 2.5 + 2.6) clôturée**. Vague D testée par l'utilisateur (5 scénarios validés). Sprint UX initial du plan accompli, puis nombreux écarts demandés en cours de route (refonte journal combats, garde-fous Brisée, repli forcé Rompre, fusion à distance, bonus moral fusion, mesh cavalerie dédié, MVP tweak board/stats).
