@@ -1,3 +1,4 @@
+// v1.1 (13/05/2026) — Phase 3.3 : pickFireTarget accepte unités mêlée (range=1) — mode alerte
 // v1.0 (13/05/2026) — Phase 3.2 Vague A : résolution cible/destination par action d'ordre
 // Frontière engine/ : zéro React, zéro Three, zéro Supabase.
 
@@ -60,23 +61,30 @@ function pickChargeTarget(unit: UnitState, ctx: EvaluateOrdersContext): PickResu
  * `fire` : choisir l'ennemi visible avec LoS dégagée + distance ∈ [minRange, range].
  * Heuristique : ennemi avec effective le plus haut (cible prioritaire = la plus dense).
  *
- * Pas de mouvement induit (l'action `fire` est immobile, comme attack_ranged).
+ * Pas de mouvement induit (l'action `fire` est immobile).
+ *
+ * Phase 3.3 — accepte les unités de mêlée (stats.range=1) pour matérialiser un mode
+ * "alerte" : l'unité reste sur place et frappe l'ennemi qui entre adjacent. La phase
+ * de combat (ranged vs melee) est ensuite auto-détectée par resolveCombat selon la
+ * distance. Coût d'alerte appliqué côté serveur (−1 morale par déclenchement).
  */
 function pickFireTarget(unit: UnitState, ctx: EvaluateOrdersContext): PickResult {
   const stats = resolveUnitStatsV2(unit.kind, unit.subKind)
-  if (stats.range <= 1) return { targetUnitId: null, destHex: null }
   let best: UnitState | null = null
   for (const enemy of ctx.allUnits) {
     if (enemy.team === unit.team) continue
     if (!ctx.visibleEnemyIds.has(enemy.id)) continue
     const dist = cubeDistance(unit.position, enemy.position)
     if (dist < stats.minRange || dist > stats.range) continue
-    const blockers = new Set<string>()
-    for (const u of ctx.allUnits) {
-      if (u.id === unit.id || u.id === enemy.id) continue
-      blockers.add(cubeKey(u.position))
+    // LoS trivial à distance 1 (adjacent). Au-delà, check explicite avec blockers.
+    if (dist > 1) {
+      const blockers = new Set<string>()
+      for (const u of ctx.allUnits) {
+        if (u.id === unit.id || u.id === enemy.id) continue
+        blockers.add(cubeKey(u.position))
+      }
+      if (!hasLineOfSight(unit.position, enemy.position, blockers)) continue
     }
-    if (!hasLineOfSight(unit.position, enemy.position, blockers)) continue
     if (!best || enemy.effective > best.effective) best = enemy
   }
   return best ? { targetUnitId: best.id, destHex: null } : { targetUnitId: null, destHex: null }

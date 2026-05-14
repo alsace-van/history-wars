@@ -132,11 +132,18 @@ describe('engine/orders — actions (pick*)', () => {
     expect(result.destHex).toEqual(u.position)
   })
 
-  it('11. pickFireTarget exige range > 1 (Infanterie range=1 → null)', () => {
+  it('11a. pickFireTarget Infanterie (range=1) à 3 hex → null (hors portée)', () => {
     const u = makeUnit({ id: 'u', kind: 'I', position: cube(0, 0, 0) })
     const e = makeUnit({ id: 'e', team: 'red', position: cube(3, 0, -3) })
     const ctx = buildCtx([u, e], { visible: ['e'] })
     expect(pickFireTarget(u, ctx).targetUnitId).toBeNull()
+  })
+
+  it('11b. pickFireTarget Infanterie (range=1) adjacent → cible (Phase 3.3 mode alerte)', () => {
+    const u = makeUnit({ id: 'u', kind: 'I', position: cube(0, 0, 0) })
+    const e = makeUnit({ id: 'e', team: 'red', position: cube(1, 0, -1) })
+    const ctx = buildCtx([u, e], { visible: ['e'] })
+    expect(pickFireTarget(u, ctx).targetUnitId).toBe('e')
   })
 
   it('12. pickFireTarget pour Artillerie (range 6) trouve l\'ennemi à 3 hex', () => {

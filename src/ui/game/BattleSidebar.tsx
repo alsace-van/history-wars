@@ -1,11 +1,11 @@
-// v1.9 (13/05/2026) — Phase 3.2-bis : refonte UX sidebar — cartouche allégée (Tour N + joueur actif + récap unités MON camp seulement) + ParticipantsPanel collapsible
+// v1.10 (13/05/2026) — Phase 3.3 : passe unitFireRange à OrdersPanel (cap portée trigger pour action fire)
+// v1.9 (13/05/2026) — Phase 3.2-bis : refonte UX sidebar — cartouche allégée + ParticipantsPanel collapsible
 // v1.8 (13/05/2026) — Phase 3.2 C2 : OrdersPanel intégré sous UnitInspector
 // v1.7 (12/05/2026) — QW2 : prop inspectedEnemy → EnemyUnitPanel (priorité selectedUnit > inspectedEnemy > fallback)
-// v1.6 (12/05/2026) — UX : propage mergeMode + handlers à Inspector (fusion par clic map)
 import type { Team } from '@/types/game'
 import type { CohesionState, SupportCount } from '@engine/cohesion'
 import type { UnitState, SplitRatio } from '@engine/units'
-import { computeOrdinalLabels } from '@engine/units'
+import { computeOrdinalLabels, resolveUnitStatsV2 } from '@engine/units'
 import type { SlotData } from '@ui/game/TeamPanel'
 import { ParticipantsPanel } from '@ui/game/ParticipantsPanel'
 import { UnitInspector } from '@ui/game/UnitInspector'
@@ -233,6 +233,7 @@ export function BattleSidebar({
           orders={orders}
           busy={!!ordersBusy}
           error={ordersError ?? null}
+          unitFireRange={resolveUnitStatsV2(selectedUnit.kind, selectedUnit.subKind).range}
           onCreate={onCreateOrder}
           onUpdate={onUpdateOrder ?? (async () => false)}
           onDelete={onDeleteOrder}

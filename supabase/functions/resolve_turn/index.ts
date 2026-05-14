@@ -491,6 +491,8 @@ Deno.serve(async (req: Request) => {
       boardRadius,
       currentTurn: turnAfter,
       actorUserId: user.userId,
+      terrainMap,
+      combatConfig,
     })
 
     // 11. End-condition — basé sur le snapshot POST-tick (dissolutions appliquées).

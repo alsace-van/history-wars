@@ -1,3 +1,4 @@
+// v1.1 (13/05/2026) — Phase 3.3 : portée trigger cappée à stats.range de l'unité (cohérence fire)
 // v1.0 (13/05/2026) — Phase 3.2 Vague C2 : UI gestion des ordres conditionnels d'une unité
 import { useState } from 'react'
 import type {
@@ -16,6 +17,12 @@ interface OrdersPanelProps {
   orders: UnitOrderRow[]
   busy: boolean
   error: string | null
+  /**
+   * Phase 3.3 — portée max du trigger `enemy_in_range` quand action='fire'.
+   * = stats.range de l'unité. Pour infanterie : 1 (mode alerte, frappe adjacente).
+   * Pour archer/artillerie : leur range respective.
+   */
+  unitFireRange: number
   onCreate: (trigger: SubmitOrdersOp['trigger'], action: SubmitOrdersOp['action']) => Promise<boolean>
   onUpdate: (orderId: string, patch: Omit<SubmitOrdersOp, 'op' | 'order_id'>) => Promise<boolean>
   onDelete: (orderId: string) => Promise<boolean>
@@ -23,11 +30,18 @@ interface OrdersPanelProps {
 }
 
 export function OrdersPanel(p: OrdersPanelProps) {
-  const { isMyUnit, orders, busy, error, onCreate, onUpdate: _onUpdate, onDelete, onReorder } = p
+  const { isMyUnit, orders, busy, error, unitFireRange, onCreate, onUpdate: _onUpdate, onDelete, onReorder } = p
   const [adding, setAdding] = useState(false)
   const [newTrigger, setNewTrigger] = useState<OrderTriggerKindUI>('enemy_in_range')
-  const [newRange, setNewRange] = useState<number>(3)
+  const [newRange, setNewRange] = useState<number>(Math.min(3, Math.max(1, unitFireRange)))
   const [newAction, setNewAction] = useState<OrderActionKindUI>('hold')
+
+  // Phase 3.3 — borne max du slider portée. Si l'action est `fire`, on respecte la
+  // range réelle de l'unité (infanterie 1, archer/arti leur range). Pour les autres
+  // actions (charge/retreat/hold) la portée trigger reste une simple détection
+  // (l'unité réagit dès qu'un ennemi entre, peu importe sa propre portée de tir),
+  // donc on laisse jusqu'à 10 hex.
+  const rangeMax = newAction === 'fire' ? Math.max(1, unitFireRange) : 10
 
   if (!isMyUnit) {
     return (
@@ -42,22 +56,29 @@ export function OrdersPanel(p: OrdersPanelProps) {
   function startAdd() {
     setAdding(true)
     setNewTrigger('enemy_in_range')
-    setNewRange(3)
+    setNewRange(Math.min(3, Math.max(1, unitFireRange)))
     setNewAction('hold')
   }
 
   function cancelAdd() { setAdding(false) }
 
   async function commitAdd() {
+    // Phase 3.3 — re-clamp à rangeMax au commit pour éviter envoi stale (ex : portée 5
+    // saisie quand action='hold' puis switch vers 'fire' rangeMax=1).
+    const clampedRange = Math.min(Math.max(1, newRange), rangeMax)
     const trigger: SubmitOrdersOp['trigger'] = newTrigger === 'enemy_in_range'
-      ? { kind: 'enemy_in_range', params: { range: newRange } }
+      ? { kind: 'enemy_in_range', params: { range: clampedRange } }
       : { kind: newTrigger }
     const action: SubmitOrdersOp['action'] = { kind: newAction }
     const ok = await onCreate(trigger, action)
     if (ok) setAdding(false)
   }
 
-  const preview = describePosture(newTrigger, newAction, newTrigger === 'enemy_in_range' ? newRange : undefined)
+  const preview = describePosture(
+    newTrigger,
+    newAction,
+    newTrigger === 'enemy_in_range' ? Math.min(Math.max(1, newRange), rangeMax) : undefined,
+  )
 
   return (
     <div className="px-3 py-3 border border-[rgba(226,232,240,0.10)] rounded-[2px] space-y-2 bg-[rgba(15,23,42,0.45)]">
@@ -142,13 +163,20 @@ export function OrdersPanel(p: OrdersPanelProps) {
           </div>
           {newTrigger === 'enemy_in_range' && (
             <label className="block text-[11px] space-y-1">
-              <span className="uppercase tracking-[0.08em] text-muted-foreground">Portée (hex)</span>
+              <span className="uppercase tracking-[0.08em] text-muted-foreground flex items-center gap-2">
+                <span>Portée détection (hex)</span>
+                {newAction === 'fire' && (
+                  <span className="text-[9px] normal-case tracking-normal text-muted-foreground/70">
+                    (max = portée de tir : {rangeMax})
+                  </span>
+                )}
+              </span>
               <input
                 type="number"
                 min={1}
-                max={10}
-                value={newRange}
-                onChange={e => setNewRange(Math.max(1, Math.min(10, Number(e.target.value) || 1)))}
+                max={rangeMax}
+                value={Math.min(newRange, rangeMax)}
+                onChange={e => setNewRange(Math.max(1, Math.min(rangeMax, Number(e.target.value) || 1)))}
                 className="w-full bg-[rgba(15,23,42,0.85)] border border-[rgba(226,232,240,0.18)] rounded-[2px] px-1 py-1 text-foreground"
               />
             </label>

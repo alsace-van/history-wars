@@ -1,7 +1,7 @@
+// v2.3 (13/05/2026) — Phase 3.3 : expose menEngaged + contactCap dans CombatNotification (clarté Thermopyles)
 // v2.2 (12/05/2026) — Sprint UX : ajout effectiveBefore dans losses (rapport AVANT/APRÈS)
 // v2.1 (11/05/2026) — Phase 2.5 fix : losses.effectiveAfter (absolu) au lieu de hpAfter (% legacy)
 // v2.0 (10/05/2026) — Phase 2 2D.3 : kind etendu 'charge' + lit effective si dispo (fallback hp legacy)
-// v1.2 (10/05/2026) — Phase 1.5 : tabs (notifications array + removeNotification) + attackerId/defenderId pour highlight
 import { useCallback, useRef, useState } from 'react'
 import { useRealtime } from './useRealtime'
 import type { Team, UnitKind } from '@/types/game'
@@ -26,6 +26,10 @@ interface CombatResultSnapshot {
   attackerEffectiveBefore?: number
   attackerEffectiveAfter?: number
   chargeBonusApplied?: boolean
+  // Phase 3.3 — cap terrain au contact (Thermopyles). Optionnels = retrocompat actions BDD anciennes.
+  menEngagedAttacker?: number
+  menEngagedDefender?: number
+  contactCap?: number
 }
 
 interface AttackResultSnapshot {
@@ -98,6 +102,11 @@ export interface CombatNotification {
   defenderLosses: { killed: number; woundedAdd: number; effectiveBefore: number; effectiveAfter: number; isKilled: boolean; isRouted: boolean }
   /** Pertes infligees a l'attaquant si riposte melee (null sinon). */
   attackerLosses: { killed: number; woundedAdd: number; effectiveBefore: number; effectiveAfter: number; isKilled: boolean; isRouted: boolean } | null
+  /**
+   * Phase 3.3 — cap terrain au contact (Thermopyles). Null si action ancienne sans snapshot v2.
+   * Permet à l'UI d'expliquer pourquoi 750 vs 450 hommes I vs I font les mêmes dégâts sur plaine.
+   */
+  contact: { attackerEngaged: number; defenderEngaged: number; cap: number } | null
 }
 
 interface UseCombatNotificationsOptions {
@@ -250,6 +259,18 @@ function parseAction(
       })()
     : null
 
+  // Phase 3.3 — cap terrain au contact. Présent uniquement si snapshot v2 enrichi (resolveContact).
+  const contact =
+    combat.menEngagedAttacker !== undefined &&
+    combat.menEngagedDefender !== undefined &&
+    combat.contactCap !== undefined
+      ? {
+          attackerEngaged: combat.menEngagedAttacker,
+          defenderEngaged: combat.menEngagedDefender,
+          cap: combat.contactCap,
+        }
+      : null
+
   return {
     id: newRow.id,
     turn: newRow.turn,
@@ -264,6 +285,7 @@ function parseAction(
     defenderKindLabel,
     defenderLosses,
     attackerLosses,
+    contact,
   }
 }
 

@@ -6,6 +6,13 @@ Format : 1-2 lignes par item, étiquettes entre crochets.
 
 ---
 
+## Phase 3.3 — issues différées (session 22)
+
+- **[gameplay Phase 5]** **Vrai mode sentinelle temps-réel** : aujourd'hui les ordres `fire` (mode alerte) sont évalués UNE fois en début du tour entrant (snapshot-then-resolve). Plus tard : évaluer pendant le mouvement adverse (réaction immédiate dès qu'un ennemi entre dans la portée). Conditionne IA Phase 4 (l'IA devra prévoir le risque de réaction côté humain). Origine : feedback user 13/05 session 22.
+- **[gameplay Phase 5]** **Vraie jauge d'endurance** pour remplacer le placeholder "−1 morale par déclenchement d'ordre fire" (cf. `applyFireOrderCombat` v1.2). Modèle : `endurance INT 0-100`, −5 par déclenchement, +2/tour de repos. Sous 30 → bonus défense, sous 10 → routed automatique. Voir aussi backlog Phase 5 jauge endurance dédiée. Origine : user 13/05 "il faut juste trouver un truc pour pas en abuser".
+- **[gameplay Phase 3.3 follow-up]** **`charge` order applique réellement le combat mêlée + charge cav**. Actuellement (`_evaluateOrders.ts` v1.2) charge fait juste déplacement + INSERT engagement sans dégâts ni détection charge cav (`isChargeApplicable` non vérifié). Symétrique de `fire` mais avec lastMovePath synthétique (depuis position d'origine vers destHex) + handling riposte + dissolution si défenseur tué.
+- **[ux Phase 3.3 follow-up]** **Notification "ton ordre déclenché"** côté owner : aujourd'hui le toast `useCombatActions.endTurn` v2.4 dit "Ordre adverse déclenché" car la string est vue par l'outgoing player (= adversaire de l'owner). Pour l'owner, la notification arrive via Realtime `useCombatNotifications` (attack_melee/attack_ranged inséré par fire). OK pour les déclenchements avec combat, mais `hold` et `retreat` n'insèrent QUE `order_triggered` qui n'est pas écouté par useCombatNotifications. Ajouter listener `order_triggered` filtré sur owner_user_id pour qu'il voie ses ordres exécutés.
+
 ## Phase 3.2-bis — issues différées (session 21)
 
 - **[bdd — petite migration]** Stabilisation `ordinal_index` des pions (`I.1`, `I.2`...). Aujourd'hui calculé à l'affichage par `computeOrdinalLabels(units)` dans l'ordre `created_at` → si un pion meurt, les n° suivants se décalent (`I.2` devient `I.1`). Persister via colonne `units.ordinal_index INTEGER NOT NULL` set à start_battle, ne change jamais. Pas urgent, feedback user requis si la décalage gêne.

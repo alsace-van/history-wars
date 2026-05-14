@@ -1,7 +1,6 @@
+// v3.28 (13/05/2026) — QW2 session 22 : extraction useEngagementTickFloaters + useCombatHighlight + useCameraFocus (< 600 lignes)
 // v3.27 (13/05/2026) — Phase 3.2-bis : tick floaters + toast "Combat continu (T+N)" pour engagement persistant
 // v3.26 (12/05/2026) — Phase 3.1-C : useVisionMap câblé + tileVisibility + enemyVisibility propagés
-// v3.25 (12/05/2026) — QW1 : extraction useGameLifecycle + useCombatToastFeed + BattleHeader/Footer
-// v3.24 (12/05/2026) — UX manœuvres : mergeMode global + clic cible map (move+merge) + scinder simplifié
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -10,7 +9,7 @@ import { useGame } from '@hooks/useGame'
 import { useGameRealtime } from '@hooks/useGameRealtime'
 import { useOnlineStatus } from '@hooks/useOnlineStatus'
 import { useBattleUnits } from '@hooks/useBattleUnits'
-import { useCombatActions, type EndTurnResponse } from '@hooks/useCombatActions'
+import { useCombatActions } from '@hooks/useCombatActions'
 import { useTacticalSelection } from '@hooks/useTacticalSelection'
 import { useCombatNotifications } from '@hooks/useCombatNotifications'
 import { useCombatAnimator, type DamageFloaterEntry } from '@hooks/useCombatAnimator'
@@ -26,6 +25,9 @@ import { useUnitPathAnimation } from '@hooks/useUnitPathAnimation'
 import { useEngagementDerivations } from '@hooks/useEngagementDerivations'
 import { useVisionMap } from '@hooks/useVisionMap'
 import { usePreOrders } from '@hooks/usePreOrders'
+import { useEngagementTickFloaters } from '@hooks/useEngagementTickFloaters'
+import { useCombatHighlight } from '@hooks/useCombatHighlight'
+import { useCameraFocus } from '@hooks/useCameraFocus'
 import {
   isHost,
   isPlayerInGame,
@@ -39,11 +41,10 @@ import { GameHUD } from '@ui/game/GameHUD'
 import { GameTopBar } from '@ui/game/GameTopBar'
 import { BattleHeader } from '@ui/game/BattleHeader'
 import { BattleSidebarFooter } from '@ui/game/BattleSidebarFooter'
-import { getScaleLabel, getStatusLabel, getKindLabel } from '@ui/game/gameLabels'
+import { getScaleLabel, getStatusLabel } from '@ui/game/gameLabels'
 import { BattleModals } from '@ui/game/BattleModals'
 import { CombatPreviewTooltip } from '@ui/game/CombatPreviewTooltip'
 import { CombatResultPanel } from '@ui/game/CombatResultPanel'
-import type { CombatNotification } from '@hooks/useCombatNotifications'
 import { TacticalScene, buildMvpUnitPlacement } from '@/render'
 import { unitRowsToInstances, unitRowsToStates } from '@render/_data/unitAdapter'
 import { spiral, cubeKey, type Cube } from '@engine/hex'
@@ -315,13 +316,11 @@ export function Game() {
   const { settings: uiSettings, setSkipShakenWarning, animationDurationMs } = useSettings()
   const { floaters: damageFloaters, removeFloater: removeCombatFloater } = useCombatAnimator({ notifications: combatNotifs, unitStates, animationDurationMs, enabled: showBattle })
 
-  // Phase 3.2-bis : queue dédiée des DamageFloaters issus des ticks d'engagement persistant.
-  // Découplée de useCombatAnimator pour ne pas mélanger Realtime CombatNotification (attaques)
-  // avec les ticks renvoyés synchronement par resolve_turn (attrition mêlée continue).
-  const [tickFloaters, setTickFloaters] = useState<DamageFloaterEntry[]>([])
-  const removeTickFloater = useCallback((id: string) => {
-    setTickFloaters(prev => prev.filter(f => f.id !== id))
-  }, [])
+  // Phase 3.2-bis : queue dédiée des DamageFloaters issus des ticks d'engagement persistant
+  // (Découplée de useCombatAnimator qui traite les CombatNotification Realtime — voir hook).
+  const { tickFloaters, removeTickFloater, handleEndTurnSuccess } = useEngagementTickFloaters({
+    myTeam, unitStates, animationDurationMs,
+  })
   const removeFloater = useCallback((id: string) => {
     if (id.startsWith('tick-')) removeTickFloater(id)
     else removeCombatFloater(id)
@@ -331,85 +330,11 @@ export function Game() {
     [damageFloaters, tickFloaters],
   )
 
-  const handleEndTurnSuccess = useCallback((res: EndTurnResponse) => {
-    const ticks = res.engagementTicks
-    if (!ticks || ticks.length === 0) return
-    const newFloaters: DamageFloaterEntry[] = []
-    for (const t of ticks) {
-      const turnsActive = t.resolved_at_turn - t.started_turn + 1
-      // Toast relativisé à myTeam (ton camp en premier).
-      const sides = [t.side_a, t.side_b]
-      const mine = sides.find(s => s.team === myTeam)
-      const enemy = sides.find(s => s.team !== myTeam)
-      const parts: string[] = []
-      if (mine && (mine.killed > 0 || mine.dissolved)) {
-        const label = getKindLabel(mine.kind)
-        parts.push(mine.dissolved ? `Ton ${label} décimée` : `Ton ${label} : −${mine.killed}`)
-      }
-      if (enemy && (enemy.killed > 0 || enemy.dissolved)) {
-        const label = getKindLabel(enemy.kind)
-        parts.push(enemy.dissolved ? `${label} adverse décimée` : `${label} adverse : −${enemy.killed}`)
-      }
-      if (parts.length > 0) {
-        toast(`Combat continu (T+${turnsActive})`, {
-          description: parts.join(' · '),
-          duration: 4500,
-        })
-      }
-      // DamageFloaters : un par côté qui prend des pertes, position = unité avant tick.
-      if (animationDurationMs > 0) {
-        const aUnit = unitStates.find(u => u.id === t.side_a.unit_id)
-        const bUnit = unitStates.find(u => u.id === t.side_b.unit_id)
-        const stamp = performance.now()
-        if (aUnit && (t.side_a.killed > 0 || t.side_a.wounded_add > 0)) {
-          newFloaters.push({
-            id: `tick-${t.engagement_id}-a-${stamp}`,
-            cube: aUnit.position,
-            killed: t.side_a.killed,
-            wounded: t.side_a.wounded_add,
-            startedAt: stamp,
-          })
-        }
-        if (bUnit && (t.side_b.killed > 0 || t.side_b.wounded_add > 0)) {
-          newFloaters.push({
-            id: `tick-${t.engagement_id}-b-${stamp}`,
-            cube: bUnit.position,
-            killed: t.side_b.killed,
-            wounded: t.side_b.wounded_add,
-            startedAt: stamp,
-          })
-        }
-      }
-    }
-    if (newFloaters.length > 0) {
-      setTickFloaters(prev => [...prev, ...newFloaters])
-    }
-  }, [myTeam, unitStates, animationDurationMs])
+  // Highlight scénique pour le rapport de combat actif (filtré par fog of war).
+  const { setActiveCombatNotif, highlightedUnitIds } = useCombatHighlight(visibleEnemyIds)
 
-  // Highlight unitéIds = mon unité + ennemi du rapport actif (ennemi filtré par fog of war : LoS depuis n'importe laquelle de mes unités).
-  const [activeCombatNotif, setActiveCombatNotif] = useState<CombatNotification | null>(null)
-  const highlightedUnitIds = useMemo<Set<string>>(() => {
-    if (!activeCombatNotif) return new Set()
-    const out = new Set<string>()
-    const myUnitId = activeCombatNotif.isMyAttack ? activeCombatNotif.attackerId : activeCombatNotif.defenderId
-    const enemyUnitId = activeCombatNotif.isMyAttack ? activeCombatNotif.defenderId : activeCombatNotif.attackerId
-    out.add(myUnitId)
-    // Fog of war : l'ennemi ne s'illumine que s'il est observé par AU MOINS une de mes unités
-    if (visibleEnemyIds.has(enemyUnitId)) {
-      out.add(enemyUnitId)
-    }
-    return out
-  }, [activeCombatNotif, visibleEnemyIds])
-
-  // Phase 1.5 : focus camera sur une unité depuis le bouton "Centrer" de CombatResultPanel
-  const [cameraFocusCube, setCameraFocusCube] = useState<Cube | null>(null)
-  const handleFocusUnit = useCallback(
-    (unitId: string) => {
-      const u = unitStates.find(uu => uu.id === unitId)
-      if (u) setCameraFocusCube(u.position)
-    },
-    [unitStates]
-  )
+  // Phase 1.5 : focus caméra sur une unité (boutons "Centrer" report panel / sidebar).
+  const { cameraFocusCube, handleFocusUnit } = useCameraFocus(unitStates)
 
   const {
     hoveredEnemy, mousePos, setHoveredEnemyId,

@@ -1,8 +1,7 @@
+// v4.2 (13/05/2026) — Phase 3.3 : ligne "Contact" cap terrain + mes hommes engagés (clarté Thermopyles)
 // v4.1 (12/05/2026) — Fix positionnement : fixed sous le bouton TopBar (top-[68px]), couvre la sidebar quand ouvert
 // v4.0 (12/05/2026) — UX : liste scrollable verticale sous le bouton TopBar, plus d'onglets, croix par rapport
 // v3.4 (12/05/2026) — UX : bouton réduire ── (ferme sans vider) + monté seulement quand panel ouvert
-// v3.3 (12/05/2026) — Fog of war fix : effectif AVANT visible uniquement côté joueur (sinon déduction triviale)
-// v3.2 (12/05/2026) — Sprint UX : fix auto-select (useRef length) + effectif AVANT + tailles texte
 import type { Team } from '@/types/game'
 import type { CombatNotification } from '@hooks/useCombatNotifications'
 
@@ -182,6 +181,16 @@ function ReportCard({
         </div>
       </div>
 
+      {/* Phase 3.3 — ligne "Contact" : explique pourquoi 750 vs 450 sur plaine font les mêmes dégâts.
+          Affiché pour mêlée/charge uniquement (tir : pas de plafond Thermopyles). Fog of war :
+          on n'affiche QUE le cap (terrain public) + mes hommes engagés. L'ennemi reste opaque. */}
+      {notif.contact && notif.kind !== 'ranged' && (
+        <ContactRow
+          cap={notif.contact.cap}
+          myEngaged={notif.isMyAttack ? notif.contact.attackerEngaged : notif.contact.defenderEngaged}
+        />
+      )}
+
       {/* Bloc pertes défenseur */}
       <LossesBlock
         team={notif.defenderTeam}
@@ -264,6 +273,36 @@ function LossesBlock({ team, unitLabel, losses, showFullDetail, isRiposte }: Los
             (effectifs adverses inconnus)
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Phase 3.3 — ligne explicative du cap terrain.
+ * "🛡 Contact terrain · cap 200 hommes · mes hommes engagés 200"
+ * Si myEngaged === cap : muscle visuel "Cohorte saturée" pour souligner le plafond actif.
+ */
+function ContactRow({ cap, myEngaged }: { cap: number; myEngaged: number }) {
+  const saturated = myEngaged >= cap
+  return (
+    <div className="px-3 pb-2">
+      <div
+        className="flex items-center gap-2 text-[11px] uppercase tracking-[0.08em] tabular-nums px-2 py-[5px] bg-[rgba(15,23,42,0.6)] border border-[rgba(226,232,240,0.10)] rounded-[2px]"
+        title={saturated
+          ? `Le terrain plafonne le contact à ${cap} hommes. Vos renforts arrière restent en réserve.`
+          : `Le terrain autorise jusqu'à ${cap} hommes au contact. Vous n'avez que ${myEngaged} engagés.`}
+      >
+        <span aria-hidden className="text-[12px] leading-none opacity-70">🛡</span>
+        <span className="text-muted-foreground">Contact terrain</span>
+        <span className="flex-1" />
+        <span className="text-muted-foreground">cap</span>
+        <span className="font-semibold text-slate-200">{cap}</span>
+        <span className="text-muted-foreground/60">·</span>
+        <span className="text-muted-foreground">engagés</span>
+        <span className={saturated ? 'font-semibold text-tactica-amber' : 'font-semibold text-slate-200'}>
+          {myEngaged}
+        </span>
       </div>
     </div>
   )
