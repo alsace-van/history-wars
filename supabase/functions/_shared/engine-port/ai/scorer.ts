@@ -1,3 +1,4 @@
+// v1.1 (14/05/2026) — Fix bot passif si engagé : scoreHold=-50 si engagé (force riposte)
 // v1.0 (14/05/2026) — Phase 4 Lot A2 : mirror Deno port src/engine/ai/scorer.ts
 // PORT FROM src/engine/ai/scorer.ts — DO NOT EDIT MANUALLY.
 
@@ -104,7 +105,9 @@ export function scoreMove(unit: UnitState, dest: Cube, ctx: AIContext): number {
 
 export function scoreHold(unit: UnitState, ctx: AIContext): number {
   const isEngaged = ctx.engagedUnitIds.has(unit.id)
-  if (unit.morale < 50 && !isEngaged) return HOLD_REGEN_BONUS
+  // Engagé : pénalité forte (subir 1 attaque/ennemi adjacent sans riposter = suicide passif).
+  if (isEngaged) return -50
+  if (unit.morale < 50) return HOLD_REGEN_BONUS
   return 0
 }
 

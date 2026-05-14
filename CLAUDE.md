@@ -86,7 +86,7 @@ Exception : confiance < 95 % AVANT de coder → plan détaillé + questions auto
 
 Ne jamais demander un re-upload si le fichier est accessible via une de ces sources.
 
-## 7. État courant (14/05/2026 — session 22 clôturée)
+## 7. État courant (14/05/2026 — session 23 clôturée)
 
 - Phase 0 → 2.6 ✅ (cf. WIP.md sessions 1-19)
 - Phase 3.1 ✅ fog of war évolué client-side (session 20). Tag `phase-3-1-complete`.
@@ -110,17 +110,23 @@ Ne jamais demander un re-upload si le fichier est accessible via une de ces sour
   - Migration 023 : **mode spectateur** (RLS additif SELECT pour `status='in_progress'`).
   - UI : `AddBotButton` (dropdown difficulté) + `TeamPanel` v1.1 + `useBotAutoTurn` hook (host only, anti-double-trigger). `useCombatNotifications` v2.5 accepte `actor_user_id=null` pour bot.
   - **Bug critique fixés en cours session** : (1) hook bot ne fire pas → cleanup useEffect annulait setTimeout (fix : invoke direct). (2) EF 400 → lecture `active_team` snake_case au lieu de `activeTeam` camelCase. (3) `canStart` excluait bots → fix client + start_battle. (4) boardRadius hardcodé 5 dans EF.
-  - **Bug ouvert fin session** : bot insère 5× `hold` malgré fixes scoreMove/picker (voit tous ennemis + sans filtre fog). Logs serveur ajoutés `run_bot_turn` ligne ~164 pour diagnostic next session. EF v5 déployée vérifiée à jour via `mcp get_edge_function`.
-- Phase 4-bis ⬜ lookahead 2-3 ply + fog server-side RLS (vue SQL filtrée units) + bot auto end_turn.
+  - **Bug ouvert fin session 22** : bot insère 5× `hold` (FIXÉ session 23 — root cause `cubeKey` axial 2-comp splittée en 3 → `dest.s = NaN` → `cubeDistance` NaN → tous moves score=0).
+- **Phase 4 polish ✅** (session 23) — bot rendu jouable bout-en-bout, 5 fixes critiques :
+  - **Fix 1** : bot bouge enfin (parseCubeKey au lieu de split). Bug latent identique fixé dans `useTacticalSelection.ts`. Pitfall #13 ajouté.
+  - **Fix 2** : tour bascule auto après bot (`resolve_turn` v6 bypass `NOT_YOUR_TURN` si activeTeam contient bot + Game.tsx auto-endTurn 1.2s post-bot).
+  - **Fix 3** : bot engagé attaque au lieu de subir (`scoreHold = -50` si engagé, force riposte même si attack score < 0).
+  - **Fix 4** : journal combat clarifié — short labels colorés `[AO1 rouge] → [I1 bleu]`, icône ⚔/🏹 couleur attaquant, badge `Bot` si IA, mention `(votre attaque)/(subi)/(spectateur)`.
+  - Tests : 348/348 verts (+3 régressions). EFs déployées : `run_bot_turn` v7, `resolve_turn` v6.
+- Phase 4-bis ⬜ lookahead 2-3 ply + fog server-side RLS (vue SQL filtrée units). Auto end_turn ✅ session 23.
 - Phase 5 ⬜ profondeur tactique (formations, fatigue/endurance dédiée, ravitaillement, Infirmier, météo, mode campement Phase 5 = Infirmier amplifie heal).
 - Phases 6-15 ⬜
 
-Prochaine action session 23 :
-1. **Debug bot pick all-hold** : créer partie + bot + end_turn → `mcp get_logs edge-function` lire console.log `[run_bot_turn] unit= kind= pos= visibleEnemies= action=`. Si action='hold' → bug enumerate (peut-être bfsReachable retourne 0 ?). Si action='move' mais pas appliqué → bug applyBotAction UPDATE.
-2. **Push commit `cd6b451`** (Phase 3.3) + commit session 22 (Phase 3.3-bis + Phase 4 Lot A) + nettoyer 9 branches `claude/*` mergées (PRs #27/28/29/33/35/41/43/44/45).
-3. Possible Phase 4-bis si bot fonctionne (lookahead, fog RLS, auto end_turn).
+Prochaine action session 24 :
+1. **Phase 4-bis Lot 1** : fog server-side RLS (vue SQL filtrée `units` par viewer team via `visibleHexesFromTeam`) — anti-cheat client.
+2. **Phase 4-bis Lot 2** : lookahead 2-3 ply (minimax léger sur top-N actions, profondeur 2-3, bornage temps EF < 5s).
+3. Possible Lot B Phase 4 : étendre `AIAction` (charge cav, split/merge, pose d'ordres conditionnels).
 
-EFs prod : `run_bot_turn` v5, `resolve_turn` v19, `resolve_action` v21, `submit_orders` v4, `start_battle` v5. Migrations 021/022/023 appliquées.
+EFs prod : `run_bot_turn` v7, `resolve_turn` v6, `resolve_action` v21, `submit_orders` v4, `start_battle` v5. Migrations 021/022/023 appliquées.
 
 Tests : 345/345 verts. Game.tsx ~660 lignes (toujours > 600 limite — dette technique).
 

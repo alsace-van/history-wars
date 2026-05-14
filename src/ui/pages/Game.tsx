@@ -465,7 +465,9 @@ export function Game() {
   }, [preOrders.orders, refreshActiveOrders])
 
   // Phase 4 Lot A5 — auto-trigger run_bot_turn quand activeTeam = bot. Host only.
-  // Le bot joue ses actions, puis le client humain doit cliquer endTurn pour basculer.
+  // À la fin du tour bot, on auto-bascule via endTurn (resolve_turn v1.6 autorise
+  // un humain à end_turn quand activeTeam contient un bot). Délai 1.2s pour que
+  // l'utilisateur visualise les déplacements du bot avant la bascule.
   useBotAutoTurn({
     gameId: gameId ?? null,
     activeTeam: showBattle ? activeTeam : null,
@@ -473,7 +475,15 @@ export function Game() {
     iAmHost,
     currentTurn: tactical?.currentTurn ?? game?.turn_number ?? 0,
     enabled: showBattle,
-    onBotTurnComplete: () => { void refresh() },
+    onBotTurnComplete: () => {
+      if (!gameId) return
+      void refresh()
+      window.setTimeout(() => {
+        void endTurn(gameId).catch((e: unknown) => {
+          console.error('[Game] auto endTurn after bot failed', e)
+        })
+      }, 1200)
+    },
   })
 
   // Phase 4 — handler ajout bot (host uniquement, slot vacant). Insère game_players

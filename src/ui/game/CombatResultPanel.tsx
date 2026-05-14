@@ -1,7 +1,7 @@
+// v4.3 (14/05/2026) — Phase 4 : titre clarifié (AO1 → I1 colorés équipe, ⚔ couleur attaquant, badge Bot)
 // v4.2 (13/05/2026) — Phase 3.3 : ligne "Contact" cap terrain + mes hommes engagés (clarté Thermopyles)
 // v4.1 (12/05/2026) — Fix positionnement : fixed sous le bouton TopBar (top-[68px]), couvre la sidebar quand ouvert
 // v4.0 (12/05/2026) — UX : liste scrollable verticale sous le bouton TopBar, plus d'onglets, croix par rapport
-// v3.4 (12/05/2026) — UX : bouton réduire ── (ferme sans vider) + monté seulement quand panel ouvert
 import type { Team } from '@/types/game'
 import type { CombatNotification } from '@hooks/useCombatNotifications'
 
@@ -120,14 +120,11 @@ function ReportCard({
   onHoverLeave: () => void
   onFocusUnit?: (unitId: string) => void
 }) {
-  const icon = notif.kind === 'charge' ? '🐎' : notif.kind === 'melee' ? '⚔' : '🏹'
   const phaseLabel = notif.kind === 'charge' ? 'Charge cav' : notif.kind === 'melee' ? 'Mêlée' : 'Tir'
-  const actionLabel = notif.kind === 'charge' ? 'Charge cavalerie' : notif.kind === 'melee' ? 'Mêlée' : 'Tir'
-  const titleColor = notif.isMyAttack ? TEAM_COLOR[notif.attackerTeam] : TEAM_COLOR[notif.defenderTeam]
-
-  const titleSummary = notif.isMyAttack
-    ? `${actionLabel} : ${notif.attackerKindLabel} ${TEAM_NAME[notif.attackerTeam]} vs ${notif.defenderKindLabel} ${TEAM_NAME[notif.defenderTeam]}`
-    : `${actionLabel} subi : ${notif.attackerKindLabel} ${TEAM_NAME[notif.attackerTeam]} attaque votre ${notif.defenderKindLabel}`
+  // Icône principale = double épée pour mêlée/charge, arc pour tir.
+  const phaseIcon = notif.kind === 'ranged' ? '🏹' : '⚔'
+  const attackerColor = TEAM_COLOR[notif.attackerTeam]
+  const defenderColor = TEAM_COLOR[notif.defenderTeam]
 
   const myUnitId = notif.isMyAttack ? notif.attackerId : notif.defenderId
   const myUnitLabel = notif.isMyAttack ? notif.attackerKindLabel : notif.defenderKindLabel
@@ -138,13 +135,17 @@ function ReportCard({
       onMouseLeave={onHoverLeave}
       className="border-b border-[rgba(226,232,240,0.06)] last:border-b-0 hover:bg-tactica-amber/[0.04] transition-colors"
     >
-      {/* Bandeau carte : phase + tour + croix */}
+      {/* Bandeau carte : icône phase couleur attaquant + tour/phase + actions */}
       <div className="flex items-center gap-2 px-3 pt-2 pb-1">
-        <span aria-hidden className="text-[15px] leading-none">{icon}</span>
         <span
-          className="text-[12px] uppercase tracking-[0.06em] font-semibold tabular-nums"
-          style={{ color: titleColor }}
+          aria-hidden
+          className="text-[16px] leading-none"
+          style={{ color: attackerColor }}
+          title={`Attaquant : ${TEAM_NAME[notif.attackerTeam]}${notif.attackerIsBot ? ' (Bot)' : ''}`}
         >
+          {phaseIcon}
+        </span>
+        <span className="text-[12px] uppercase tracking-[0.06em] font-semibold tabular-nums text-muted-foreground">
           T{notif.turn} · {phaseLabel}
         </span>
         <span className="flex-1" />
@@ -171,14 +172,35 @@ function ReportCard({
         </button>
       </div>
 
-      {/* Sous-titre engagement */}
-      <div className="px-3 pb-2">
-        <div
-          className="text-[13px] font-semibold uppercase tracking-[0.03em] leading-tight"
-          style={{ color: titleColor }}
+      {/* Titre directionnel : [AO1 rouge] ⚔ → [I1 bleu]  +  badge Bot si attaquant=bot */}
+      <div className="px-3 pb-2 flex items-center gap-2 flex-wrap">
+        <span
+          className="font-bold text-[15px] tabular-nums"
+          style={{ color: attackerColor }}
+          title={`${notif.attackerKindLabel} ${TEAM_NAME[notif.attackerTeam]}`}
         >
-          {titleSummary}
-        </div>
+          {notif.attackerShortLabel}
+        </span>
+        {notif.attackerIsBot && (
+          <span
+            className="text-[9px] px-[5px] py-[1px] uppercase tracking-[0.08em] rounded-[2px] border font-semibold leading-none"
+            style={{ color: attackerColor, borderColor: attackerColor + '66' }}
+            title="Action décidée par l'IA"
+          >
+            Bot
+          </span>
+        )}
+        <span aria-hidden className="text-[14px]" style={{ color: attackerColor }}>→</span>
+        <span
+          className="font-bold text-[15px] tabular-nums"
+          style={{ color: defenderColor }}
+          title={`${notif.defenderKindLabel} ${TEAM_NAME[notif.defenderTeam]}`}
+        >
+          {notif.defenderShortLabel}
+        </span>
+        <span className="text-muted-foreground text-[12px] italic ml-auto">
+          {notif.isMyAttack ? '(votre attaque)' : notif.isMyDefense ? '(subi)' : '(spectateur)'}
+        </span>
       </div>
 
       {/* Phase 3.3 — ligne "Contact" : explique pourquoi 750 vs 450 sur plaine font les mêmes dégâts.
@@ -195,6 +217,7 @@ function ReportCard({
       <LossesBlock
         team={notif.defenderTeam}
         unitLabel={notif.defenderKindLabel}
+        shortLabel={notif.defenderShortLabel}
         losses={notif.defenderLosses}
         showFullDetail={notif.isMyDefense}
       />
@@ -204,6 +227,7 @@ function ReportCard({
         <LossesBlock
           team={notif.attackerTeam}
           unitLabel={notif.attackerKindLabel}
+          shortLabel={notif.attackerShortLabel}
           losses={notif.attackerLosses}
           showFullDetail={notif.isMyAttack}
           isRiposte
@@ -216,12 +240,13 @@ function ReportCard({
 interface LossesBlockProps {
   team: Team
   unitLabel: string
+  shortLabel: string
   losses: { killed: number; woundedAdd: number; effectiveBefore: number; effectiveAfter: number; isKilled: boolean; isRouted: boolean }
   showFullDetail: boolean
   isRiposte?: boolean
 }
 
-function LossesBlock({ team, unitLabel, losses, showFullDetail, isRiposte }: LossesBlockProps) {
+function LossesBlock({ team, unitLabel, shortLabel, losses, showFullDetail, isRiposte }: LossesBlockProps) {
   const teamColor = TEAM_COLOR[team]
   const teamName = TEAM_NAME[team]
   const headerLabel = isRiposte ? 'Riposte' : 'Pertes'
@@ -229,8 +254,10 @@ function LossesBlock({ team, unitLabel, losses, showFullDetail, isRiposte }: Los
   if (losses.killed === 0 && losses.woundedAdd === 0 && !losses.isKilled) {
     return (
       <div className="px-3 py-2 border-t border-[rgba(226,232,240,0.06)]">
-        <div className="text-[11px] uppercase tracking-[0.14em] mb-1" style={{ color: teamColor }}>
-          {headerLabel} · {unitLabel} {teamName}
+        <div className="text-[11px] uppercase tracking-[0.14em] mb-1 flex items-center gap-2" style={{ color: teamColor }}>
+          <span className="font-bold tabular-nums">{shortLabel}</span>
+          <span className="opacity-60">·</span>
+          <span>{headerLabel} · {unitLabel} {teamName}</span>
         </div>
         <div className="text-[13px] text-muted-foreground italic">Aucune perte</div>
       </div>
@@ -240,6 +267,8 @@ function LossesBlock({ team, unitLabel, losses, showFullDetail, isRiposte }: Los
   return (
     <div className="px-3 py-2 border-t border-[rgba(226,232,240,0.06)]">
       <div className="text-[11px] uppercase tracking-[0.14em] mb-2 flex items-center gap-2 flex-wrap" style={{ color: teamColor }}>
+        <span className="font-bold tabular-nums">{shortLabel}</span>
+        <span className="opacity-60">·</span>
         <span>{headerLabel} · {unitLabel} {teamName}</span>
         {losses.isKilled && (
           <span className="text-[10px] px-2 py-[1px] bg-[rgba(239,68,68,0.15)] border border-red-500/40 text-red-400 rounded-[2px] tracking-[0.08em]">

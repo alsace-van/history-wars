@@ -1,7 +1,8 @@
+// v1.1 (14/05/2026) — Fix bug session 23 : parseCubeKey au lieu de split (cubeKey="q,r" 2 comps, dest.s était NaN → tous moves score=0)
 // v1.0 (14/05/2026) — Phase 4 Lot A2 : mirror Deno port src/engine/ai/picker.ts
 // PORT FROM src/engine/ai/picker.ts — DO NOT EDIT MANUALLY.
 
-import { cubeKey, cubeDistance } from '../hex/index.ts'
+import { cubeKey, cubeDistance, parseCubeKey } from '../hex/index.ts'
 import { bfsReachable } from '../movement/index.ts'
 import { computeEnemyZoc } from '../zoc/index.ts'
 import { hasLineOfSight } from '../los/index.ts'
@@ -51,9 +52,8 @@ export function enumerateActions(unit: UnitState, ctx: AIContext): AIAction[] {
     for (const k of reachable.keys()) {
       if (k === startKey) continue
       if (!ctx.boardKeys.has(k)) continue
-      const [qStr, rStr, sStr] = k.split(',')
-      const q = Number(qStr), r = Number(rStr), s = Number(sStr)
-      actions.push({ kind: 'move', dest: { q, r, s } })
+      const dest = parseCubeKey(k)
+      actions.push({ kind: 'move', dest })
       if (++count >= 12) break
     }
   }

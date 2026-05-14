@@ -1,3 +1,4 @@
+// v1.1 (14/05/2026) — Fix bot passif si engagé : scoreHold=-50 si engagé (force riposte)
 // v1.0 (14/05/2026) — Phase 4 Lot A1 : scoreAction heuristique 1 ply (damage − risk)
 // Frontière engine/ : zéro React, zéro Three, zéro Supabase.
 
@@ -113,8 +114,11 @@ function scoreMove(unit: UnitState, dest: Cube, ctx: AIContext): number {
 
 function scoreHold(unit: UnitState, ctx: AIContext): number {
   const isEngaged = ctx.engagedUnitIds.has(unit.id)
+  // Engagé = au moins 1 ennemi adjacent. Tenir = subir des coups sans riposter.
+  // Pénalité forte pour forcer une attaque même si scoreAttack < 0 (mieux taper que mourir passif).
+  if (isEngaged) return -50
   // Tenir sa position : bonus si moral bas (régénération attendue tour suivant).
-  if (unit.morale < 50 && !isEngaged) return HOLD_REGEN_BONUS
+  if (unit.morale < 50) return HOLD_REGEN_BONUS
   return 0
 }
 

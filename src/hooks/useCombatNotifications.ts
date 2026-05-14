@@ -1,11 +1,12 @@
+// v2.4 (14/05/2026) — Phase 4 : short labels (I1/AO1…) + isBot dans CombatNotification (journal clarté)
 // v2.3 (13/05/2026) — Phase 3.3 : expose menEngaged + contactCap dans CombatNotification (clarté Thermopyles)
 // v2.2 (12/05/2026) — Sprint UX : ajout effectiveBefore dans losses (rapport AVANT/APRÈS)
 // v2.1 (11/05/2026) — Phase 2.5 fix : losses.effectiveAfter (absolu) au lieu de hpAfter (% legacy)
-// v2.0 (10/05/2026) — Phase 2 2D.3 : kind etendu 'charge' + lit effective si dispo (fallback hp legacy)
 import { useCallback, useRef, useState } from 'react'
 import { useRealtime } from './useRealtime'
 import type { Team, UnitKind } from '@/types/game'
 import type { UnitState } from '@engine/units'
+import { getUnitShortLabel } from '@ui/game/gameLabels'
 
 interface CombatResultSnapshot {
   damageDealt: number
@@ -98,6 +99,12 @@ export interface CombatNotification {
   attackerKindLabel: string
   /** Label kind defender. */
   defenderKindLabel: string
+  /** Phase 4 — code court attaquant (I1, AO1, AC2…) coloré équipe dans le journal. */
+  attackerShortLabel: string
+  /** Phase 4 — code court défenseur. */
+  defenderShortLabel: string
+  /** Phase 4 — l'attaquant est-il un bot (actor_user_id null en BDD) ? */
+  attackerIsBot: boolean
   /** Pertes infligees au defenseur lors de l'attaque initiale. effectiveBefore/After = nb soldats absolus avant/apres (Phase 2). */
   defenderLosses: { killed: number; woundedAdd: number; effectiveBefore: number; effectiveAfter: number; isKilled: boolean; isRouted: boolean }
   /** Pertes infligees a l'attaquant si riposte melee (null sinon). */
@@ -232,6 +239,14 @@ function parseAction(
   const defenderUnit = units.find(u => u.id === result.defender_id)
   const attackerKindLabel = attackerUnit ? KIND_LABEL[attackerUnit.kind] : 'Unité'
   const defenderKindLabel = defenderUnit ? KIND_LABEL[defenderUnit.kind] : 'Unité ennemie'
+  // Phase 4 — short labels I1/AO1… avec fallback "??" si DELETE déjà arrivé.
+  const attackerShortLabel = attackerUnit
+    ? getUnitShortLabel(attackerUnit, units)
+    : `${result.attacker_id.slice(0, 4)}?`
+  const defenderShortLabel = defenderUnit
+    ? getUnitShortLabel(defenderUnit, units)
+    : `${result.defender_id.slice(0, 4)}?`
+  const attackerIsBot = newRow.actor_user_id === null
 
   // Phase 2.5 fix : "Soldats restants" doit afficher l'effective absolu (sur effectiveMax),
   // pas le hp legacy v1 (sur 100 = pourcentage). Fallback en cascade :
@@ -291,6 +306,9 @@ function parseAction(
     isMyDefense,
     attackerKindLabel,
     defenderKindLabel,
+    attackerShortLabel,
+    defenderShortLabel,
+    attackerIsBot,
     defenderLosses,
     attackerLosses,
     contact,

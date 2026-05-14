@@ -2,6 +2,51 @@
 
 ---
 
+## Session 23 &mdash; 14/05/2026 &mdash; Phase 4 polish IA solo (5 fixes critiques + clarté journal combat)
+
+**Bot rendu jouable bout-en-bout.** Reprise de la session 22 sur le bug "bot pick all-hold" → root cause trouvée (cubeKey 2 composantes splittée en 3 → dest.s = NaN → cubeDistance NaN → tous les moves score=0). 5 fixes successifs :
+
+### Fix 1 — Bot ne bouge pas (NaN dans dest.s)
+
+- **Cause** : `cubeKey()` encode `"q,r"` (axial 2 composantes, `s` dérivé via `-q-r`). Le picker IA faisait `k.split(',')` en destructurant 3 éléments → `s = Number(undefined) = NaN`. Conséquence : `cubeDistance(dest, enemy)` retournait NaN → `if (approach > bestApproach)` toujours `false` (NaN > 0 = false) → tous les moves `score = 0` = `scoreHold` → tri stable garde `hold` (insertion #0) → 5×hold/tour au lieu de 5 moves.
+- **Fix** : utiliser `parseCubeKey(k)` (existe déjà). Dans 2 fichiers : [src/engine/ai/picker.ts](src/engine/ai/picker.ts) v1.1 + mirror Deno [supabase/functions/_shared/engine-port/ai/picker.ts](supabase/functions/_shared/engine-port/ai/picker.ts) v1.1.
+- **Bug latent identique** trouvé dans [src/hooks/useTacticalSelection.ts](src/hooks/useTacticalSelection.ts) v1.13 : filtre `postRuptureAdjacentEnemies` était silencieusement inopérant (NaN ≤ 1 = false → tous hex autorisés au lieu d'être filtrés).
+- **Régression** : [src/engine/ai/picker.bug-repro.test.ts](src/engine/ai/picker.bug-repro.test.ts) (snapshot game `fb8ee6d5`).
+- **Pitfall #13** ajouté à [docs/CLAUDE.md](docs/CLAUDE.md) : _"`cubeKey` est format axial 2 composantes (q,r), JAMAIS splitter en 3"_.
+
+### Fix 2 — Tour ne bascule pas après bot fin de tour
+
+- **Cause** : `resolve_turn` v1.5 refusait `NOT_YOUR_TURN` (403) quand le humain bleu tentait d'end_turn pendant le tour bot rouge. Le bot ne pouvait pas s'auto-end → tour bloqué.
+- **Fix** : [supabase/functions/resolve_turn/index.ts](supabase/functions/resolve_turn/index.ts) v1.6 — bypass `NOT_YOUR_TURN` quand `activeTeam` contient un bot (n'importe quel humain peut basculer). Côté client [Game.tsx:476-485](src/ui/pages/Game.tsx#L476-L485) appelle `endTurn(gameId)` 1.2s après retour `run_bot_turn` (délai pour visualiser les moves).
+
+### Fix 3 — Bot engagé ne riposte pas (passif quand entouré)
+
+- **Cause** : `scoreAttack = damage − risk` négatif en 1v3 (riposte > damage), `scoreHold = 0` → tri DESC + sort stable → hold insertion #0 gagne. Le bot subissait 3 attaques/tour sans riposter (suicide passif).
+- **Fix** : [src/engine/ai/scorer.ts](src/engine/ai/scorer.ts) v1.1 — `scoreHold = -50` si `engagedUnitIds.has(unit.id)`. Force le bot à attaquer même si score négatif (mieux taper et tomber avec un blue qu'attendre passif). Mirror Deno [supabase/functions/_shared/engine-port/ai/scorer.ts](supabase/functions/_shared/engine-port/ai/scorer.ts) v1.1.
+- **Régression** : 2 nouveaux tests dans `picker.bug-repro.test.ts` (bot engagé doit pick attaque).
+
+### Fix 4 — Journal de bataille : qui attaque pas clair
+
+- **Cause** : titre rapport "Mêlée : Infanterie Bleus vs Cavalerie Rouges" — `vs` neutre, ambiguë sur attaquant/défenseur, aucune indication "Bot", labels longs.
+- **Fix** : 
+  - [src/ui/game/gameLabels.ts](src/ui/game/gameLabels.ts) v1.3 : helpers `getKindAbbrev` (I/C/AO/AC/AR) + `getUnitShortLabel(unit, allUnits)` → `"I1", "AO2"...` (numérotation par team+kind+subKind, tri id ASC).
+  - [src/hooks/useCombatNotifications.ts](src/hooks/useCombatNotifications.ts) v2.4 : champs `attackerShortLabel`, `defenderShortLabel`, `attackerIsBot` ajoutés à `CombatNotification`.
+  - [src/ui/game/CombatResultPanel.tsx](src/ui/game/CombatResultPanel.tsx) v4.3 : bandeau refondu avec icône ⚔/🏹 colorée selon attaquant + titre directionnel `[AO1 rouge] → [I1 bleu]` + badge `Bot` à côté de l'attaquant si `actor_user_id=null` + mention `(votre attaque)` / `(subi)` / `(spectateur)`. Blocs `LossesBlock` préfixés par short label.
+
+### EFs déployées prod
+
+- `run_bot_turn` v6 puis v7 (deux deploy : fix NaN puis fix scoreHold engagé).
+- `resolve_turn` v6 (bypass NOT_YOUR_TURN si bot).
+
+Tests : 348/348 verts (+3 nouveaux). tsc clean.
+
+### Prochaine action session 24
+
+- **Phase 4-bis** : lookahead 2-3 ply OU fog server-side RLS (vue SQL filtrée units pour cacher positions ennemies hors fog côté client = anti-cheat).
+- Bot encore limité à `move/attack/hold` — pas de scission/fusion, charge cav, ni ordres conditionnels (Lot B Phase 4 ou 4-ter, non planifié).
+
+---
+
 ## Session 22 (clôture) &mdash; 14/05/2026 &mdash; Phase 3.3 + Phase 3.3-bis (charge réelle + campement) + Phase 4 Lot A (IA solo MVP serveur)
 
 **3 phases livrées + déployées en une session marathon.** Bot solo encore en cours de debug fin de session — le hook fire, l'EF répond `ok actions_applied=5`, mais les 5 actions insérées sont toutes `hold` malgré les fixes scoreMove/picker. Logs serveur ajoutés en fin de session pour next diagnostic.

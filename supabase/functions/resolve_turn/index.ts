@@ -1,7 +1,7 @@
+// v1.6 (14/05/2026) — Phase 4 : bypass NOT_YOUR_TURN si activeTeam contient un bot (humain end pour bot)
 // v1.5 (13/05/2026) — Phase 3.2-bis : émission engagement_ticks dans EndTurnResult (UI clarité)
 // v1.4 (13/05/2026) — Phase 3.2 Vague B3 : §10.5 évaluation ordres conditionnels (pré-postures)
 // v1.3 (11/05/2026) — Phase 2.6 Vague B : tick engagements actifs avant récup moral (combat continu)
-// v1.2 (11/05/2026) — Phase 2.5 B : recoverMoraleEndTurnV2 modulée par soutien (alliés rayon 1+2)
 //
 // Logique :
 // 1. CORS / POST only
@@ -182,7 +182,20 @@ Deno.serve(async (req: Request) => {
     }
     const userTeam = playerRow.team as Team
     if (fromTeam !== userTeam) {
-      return errorResponse(ERROR_CODES.NOT_YOUR_TURN, `active team is ${fromTeam}`, 403)
+      // Phase 4 — exception bot : si activeTeam contient un bot, n'importe quel humain
+      // de la game peut basculer le tour (le bot ne peut pas s'auto-end). Pattern :
+      // run_bot_turn applique les actions, le client humain invoque resolve_turn pour bascule.
+      const { data: botOnActive } = await admin
+        .from('game_players')
+        .select('id')
+        .eq('game_id', gameId)
+        .eq('team', fromTeam)
+        .eq('is_bot', true)
+        .limit(1)
+        .maybeSingle()
+      if (!botOnActive) {
+        return errorResponse(ERROR_CODES.NOT_YOUR_TURN, `active team is ${fromTeam}`, 403)
+      }
     }
 
     // 6. Scale check

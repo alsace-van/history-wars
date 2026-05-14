@@ -1,10 +1,10 @@
+// v1.13 (14/05/2026) — Fix bug session 23 : parseCubeKey (cubeKey="q,r" 2 comps, destCube.s était undefined → cubeDistance NaN → filtre post-rupture inopérant)
 // v1.12 (14/05/2026) — Phase 3.3 Lot C : orderRetreatPickMode (highlight hex pour pré-ordre retreat)
 // v1.11 (14/05/2026) — Phase 3.3 : targetableUnitIds utilise resolveUnitStatsV2 + skip LoS si arcedTrajectory
 // v1.10 (12/05/2026) — Phase 3.1-C : params visibleTileKeys + enemyVisibility (filtre reachable/targetable)
-// v1.9 (12/05/2026) — QW2 : inspectedEnemyId (clic ennemi → panel read-only, toggle même cible)
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { computeCohesion, computeSupport, type CohesionState, type SupportCount } from '@engine/cohesion'
-import { cubeKey, cubeDistance, neighbors, spiral } from '@engine/hex'
+import { cubeKey, cubeDistance, neighbors, spiral, parseCubeKey } from '@engine/hex'
 import { bfsReachable } from '@engine/movement'
 import { computeEnemyZoc } from '@engine/zoc'
 import { hasLineOfSight } from '@engine/los'
@@ -174,12 +174,8 @@ export function useTacticalSelection(
       if (k === startKey) continue
       if (!boardKeys.has(k)) continue
       if (filterPostRupture) {
-        // Recompose la position depuis raw — bfsReachable expose le hex en clé. On a
-        // besoin du cube ; on utilise la map des positions atteintes.
-        // raw retourne Map<cubeKey, cost>. Pour récupérer le hex, on parse la clé
-        // (format q,r,s).
-        const parts = k.split(',').map(Number)
-        const destCube = { q: parts[0], r: parts[1], s: parts[2] }
+        // cubeKey est "q,r" (axial 2 comps), s dérivé via parseCubeKey. Voir piège #13.
+        const destCube = parseCubeKey(k)
         let isAwayFromAll = true
         for (const enemy of postRuptureAdjacentEnemies) {
           if (cubeDistance(destCube, enemy.position) <= 1) {

@@ -1,7 +1,8 @@
+// v1.1 (14/05/2026) — Fix bug session 23 : parseCubeKey au lieu de split (cubeKey="q,r" 2 comps, dest.s était NaN → cubeDistance NaN → tous moves score=0)
 // v1.0 (14/05/2026) — Phase 4 Lot A1 : enumerate + pick (greedy 1 ply selon profil)
 // Frontière engine/ : zéro React, zéro Three, zéro Supabase.
 
-import { cubeKey, cubeDistance } from '../hex'
+import { cubeKey, cubeDistance, parseCubeKey } from '../hex'
 import { bfsReachable } from '../movement/range'
 import { computeEnemyZoc } from '../zoc'
 import { hasLineOfSight } from '../los'
@@ -61,9 +62,9 @@ export function enumerateActions(unit: UnitState, ctx: AIContext): AIAction[] {
     for (const k of reachable.keys()) {
       if (k === startKey) continue
       if (!ctx.boardKeys.has(k)) continue
-      const [qStr, rStr, sStr] = k.split(',')
-      const q = Number(qStr), r = Number(rStr), s = Number(sStr)
-      actions.push({ kind: 'move', dest: { q, r, s } })
+      // cubeKey est "q,r" (2 composantes axial), s dérivé : -q-r. Voir hex/key.ts.
+      const dest = parseCubeKey(k)
+      actions.push({ kind: 'move', dest })
       if (++count >= 12) break
     }
   }
