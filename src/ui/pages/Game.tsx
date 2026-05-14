@@ -126,7 +126,15 @@ export function Game() {
   const finished = game?.status === 'finished'
   const showBattle = inProgress || finished
 
-  const { units: dbUnits, loading: unitsLoading } = useBattleUnits(gameId, showBattle)
+  const { units: dbUnits, loading: unitsLoading, refresh: refreshUnits } = useBattleUnits(gameId, showBattle)
+
+  // Phase 4-bis Lot 1 (fog server-side RLS) : refresh complet des units à chaque
+  // changement de tour. Sans ça, les units ennemies qui SORTENT du fog (UPDATE
+  // filtré par RLS) restent affichées en fantôme à leur dernière position connue.
+  useEffect(() => {
+    if (!showBattle || !game?.turn_number) return
+    void refreshUnits()
+  }, [game?.turn_number, showBattle, refreshUnits])
 
   const factoryUnits = useMemo(() => buildMvpUnitPlacement(), [])
 

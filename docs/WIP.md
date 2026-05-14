@@ -2,6 +2,44 @@
 
 ---
 
+## Session 24 &mdash; 14/05/2026 &mdash; Phase 4-bis Lot 1 — fog of war server-side via RLS units
+
+**Anti-cheat livré.** Un client humain ne peut plus SELECT directement les units ennemies hors de son fog (vision allié + LoS Bresenham hex). Les EFs continuent d'utiliser service_role (bypass RLS) → bot et résolutions de tour pas affectées.
+
+### Migration 024 (appliquée prod)
+
+[supabase/migrations/024_fog_rls_server_side.sql](supabase/migrations/024_fog_rls_server_side.sql) :
+
+- **`cube_distance(q1,r1,s1,q2,r2,s2) returns int`** (immutable, pure SQL) — formule cubique `(|dq|+|dr|+|ds|)/2`.
+- **`cube_round(qf,rf,sf) returns (q,r,s)`** (PL/pgSQL, immutable) — snap fractionnaire avec préservation invariant `q+r+s=0`. Mirror src/engine/hex/coordinates.ts.
+- **`has_line_of_sight(aq,ar,as_,bq,br,bs,blocker_keys text[]) returns bool`** (PL/pgSQL, immutable) — port Bresenham hex avec epsilon shift (1e-6 q,r ; -2e-6 s) et boucle `i in 1..n-1` sur intermédiaires. Format blocker_keys = axial `"q,r"` (cf piège #13).
+- **`is_unit_visible(unit_id uuid, viewer_uid uuid) returns bool`** (security definer, stable) — pour chaque ally observer non-routed du viewer team : check `cube_distance ≤ vision (I=3, C=5, A=4)` + `has_line_of_sight(obs, target, blockers=other_units excl observer)`. Mirror visibleEnemiesFromTeam.
+- **Policy RESTRICTIVE `units_select_fog`** : AND avec les PERMISSIVE existantes (`units_select_member`, `units_select_spectator`). Spectateurs (NOT EXISTS dans game_players) bypass fog. Membres : check is_unit_visible.
+
+### Validation prod (via execute_sql)
+
+- ✅ `cube_distance(0,0,0,6,-3,-3) = 6`
+- ✅ `has_line_of_sight` : clear / blocked intermédiaire / endpts ignorés / adjacent → tous corrects
+- ✅ Test SET LOCAL ROLE authenticated sur game `6af27b6f` : avant RLS = 5 units retournées (3 blue + 2 red), après RLS = **4 units** (3 blue + 1 red I). Le red A à (3,1) est correctement filtré car LoS bloquée par red I à (2,-1) sur la trajectoire vue du blue C à (2,-2).
+- ✅ EXPLAIN ANALYZE service_role : 0.18ms sur 5 units (perf en mode authenticated non testée mais devrait scaler O(N units × N observers × line_length)).
+
+### Client : anti units fantômes
+
+- [src/ui/pages/Game.tsx](src/ui/pages/Game.tsx) : `useEffect refresh units` sur changement `game?.turn_number`. Sans ça, les units ennemies qui SORTENT du fog (UPDATE filtré par RLS Realtime) restaient affichées en fantôme à leur dernière position connue.
+
+### Limitations & risques connus
+
+- **Performance non mesurée en charge réelle** : chaque SELECT units appelle `is_unit_visible` qui fait O(observers × line_length). Pour 10 units × 5 observateurs × 6 hex ≈ 300 ops par row à filtrer. Si > 100ms, optimiser via materialized view ou vue matérialisée par turn.
+- **EFs server-side non affectées** : utilisent service_role (`getAdminClient`) qui bypass RLS. Donc bot continue à voir tous les ennemis (cheat assumé MVP).
+- **Spectateurs** : voient toutes les units (vue "neutre" du match, par design). Si on veut les filtrer aussi, modifier policy `units_select_fog` (retirer la branche `NOT EXISTS`).
+
+### Prochaine action session 25
+
+- **Phase 4-bis Lot 2** : lookahead 2-3 ply (minimax léger sur top-N actions, profondeur 2-3, bornage temps EF < 5s). Bot devient vraiment plus malin.
+- **Lot B Phase 4** (optionnel) : étendre `AIAction` avec charge cav, split/merge, pose d'ordres conditionnels.
+
+---
+
 ## Session 23 &mdash; 14/05/2026 &mdash; Phase 4 polish IA solo (5 fixes critiques + clarté journal combat)
 
 **Bot rendu jouable bout-en-bout.** Reprise de la session 22 sur le bug "bot pick all-hold" → root cause trouvée (cubeKey 2 composantes splittée en 3 → dest.s = NaN → cubeDistance NaN → tous les moves score=0). 5 fixes successifs :

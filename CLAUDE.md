@@ -86,7 +86,7 @@ Exception : confiance < 95 % AVANT de coder → plan détaillé + questions auto
 
 Ne jamais demander un re-upload si le fichier est accessible via une de ces sources.
 
-## 7. État courant (14/05/2026 — session 23 clôturée)
+## 7. État courant (14/05/2026 — session 24 clôturée)
 
 - Phase 0 → 2.6 ✅ (cf. WIP.md sessions 1-19)
 - Phase 3.1 ✅ fog of war évolué client-side (session 20). Tag `phase-3-1-complete`.
@@ -117,16 +117,22 @@ Ne jamais demander un re-upload si le fichier est accessible via une de ces sour
   - **Fix 3** : bot engagé attaque au lieu de subir (`scoreHold = -50` si engagé, force riposte même si attack score < 0).
   - **Fix 4** : journal combat clarifié — short labels colorés `[AO1 rouge] → [I1 bleu]`, icône ⚔/🏹 couleur attaquant, badge `Bot` si IA, mention `(votre attaque)/(subi)/(spectateur)`.
   - Tests : 348/348 verts (+3 régressions). EFs déployées : `run_bot_turn` v7, `resolve_turn` v6.
-- Phase 4-bis ⬜ lookahead 2-3 ply + fog server-side RLS (vue SQL filtrée units). Auto end_turn ✅ session 23.
+- **Phase 4-bis Lot 1 ✅** (session 24) — fog of war server-side via RLS units :
+  - Migration 024 : helpers SQL hex (`cube_distance`, `cube_round`, `has_line_of_sight` Bresenham PL/pgSQL avec epsilon shift) + `is_unit_visible(unit_id, viewer_uid)` security definer.
+  - Policy RESTRICTIVE `units_select_fog` (AND avec PERMISSIVE existantes). Spectateurs bypass fog. Membres : check vision + LoS.
+  - Anti units fantômes : `useEffect refresh units` sur `turn_number` change dans Game.tsx (units ennemies sortant du fog ne reçoivent plus d'UPDATE Realtime).
+  - Validé prod : SET LOCAL ROLE authenticated, 5→4 units retournées, red A correctement filtré (LoS bloquée par red I).
+  - EFs server-side non affectées (service_role bypass RLS).
+- Phase 4-bis Lot 2 ⬜ lookahead 2-3 ply (minimax léger). Auto end_turn ✅ session 23.
 - Phase 5 ⬜ profondeur tactique (formations, fatigue/endurance dédiée, ravitaillement, Infirmier, météo, mode campement Phase 5 = Infirmier amplifie heal).
 - Phases 6-15 ⬜
 
-Prochaine action session 24 :
-1. **Phase 4-bis Lot 1** : fog server-side RLS (vue SQL filtrée `units` par viewer team via `visibleHexesFromTeam`) — anti-cheat client.
-2. **Phase 4-bis Lot 2** : lookahead 2-3 ply (minimax léger sur top-N actions, profondeur 2-3, bornage temps EF < 5s).
+Prochaine action session 25 :
+1. **Phase 4-bis Lot 2** : lookahead 2-3 ply (minimax léger sur top-N actions, profondeur 2-3, bornage temps EF < 5s).
+2. Possible mesure perf RLS fog (`is_unit_visible` en authenticated context) si lenteur observée côté UI.
 3. Possible Lot B Phase 4 : étendre `AIAction` (charge cav, split/merge, pose d'ordres conditionnels).
 
-EFs prod : `run_bot_turn` v7, `resolve_turn` v6, `resolve_action` v21, `submit_orders` v4, `start_battle` v5. Migrations 021/022/023 appliquées.
+EFs prod : `run_bot_turn` v7, `resolve_turn` v6, `resolve_action` v21, `submit_orders` v4, `start_battle` v5. Migrations 021/022/023/024 appliquées.
 
 Tests : 345/345 verts. Game.tsx ~660 lignes (toujours > 600 limite — dette technique).
 
