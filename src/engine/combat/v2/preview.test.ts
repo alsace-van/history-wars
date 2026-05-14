@@ -64,7 +64,7 @@ describe('engine/combat/v2/preview', () => {
   })
 
   it('preview ranged inclut TIR base, pas ATK base', () => {
-    const att = makeUnit({ kind: 'A', subKind: 'artillery', effective: 120, effectiveMax: 120, effectiveMin: 30 })
+    const att = makeUnit({ kind: 'A', subKind: 'artillery_heavy', effective: 120, effectiveMax: 120, effectiveMin: 30 })
     const def = makeUnit({ kind: 'I', team: 'red', effective: 800, position: cube(4, 0, -4) })
     const p = previewCombatV2({
       attacker: att,
@@ -129,7 +129,7 @@ describe('engine/combat/v2/preview', () => {
   })
 
   it('artillerie sous min_range : damageMin = 0 (impossible)', () => {
-    const att = makeUnit({ kind: 'A', subKind: 'artillery', effective: 120, effectiveMax: 120, effectiveMin: 30 })
+    const att = makeUnit({ kind: 'A', subKind: 'artillery_heavy', effective: 120, effectiveMax: 120, effectiveMin: 30 })
     const def = makeUnit({ kind: 'I', team: 'red', effective: 800, position: cube(1, 0, -1) })
     const p = previewCombatV2({
       attacker: att,

@@ -82,6 +82,7 @@ function HexTileBase({
     if (state === 'targetable') return { fillColor: COLORS.tileTargetable, edgeColor: COLORS.tileTargetableEdge }
     if (state === 'dangerous') return { fillColor: COLORS.tileDangerous, edgeColor: COLORS.tileDangerousEdge }
     if (state === 'split-target') return { fillColor: COLORS.tileSplitTarget, edgeColor: COLORS.tileSplitTargetEdge }
+    if (state === 'retreat-target') return { fillColor: COLORS.tileRetreatTarget, edgeColor: COLORS.tileRetreatTargetEdge }
     return { fillColor: COLORS.tileIdle, edgeColor: COLORS.tileIdleEdge }
   }, [state, visibility])
 

@@ -24,11 +24,15 @@ export interface UnitStats {
 
 /**
  * Sous-type d'une UnitKind. Affine le comportement combat v2 :
- *   archer    : range courte (4), pas de min_range, mousquet/arc.
- *   artillery : range longue (7), min_range 2 (pas de tir a bout portant).
- * Si non defini, defaut depuis UNIT_STATS_V2[kind] (artillery pour A).
+ *   archer            : range 4 mousquet/arc, pas de min_range, courbe legacy.
+ *   artillery_light   : range 3, minRange 2, zone optimale [2,3], pas de falloff.
+ *                       Tactique de proximité, dégâts modérés (rangedPower 3.0).
+ *   artillery_heavy   : range 6, minRange 2, zone optimale [2,3], falloff vers 0.4 à range 6.
+ *                       Frappe longue mais imprécise loin (rangedPower 5.0).
+ * Si non defini, defaut depuis UNIT_STATS_V2[kind] (= artillery_heavy implicite pour A
+ * pour préserver le comportement legacy des parties sans subKind explicite).
  */
-export type UnitSubKind = 'archer' | 'artillery'
+export type UnitSubKind = 'archer' | 'artillery_light' | 'artillery_heavy'
 
 /**
  * Etat vivant d'une unite sur le plateau.

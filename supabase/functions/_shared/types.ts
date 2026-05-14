@@ -32,6 +32,8 @@ export interface UnitPlacement {
   kind: UnitKind
   q: number
   r: number
+  /** Phase 3.3 — sub_kind pour spawn artillerie light/heavy ou archer. NULL = base kind. */
+  subKind?: 'archer' | 'artillery_light' | 'artillery_heavy'
 }
 
 // ----------------------------------------------------------------------------

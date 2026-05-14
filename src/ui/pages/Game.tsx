@@ -1,7 +1,7 @@
+// v3.29 (14/05/2026) — Phase 3.3 Lot A : useOrderTriggeredToasts câblé (toast owner)
 // v3.28 (13/05/2026) — QW2 session 22 : extraction useEngagementTickFloaters + useCombatHighlight + useCameraFocus (< 600 lignes)
 // v3.27 (13/05/2026) — Phase 3.2-bis : tick floaters + toast "Combat continu (T+N)" pour engagement persistant
-// v3.26 (12/05/2026) — Phase 3.1-C : useVisionMap câblé + tileVisibility + enemyVisibility propagés
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { useRequireAuth } from '@hooks/useRequireAuth'
@@ -28,6 +28,8 @@ import { usePreOrders } from '@hooks/usePreOrders'
 import { useEngagementTickFloaters } from '@hooks/useEngagementTickFloaters'
 import { useCombatHighlight } from '@hooks/useCombatHighlight'
 import { useCameraFocus } from '@hooks/useCameraFocus'
+import { useOrderTriggeredToasts } from '@hooks/useOrderTriggeredToasts'
+import { useActiveOrdersByUnit } from '@hooks/useActiveOrdersByUnit'
 import {
   isHost,
   isPlayerInGame,
@@ -191,15 +193,32 @@ export function Game() {
   const [retreatMode, setRetreatMode] = useState(false)
   const [suicideMode, setSuicideMode] = useState(false)
   const [pendingShakenAttack, setPendingShakenAttack] = useState<{ targetId: string } | null>(null)
+  // Phase 3.3 Lot C — mode "pick hex" pour pré-ordre retreat (cliqué dans OrdersPanel).
+  // Le callback est stocké en ref pour être invoqué à la sélection sans capture stale.
+  const [orderRetreatPickMode, setOrderRetreatPickMode] = useState(false)
+  const orderRetreatPickCallbackRef = useRef<((hex: Cube) => void) | null>(null)
 
   // Phase 2.6 C — engagements actifs (table engagements migration 017 + Realtime).
   const { engagements: engagementRows, engagedUnitIds, engagementsByUnit } = useEngagement(gameId, showBattle)
 
+  // Phase 3.3 Lot B — map { unit_id → action_kind du priority=1 actif } pour l'icône
+  // d'ordre conditionnel sur le pion 3D. RLS filtre côté serveur (mes pions seulement).
+  const { activeOrders, refresh: refreshActiveOrders } = useActiveOrdersByUnit({
+    gameId: gameId ?? null,
+    myUserId: user?.id ?? null,
+    enabled: showBattle,
+  })
+
   // Phase 3.2-bis — enrichit chaque UnitInstance avec `engaged` pour que UnitPlaceholder
   // affiche l'icône d'état mouvement correcte (orange si engagé = "Rompre" requis).
+  // Phase 3.3 Lot B — injecte activeOrder pour l'icône d'ordre conditionnel.
   const renderUnitsEnriched = useMemo(
-    () => renderUnits.map(u => ({ ...u, engaged: engagedUnitIds.has(u.id) })),
-    [renderUnits, engagedUnitIds],
+    () => renderUnits.map(u => ({
+      ...u,
+      engaged: engagedUnitIds.has(u.id),
+      activeOrder: activeOrders.get(u.id),
+    })),
+    [renderUnits, engagedUnitIds, activeOrders],
   )
 
   // Phase 3.1-C : fog client (vision range + LoS). Doit être appelé AVANT useTacticalSelection
@@ -224,6 +243,7 @@ export function Game() {
     supportMap,
     retreatTargetKeys,
     suicideTargetIds,
+    orderRetreatPickKeys,
     inspectedEnemy,
     handleUnitClick: hookHandleUnitClick,
     clearSelection,
@@ -233,6 +253,7 @@ export function Game() {
     splitMode: splitMode !== null,
     retreatMode,
     suicideMode,
+    orderRetreatPickMode,
     engagedUnitIds,
     visibleTileKeys: inProgress && myTeam ? visibleTileKeys : undefined,
     enemyVisibility: inProgress && myTeam ? enemyVisibility : undefined,
@@ -313,6 +334,14 @@ export function Game() {
       units: unitStates,
     })
 
+  // Phase 3.3 Lot A — toast "Ordre déclenché" côté owner (privacy filter via actor_user_id).
+  useOrderTriggeredToasts({
+    gameId: gameId ?? null,
+    viewerUserId: user?.id ?? null,
+    units: unitStates,
+    enabled: showBattle,
+  })
+
   const { settings: uiSettings, setSkipShakenWarning, animationDurationMs } = useSettings()
   const { floaters: damageFloaters, removeFloater: removeCombatFloater } = useCombatAnimator({ notifications: combatNotifs, unitStates, animationDurationMs, enabled: showBattle })
 
@@ -377,6 +406,18 @@ export function Game() {
     setSkipShakenWarning,
     setUnitPaths,
     pendingShakenAttack,
+    orderRetreatPickMode,
+    orderRetreatPickKeys,
+    commitOrderRetreatPick: (hex: Cube) => {
+      const cb = orderRetreatPickCallbackRef.current
+      orderRetreatPickCallbackRef.current = null
+      setOrderRetreatPickMode(false)
+      if (cb) cb(hex)
+    },
+    cancelOrderRetreatPick: () => {
+      orderRetreatPickCallbackRef.current = null
+      setOrderRetreatPickMode(false)
+    },
   })
 
   const { handleLeave, handleKick, handleStartBattle, handleEndTurn, handleBreakCombat } = useGameLifecycle({
@@ -405,6 +446,13 @@ export function Game() {
     unitId: selectedUnit && selectedUnit.team === myTeam ? selectedUnit.id : null,
     enabled: showBattle,
   })
+
+  // Phase 3.3 Lot B — refetch immédiat de la map globale `activeOrders` dès que les
+  // ordres de l'unité sélectionnée changent (create/update/delete). Sans ça, l'icône
+  // sur le pion n'apparaît qu'après le prochain end_turn (qui émet `order_triggered`).
+  useEffect(() => {
+    void refreshActiveOrders()
+  }, [preOrders.orders, refreshActiveOrders])
 
   if (authLoading || !user || loading || !game) {
     return (
@@ -558,6 +606,14 @@ export function Game() {
                 onUpdateOrder={preOrders.updateOrder}
                 onDeleteOrder={preOrders.deleteOrder}
                 onReorderOrder={preOrders.reorderOrder}
+                onRequestPickRetreatHex={(onPicked) => {
+                  // Lot C — exclusivité avec retreat/suicide/split.
+                  setRetreatMode(false)
+                  setSuicideMode(false)
+                  setSplitMode(null)
+                  orderRetreatPickCallbackRef.current = onPicked
+                  setOrderRetreatPickMode(true)
+                }}
                 blueSlots={blueSlots}
                 redSlots={redSlots}
                 hostUserId={hostUserId}

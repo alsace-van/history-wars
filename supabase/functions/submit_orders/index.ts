@@ -1,3 +1,4 @@
+// v1.1 (14/05/2026) — Phase 3.3 Lot C : validation action.params.destHex pour retreat dirigé
 // v1.0 (13/05/2026) — Phase 3.2 Vague B2 : CRUD batch des ordres conditionnels par unité
 // Source : plan on-demarre-la-phase-silly-reddy.md Vague B2.
 //
@@ -21,7 +22,8 @@ import {
   type UnitOrderRow,
 } from '../_shared/types.ts'
 
-const TAG = '[submit_orders v1.0]'
+const TAG = '[submit_orders v1.1]'
+const BOARD_RADIUS = 7  // garde-fou bornes destHex (rayon plateau MVP)
 
 const TRIGGER_KINDS = new Set(['on_attacked', 'enemy_in_range', 'cohesion_broken', 'enemy_los'])
 const ACTION_KINDS = new Set(['charge', 'fire', 'retreat', 'hold'])
@@ -43,6 +45,21 @@ function validateAction(a: unknown): a is OrderActionDTO {
   if (!a || typeof a !== 'object') return false
   const ac = a as Record<string, unknown>
   if (typeof ac.kind !== 'string' || !ACTION_KINDS.has(ac.kind)) return false
+  // Phase 3.3 Lot C — retreat directionnel : valider action.params.destHex si fourni.
+  if (ac.params !== undefined && ac.params !== null) {
+    if (typeof ac.params !== 'object') return false
+    const p = ac.params as Record<string, unknown>
+    if (p.destHex !== undefined && p.destHex !== null) {
+      if (typeof p.destHex !== 'object') return false
+      const h = p.destHex as Record<string, unknown>
+      if (typeof h.q !== 'number' || typeof h.r !== 'number' || typeof h.s !== 'number') return false
+      if (!Number.isInteger(h.q) || !Number.isInteger(h.r) || !Number.isInteger(h.s)) return false
+      if (h.q + h.r + h.s !== 0) return false
+      if (Math.max(Math.abs(h.q), Math.abs(h.r), Math.abs(h.s)) > BOARD_RADIUS) return false
+      // destHex toléré uniquement pour kind='retreat' (sinon ignoré côté engine de toute façon).
+      if (ac.kind !== 'retreat') return false
+    }
+  }
   return true
 }
 

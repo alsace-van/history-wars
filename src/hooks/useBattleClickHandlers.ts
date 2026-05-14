@@ -1,3 +1,4 @@
+// v1.2 (14/05/2026) — Phase 3.3 Lot C : handleTileClick gère orderRetreatPickMode (pré-ordre retreat)
 // v1.1 (12/05/2026) — UX : mergeMode → clic sur unité alliée cible déclenche performMerge (avec move auto si distant)
 // v1.0 (11/05/2026) — Phase 2.5 C : extraction handlers click (unit/tile/shaken) pour alléger Game.tsx
 import { useCallback } from 'react'
@@ -44,6 +45,11 @@ interface UseBattleClickHandlersParams {
     updater: (prev: Map<string, ReadonlyArray<Cube>>) => Map<string, ReadonlyArray<Cube>>,
   ) => void
   pendingShakenAttack: { targetId: string } | null
+  // Phase 3.3 Lot C — mode "pick hex" pour pré-ordre retreat (depuis OrdersPanel).
+  orderRetreatPickMode?: boolean
+  orderRetreatPickKeys?: Set<string>
+  commitOrderRetreatPick?: (hex: Cube) => void
+  cancelOrderRetreatPick?: () => void
 }
 
 interface UseBattleClickHandlersResult {
@@ -61,6 +67,10 @@ export function useBattleClickHandlers(p: UseBattleClickHandlersParams): UseBatt
     performRetreat, performSuicide, hookHandleUnitClick, clearSelection, setHoveredEnemyId,
     setSplitMode, setRetreatMode, setPendingShakenAttack, setSkipShakenWarning,
     setUnitPaths, pendingShakenAttack,
+    orderRetreatPickMode = false,
+    orderRetreatPickKeys,
+    commitOrderRetreatPick,
+    cancelOrderRetreatPick,
   } = p
 
   const handleUnitClick = useCallback(
@@ -120,6 +130,16 @@ export function useBattleClickHandlers(p: UseBattleClickHandlersParams): UseBatt
     async (cube: Cube) => {
       if (!gameId || !inProgress || !selectedUnit) return
       const key = cubeKey(cube)
+      // Phase 3.3 Lot C — pré-ordre retreat : click sur hex highlight bleu → commit destHex.
+      // Click hors highlight → cancel mode sans commit.
+      if (orderRetreatPickMode) {
+        if (orderRetreatPickKeys && orderRetreatPickKeys.has(key) && commitOrderRetreatPick) {
+          commitOrderRetreatPick(cube)
+        } else if (cancelOrderRetreatPick) {
+          cancelOrderRetreatPick()
+        }
+        return
+      }
       // v1.1 — mergeMode : clic sur hex vide → cancel mergeMode et stop
       if (mergeMode) { setMergeMode(false); return }
       // Mode retreat : tile ambre → retreat
@@ -165,6 +185,7 @@ export function useBattleClickHandlers(p: UseBattleClickHandlersParams): UseBatt
       gameId, inProgress, selectedUnit, splitMode, splitTargetKeys, reachableMap, actionsBusy,
       submitAction, unitStates, clearSelection, retreatMode, retreatTargetKeys, performRetreat,
       setRetreatMode, setSplitMode, setUnitPaths, mergeMode, setMergeMode,
+      orderRetreatPickMode, orderRetreatPickKeys, commitOrderRetreatPick, cancelOrderRetreatPick,
     ],
   )
 

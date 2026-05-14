@@ -1,3 +1,4 @@
+// v1.3 (14/05/2026) — Phase 3.3 Lot B : unitRowsToInstances accepte activeOrders Map<unitId, kind>
 // v1.2 (10/05/2026) — Phase 2 2A.1 : adapter UnitRow → UnitState propage effective (defaults derives si absents)
 // v1.1 (10/05/2026) — Phase 1.5 : ajout colonne `wounded` (migration 011) propage a UnitState
 // v1.0 (09/05/2026) — L1C.1 : adapter UnitRow BDD → UnitInstance render / UnitState engine
@@ -6,6 +7,7 @@ import type { UnitInstance } from '../types'
 import type { Team, UnitKind } from '@/types/game'
 import type { UnitState, UnitSubKind } from '@engine/units'
 import type { Cube } from '@engine/hex'
+import type { OrderActionKind } from '@engine/orders'
 import { UNIT_STATS_V2, computeOrdinalLabels } from '@engine/units'
 
 /**
@@ -66,6 +68,8 @@ export function unitRowToInstance(row: UnitRow): UnitInstance {
     routed: row.routed,
     hasMoved: row.has_moved,
     hasAttacked: row.has_attacked,
+    // Phase 3.3 — propage subKind à UnitInstance pour labels + stats résolus UI.
+    subKind: row.sub_kind ?? undefined,
   }
 }
 
@@ -114,10 +118,19 @@ export function unitRowToState(row: UnitRow): UnitState {
 }
 
 /** Helper : convertit un tableau de UnitRow en UnitInstance[]. Phase 3.2-bis :
- *  injecte ordinalLabel calculé par team+kind dans l'ordre du tableau. */
-export function unitRowsToInstances(rows: UnitRow[]): UnitInstance[] {
-  const labels = computeOrdinalLabels(rows.map(r => ({ id: r.id, kind: r.kind, team: r.team })))
-  return rows.map(r => ({ ...unitRowToInstance(r), ordinalLabel: labels.get(r.id) }))
+ *  injecte ordinalLabel calculé par team+kind dans l'ordre du tableau.
+ *  Phase 3.3 Lot B : injecte activeOrder si fourni (ne s'applique qu'aux pions du
+ *  viewer car la Map vient de useActiveOrdersByUnit filtré RLS owner-only). */
+export function unitRowsToInstances(
+  rows: UnitRow[],
+  activeOrders?: ReadonlyMap<string, OrderActionKind>,
+): UnitInstance[] {
+  const labels = computeOrdinalLabels(rows.map(r => ({ id: r.id, kind: r.kind, team: r.team, subKind: r.sub_kind ?? undefined })))
+  return rows.map(r => ({
+    ...unitRowToInstance(r),
+    ordinalLabel: labels.get(r.id),
+    activeOrder: activeOrders?.get(r.id),
+  }))
 }
 
 /** Helper : convertit un tableau de UnitRow en UnitState[]. */

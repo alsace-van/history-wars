@@ -1,3 +1,4 @@
+// v1.1 (14/05/2026) — Phase 3.3 : EngagementTickInput accepte onHoldA/onHoldB (bonus défensif posture)
 // v1.0 (11/05/2026) — Phase 2.6 Vague B : port engagement/types pour Deno
 // Source de verite : src/engine/engagement/types.ts. Duplication controlee (piege #12).
 
@@ -44,6 +45,9 @@ export interface EngagementTickInput {
   config?: CombatConfig
   supportA?: SupportCount
   supportB?: SupportCount
+  /** Phase 3.3 — posture hold côté A/B (bonus défensif appliqué quand l'autre frappe). */
+  onHoldA?: boolean
+  onHoldB?: boolean
 }
 
 export interface EngagementTickResult {

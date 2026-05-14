@@ -1,14 +1,14 @@
-// v1.10 (12/05/2026) — Phase 3.1-C : params visibleTileKeys + enemyVisibility (filtre reachable/targetable), retire visibleEnemyIds (fourni par useVisionMap)
+// v1.12 (14/05/2026) — Phase 3.3 Lot C : orderRetreatPickMode (highlight hex pour pré-ordre retreat)
+// v1.11 (14/05/2026) — Phase 3.3 : targetableUnitIds utilise resolveUnitStatsV2 + skip LoS si arcedTrajectory
+// v1.10 (12/05/2026) — Phase 3.1-C : params visibleTileKeys + enemyVisibility (filtre reachable/targetable)
 // v1.9 (12/05/2026) — QW2 : inspectedEnemyId (clic ennemi → panel read-only, toggle même cible)
-// v1.8 (12/05/2026) — Post-rupture : mouvement restreint aux hex qui éloignent de TOUS les ennemis adjacents
-// v1.7 (12/05/2026) — Override Brisée : attaque autorisée si ennemi strictement plus petit (mirror handleAttack EF v1.3)
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { computeCohesion, computeSupport, type CohesionState, type SupportCount } from '@engine/cohesion'
-import { cubeKey, cubeDistance, neighbors } from '@engine/hex'
+import { cubeKey, cubeDistance, neighbors, spiral } from '@engine/hex'
 import { bfsReachable } from '@engine/movement'
 import { computeEnemyZoc } from '@engine/zoc'
 import { hasLineOfSight } from '@engine/los'
-import { getUnitStats, type UnitState } from '@engine/units'
+import { getUnitStats, resolveUnitStatsV2, type UnitState } from '@engine/units'
 import type { VisibilityLevel } from '@engine/vision'
 import type { HexTileState } from '@render/types'
 import type { Team } from '@/types/game'
@@ -58,6 +58,13 @@ interface UseTacticalSelectionParams {
    * en MVP — RLS anti-triche prévu Phase 4.
    */
   enemyVisibility?: ReadonlyMap<string, VisibilityLevel>
+  /**
+   * Phase 3.3 Lot C — mode "pick hex" pour pré-ordre retreat. Quand activé,
+   * highlight les hex dans spiral(unit.position, movement) libres + visibles.
+   * Click sur un hex highlight → callback consommé par Game.tsx (commit destHex
+   * dans la draft d'ordre).
+   */
+  orderRetreatPickMode?: boolean
 }
 
 interface UseTacticalSelectionResult {
@@ -84,6 +91,8 @@ interface UseTacticalSelectionResult {
   retreatTargetKeys: Set<string>
   /** Phase 2.5 C — Set des unitId ennemis adjacents en mode suicide (vide sinon). */
   suicideTargetIds: Set<string>
+  /** Phase 3.3 Lot C — Set des cubeKey atteignables pour pré-ordre retreat (vide hors mode). */
+  orderRetreatPickKeys: Set<string>
   /** QW2 — Unité ennemie en cours d'inspection (panel read-only). null si aucune. */
   inspectedEnemy: UnitState | null
   handleUnitClick: (unit: { id: string; team: Team }) => void
@@ -95,7 +104,7 @@ interface UseTacticalSelectionResult {
 export function useTacticalSelection(
   params: UseTacticalSelectionParams
 ): UseTacticalSelectionResult {
-  const { inProgress, isMyTurn, myTeam, activeTeam, unitStates, boardKeys, splitMode, retreatMode = false, suicideMode = false, engagedUnitIds, visibleTileKeys, enemyVisibility } = params
+  const { inProgress, isMyTurn, myTeam, activeTeam, unitStates, boardKeys, splitMode, retreatMode = false, suicideMode = false, engagedUnitIds, visibleTileKeys, enemyVisibility, orderRetreatPickMode = false } = params
 
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null)
 
@@ -216,23 +225,31 @@ export function useTacticalSelection(
     // strictement plus petit (override "finir une troupe affaiblie"). Cohérent avec
     // handleAttack.ts côté EF v1.3 — mirror obligatoire pour UI/serveur.
     const isBroken = cohesionData.cohesionStateMap.get(selectedUnit.id) === 'broken'
-    const stats = getUnitStats(selectedUnit.kind)
-    const range = stats.range
+    // Phase 3.3 — v2 stats (avec subKind) au lieu de v1 (range=4 hardcode A) — alignement client/serveur.
+    const statsV2 = resolveUnitStatsV2(selectedUnit.kind, selectedUnit.subKind)
+    const range = statsV2.range
+    const minRange = statsV2.minRange
+    const arcedTrajectory = statsV2.arcedTrajectory ?? false
     for (const enemy of unitStates) {
       if (enemy.team === selectedUnit.team) continue
       if (isBroken && enemy.effective >= selectedUnit.effective) continue // override Brisée
       // Phase 2.5 — on attaque même les ennemis routed / Brisé (coup de grâce historique).
       const dist = cubeDistance(selectedUnit.position, enemy.position)
       if (dist === 0 || dist > range) continue
-      if (range > 1) {
-        // LoS : blockers = tous corps sauf le tireur et la cible
-        const blockers = new Set<string>()
-        for (const u of unitStates) {
-          if (u.id === selectedUnit.id) continue
-          if (u.id === enemy.id) continue
-          blockers.add(cubeKey(u.position))
+      if (dist > 1) {
+        // Phase 3.3 : check minRange explicite (ex artillery_light minRange=2 → distance 1 = mêlée, pas ranged).
+        // Le serveur valide pareil ; on s'aligne pour ne pas highlighter une cible invalide.
+        if (dist < minRange) continue
+        // Tir en cloche (obusier) : ignore les blockers unités. Sinon check LoS classique.
+        if (!arcedTrajectory) {
+          const blockers = new Set<string>()
+          for (const u of unitStates) {
+            if (u.id === selectedUnit.id) continue
+            if (u.id === enemy.id) continue
+            blockers.add(cubeKey(u.position))
+          }
+          if (!hasLineOfSight(selectedUnit.position, enemy.position, blockers)) continue
         }
-        if (!hasLineOfSight(selectedUnit.position, enemy.position, blockers)) continue
       }
       // Phase 3.1-C : impossible de cibler un ennemi non vu (hidden). 'spotted'/'identified' OK.
       if (enemyVisibility && (enemyVisibility.get(enemy.id) ?? 'hidden') === 'hidden') continue
@@ -295,9 +312,34 @@ export function useTacticalSelection(
     return out
   }, [suicideMode, selectedUnit, isSelectedMine, isMyTurn, unitStates])
 
+  // Phase 3.3 Lot C — hex sélectionnables pour pré-ordre retreat (spiral movement).
+  // Inclut tous les hex à distance ≤ movement, libres, visibles. Pas de check ZoC :
+  // l'ordre est pré-réservé, l'évaluation effective se fait au moment du déclenchement.
+  const orderRetreatPickKeys = useMemo<Set<string>>(() => {
+    const out = new Set<string>()
+    if (!orderRetreatPickMode || !selectedUnit || !isSelectedMine) return out
+    const stats = getUnitStats(selectedUnit.kind)
+    const occupied = new Set<string>()
+    for (const u of unitStates) {
+      if (u.id === selectedUnit.id) continue
+      occupied.add(cubeKey(u.position))
+    }
+    const candidates = spiral(selectedUnit.position, stats.movement)
+    const startKey = cubeKey(selectedUnit.position)
+    for (const c of candidates) {
+      const k = cubeKey(c)
+      if (k === startKey) continue
+      if (!boardKeys.has(k)) continue
+      if (occupied.has(k)) continue
+      if (visibleTileKeys && !visibleTileKeys.has(k)) continue
+      out.add(k)
+    }
+    return out
+  }, [orderRetreatPickMode, selectedUnit, isSelectedMine, unitStates, boardKeys, visibleTileKeys])
+
   const tileStates = useMemo<Map<string, HexTileState>>(() => {
     const map = new Map<string, HexTileState>()
-    // Modes exclusifs : split / retreat / suicide n'affichent QUE leur sélection.
+    // Modes exclusifs : split / retreat / suicide / orderRetreatPick n'affichent QUE leur sélection.
     if (splitMode) {
       for (const k of splitTargetKeys) map.set(k, 'split-target')
       return map
@@ -305,6 +347,11 @@ export function useTacticalSelection(
     if (retreatMode) {
       // Réutilise le state 'split-target' (ambre) pour la sélection direction retraite.
       for (const k of retreatTargetKeys) map.set(k, 'split-target')
+      return map
+    }
+    if (orderRetreatPickMode) {
+      // Phase 3.3 Lot C — bleu distinct, ce n'est PAS le repli immédiat mais un pré-ordre.
+      for (const k of orderRetreatPickKeys) map.set(k, 'retreat-target')
       return map
     }
     if (suicideMode) {
@@ -316,7 +363,7 @@ export function useTacticalSelection(
       map.set(k, enemyZoc.has(k) ? 'dangerous' : 'reachable')
     }
     return map
-  }, [splitMode, splitTargetKeys, retreatMode, retreatTargetKeys, suicideMode, reachableMap, enemyZoc])
+  }, [splitMode, splitTargetKeys, retreatMode, retreatTargetKeys, orderRetreatPickMode, orderRetreatPickKeys, suicideMode, reachableMap, enemyZoc])
 
   const exhaustedUnitIds = useMemo<Set<string>>(() => {
     const set = new Set<string>()
@@ -388,6 +435,7 @@ export function useTacticalSelection(
     supportMap: cohesionData.supportMap,
     retreatTargetKeys,
     suicideTargetIds,
+    orderRetreatPickKeys,
     inspectedEnemy,
     handleUnitClick,
     clearSelection,

@@ -1,6 +1,6 @@
+// v1.2 (14/05/2026) — Phase 3.3 : propage attackerOnHold / defenderOnHold (bonus défensif posture)
 // v1.1 (11/05/2026) — Phase 2.5 : propage attackerSupport / defenderSupport pour modulation moral
 // v1.0 (10/05/2026) — Phase 2 2A.9 : barrel + dispatch resolveCombat (attaque + riposte melee)
-// Source : docs/PLAN-MORAL-COHESION.md § 2 + PLAN-PHASE-2-COMBAT-V2.md § 2A.9
 
 import type { SupportCount } from '../../cohesion/types'
 import type { Cube } from '../../hex'
@@ -43,6 +43,15 @@ export interface ResolveCombatInput {
    */
   readonly attackerSupport?: SupportCount
   readonly defenderSupport?: SupportCount
+  /**
+   * Phase 3.3 — posture hold active (priority=1 order kind='hold') côté attaquant/défenseur.
+   *  - defenderOnHold : applique le bonus défensif lors du combat principal.
+   *  - attackerOnHold : applique le bonus défensif lors de la riposte mêlée
+   *    (l'attaquant initial devient défenseur de la riposte).
+   * Caller lookup unit_orders avant resolveCombat (RLS owner-only côté client preview).
+   */
+  readonly attackerOnHold?: boolean
+  readonly defenderOnHold?: boolean
 }
 
 export interface ResolveCombatResult {
@@ -83,6 +92,7 @@ export function resolveCombat(input: ResolveCombatInput): ResolveCombatResult {
     rng: input.rng,
     config: input.config,
     defenderSupport: input.defenderSupport,
+    defenderOnHold: input.defenderOnHold,
   }
   const result = resolveContact(attackInput)
 
@@ -110,6 +120,8 @@ export function resolveCombat(input: ResolveCombatInput): ResolveCombatResult {
       config: input.config,
       // Phase 2.5 : en riposte, l'attaquant initial est le défenseur → son support
       defenderSupport: input.attackerSupport,
+      // Phase 3.3 : en riposte, l'attaquant initial est le défenseur → sa posture hold
+      defenderOnHold: input.attackerOnHold,
     }
     ripost = resolveContact(ripostInput)
   }

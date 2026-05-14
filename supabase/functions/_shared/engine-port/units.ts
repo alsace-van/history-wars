@@ -1,7 +1,7 @@
+// v2.4 (14/05/2026) — Phase 3.3 : arcedTrajectory (obusier vs canon) — mirror src v2.5
+// v2.3 (14/05/2026) — Phase 3.3 : split artillery_light/heavy + optimalRangeMax (mirror src v2.4)
 // v2.2 (12/05/2026) — Merge : bonus moral +25 + recalcul routed (mirror src sizing v1.1)
-// v2.1 (12/05/2026) — MVP tweak : C movement 6→4 + A range 7→6 (mirror src/engine/units/stats.ts v2.2)
-// v2.0 (10/05/2026) — Phase 2 2C.1 : effective elastique (UnitState v2 + UNIT_STATS_V2 + sizing)
-// v1.2 (10/05/2026) — Phase 1.5 : ajout `wounded` a UnitState (mirror src/engine/units/types.ts v1.1)
+// v2.1 (12/05/2026) — MVP tweak : C movement 6→4 + A range 7→6 (mirror src v2.2)
 // Source de verite : src/engine/units/{stats.ts,types.ts,sizing.ts}. Duplication controlee (piege #12).
 
 import type { UnitKind, Team } from '../types.ts'
@@ -35,12 +35,16 @@ export function getUnitStats(kind: UnitKind): UnitStats {
 // Phase 2 v2 : stats effectif + facteurs unitaires
 // ----------------------------------------------------------------------------
 
-export type UnitSubKind = 'archer' | 'artillery'
+// Phase 3.3 — split artillery_light / artillery_heavy. Mirror src/engine/units/types.ts v2.4.
+export type UnitSubKind = 'archer' | 'artillery_light' | 'artillery_heavy'
 
 export interface SubKindOverride {
   range?: number
   minRange?: number
   rangedPower?: number
+  optimalRangeMax?: number
+  /** Phase 3.3 — obusier (tir en cloche) ignore les blockers unités sur la trajectoire. */
+  arcedTrajectory?: boolean
 }
 
 export interface UnitStatsV2 {
@@ -55,7 +59,11 @@ export interface UnitStatsV2 {
   moraleMax: number
   /** Phase 3.1-A : portée vision hex (mirror src v2.3). */
   vision: number
-  archerOverride?: SubKindOverride
+  /** Phase 3.3 — borne haute zone optimale niveau base. */
+  optimalRangeMax?: number
+  /** Phase 3.3 — trajectoire en cloche niveau base. */
+  arcedTrajectory?: boolean
+  subKindOverrides?: Partial<Record<UnitSubKind, SubKindOverride>>
 }
 
 export const UNIT_STATS_V2: Record<UnitKind, UnitStatsV2> = Object.freeze({
@@ -66,17 +74,22 @@ export const UNIT_STATS_V2: Record<UnitKind, UnitStatsV2> = Object.freeze({
   }),
   C: Object.freeze({
     effectiveMax: 180, effectiveMin: 25,
-    // Phase 2.5 balance : nerf attack/defense (cf. src v2.1)
     attack: 1.1, defense: 0.9, rangedPower: 0,
-    // v2.1 mirror : movement 6→4 (rééquilibrage MVP)
     range: 1, minRange: 0, movement: 4, moraleMax: 100, vision: 5,
   }),
   A: Object.freeze({
+    // Phase 3.3 mirror — base = artillery_heavy implicite (préservation legacy si subKind NULL).
     effectiveMax: 120, effectiveMin: 30,
-    attack: 0.5, defense: 0.3, rangedPower: 4.0,
-    // v2.1 mirror : range 7→6 (rééquilibrage MVP)
+    attack: 0.5, defense: 0.3, rangedPower: 5.0,
     range: 6, minRange: 2, movement: 2, moraleMax: 100, vision: 4,
-    archerOverride: Object.freeze({ range: 4, minRange: 0, rangedPower: 2.5 }),
+    optimalRangeMax: 3,
+    subKindOverrides: Object.freeze({
+      archer: Object.freeze({ range: 4, minRange: 0, rangedPower: 2.5 }),
+      // Obusier : range courte + arcedTrajectory (ignore unités blockers).
+      artillery_light: Object.freeze({ range: 3, minRange: 2, rangedPower: 3.0, optimalRangeMax: 3, arcedTrajectory: true }),
+      // Canon : range longue + tir tendu (LoS requis).
+      artillery_heavy: Object.freeze({ range: 6, minRange: 2, rangedPower: 5.0, optimalRangeMax: 3, arcedTrajectory: false }),
+    }),
   }),
 }) as Record<UnitKind, UnitStatsV2>
 
@@ -86,15 +99,17 @@ export function getUnitStatsV2(kind: UnitKind): UnitStatsV2 {
 
 export function resolveUnitStatsV2(kind: UnitKind, subKind?: UnitSubKind): UnitStatsV2 {
   const base = UNIT_STATS_V2[kind]
-  if (subKind === 'archer' && base.archerOverride) {
-    return Object.freeze({
-      ...base,
-      range: base.archerOverride.range ?? base.range,
-      minRange: base.archerOverride.minRange ?? base.minRange,
-      rangedPower: base.archerOverride.rangedPower ?? base.rangedPower,
-    }) as UnitStatsV2
-  }
-  return base
+  if (!subKind || !base.subKindOverrides) return base
+  const override = base.subKindOverrides[subKind]
+  if (!override) return base
+  return Object.freeze({
+    ...base,
+    range: override.range ?? base.range,
+    minRange: override.minRange ?? base.minRange,
+    rangedPower: override.rangedPower ?? base.rangedPower,
+    optimalRangeMax: override.optimalRangeMax ?? base.optimalRangeMax,
+    arcedTrajectory: override.arcedTrajectory ?? base.arcedTrajectory,
+  }) as UnitStatsV2
 }
 
 /**

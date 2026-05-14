@@ -1,7 +1,7 @@
+// v1.3 (14/05/2026) — Phase 3.3 : bonus défensif hold (préparation +15% + terrain doublé)
 // v1.2 (11/05/2026) — Phase 2.5 : defenderSupport module la perte de moral du défenseur
 // v1.1 (10/05/2026) — Phase 2 2.5 balance : plancher attrition proportionnel aux hommes engagés (au lieu de 1)
 // v1.0 (10/05/2026) — Phase 2 2A.6 : pipeline central calcul de degats par contact
-// Source : docs/PLAN-MORAL-COHESION.md § 2 + PLAN-PHASE-2-COMBAT-V2.md § 2A.6
 
 import type { SupportCount } from '../../cohesion/types'
 import { applyMoraleDelta, computeRouted, moraleCombatBonus, moraleCombatLossMultiplier } from '../../morale/morale'
@@ -36,7 +36,21 @@ export interface ContactInput {
    * Le caller (resolveCombat / handleAttack EF) calcule via computeSupport().
    */
   readonly defenderSupport?: SupportCount
+  /**
+   * Phase 3.3 — défenseur en posture "hold" (ordre priority=1 actif kind='hold').
+   * Si true :
+   *  - facteur défense ×1.15 (préparation : ne peut pas être surpris)
+   *  - bonus terrain défensif amplifié ×2 (delta multiplicateur doublé)
+   *  Effet net : plaine +15%, colline +38%, forêt +50%, ville +73%.
+   *  Caller : lookup unit_orders priority=1 active sur défenseur avant resolveCombat.
+   */
+  readonly defenderOnHold?: boolean
 }
+
+/** Phase 3.3 — multiplicateur de base défense quand l'unité tient en hold. */
+const HOLD_BASE_DEFENSE_MULT = 1.15
+/** Phase 3.3 — coefficient d'amplification du bonus terrain défensif en hold (delta ×N). */
+const HOLD_TERRAIN_AMPLIFY = 2.0
 
 /**
  * Resolution d'un coup unique attaquant → defenseur. Le caller orchestre la riposte.
@@ -55,7 +69,7 @@ export interface ContactInput {
  */
 export function resolveContact(input: ContactInput): CombatResultV2 {
   const config = input.config ?? DEFAULT_COMBAT_CONFIG
-  const { attacker, defender, phase, attackerTerrain, defenderTerrain, distance, chargeMult, rng } = input
+  const { attacker, defender, phase, attackerTerrain, defenderTerrain, distance, chargeMult, rng, defenderOnHold = false } = input
 
   const aStats = resolveUnitStatsV2(attacker.kind, attacker.subKind)
   const dStats = resolveUnitStatsV2(defender.kind, defender.subKind)
@@ -80,11 +94,21 @@ export function resolveContact(input: ContactInput): CombatResultV2 {
 
   // Modificateurs terrain
   const atkTerrainMult = attackerCaps.atkPenalty
-  const defTerrainMult = defenderCaps.defBonus
+  // Phase 3.3 — si défenseur en hold, on amplifie le delta du bonus terrain (× HOLD_TERRAIN_AMPLIFY).
+  // Plaine (defBonus=1.0) : pas d'amplification → 1.0. Forêt (1.3) : 1.0 + 0.3*2 = 1.6.
+  const baseDefTerrainMult = defenderCaps.defBonus
+  const defTerrainMult = defenderOnHold
+    ? 1.0 + (baseDefTerrainMult - 1.0) * HOLD_TERRAIN_AMPLIFY
+    : baseDefTerrainMult
+  // Phase 3.3 — multiplicateur "préparation hold" appliqué au facteur défense de base.
+  const holdDefenseMult = defenderOnHold ? HOLD_BASE_DEFENSE_MULT : 1.0
 
-  // Precision distance (1.0 si melee/charge ; calcul si ranged)
+  // Precision distance (1.0 si melee/charge ; calcul si ranged).
+  // Phase 3.3 — passe optimalRangeMax si défini (artillerie light/heavy) pour falloff explicite.
   const precisionMult =
-    phase === 'ranged' ? distancePrecision(distance, aStats.range, aStats.minRange) : 1.0
+    phase === 'ranged'
+      ? distancePrecision(distance, aStats.range, aStats.minRange, aStats.optimalRangeMax)
+      : 1.0
 
   // Bonus moral additif sur facteurs unitaires (pas multiplicatif)
   // → on l'integre comme un coef multiplicatif normalise pour rester dans le breakdown lisible.
@@ -108,6 +132,7 @@ export function resolveContact(input: ContactInput): CombatResultV2 {
   const resistance =
     menEngagedDefender
     * baseDefenseFactor
+    * holdDefenseMult
     * defTerrainMult
     * defenderMoraleMult
 
@@ -179,8 +204,14 @@ export function resolveContact(input: ContactInput): CombatResultV2 {
     breakdown.push({ label: 'Moral attaquant', multiplier: attackerMoraleMult, appliedTo: 'attacker' })
   }
   breakdown.push({ label: 'DEF base', multiplier: baseDefenseFactor, appliedTo: 'defender' })
+  if (defenderOnHold) {
+    breakdown.push({ label: 'Posture hold (préparation)', multiplier: holdDefenseMult, appliedTo: 'defender' })
+  }
   if (defTerrainMult !== 1.0) {
-    breakdown.push({ label: `Terrain defense (${defenderTerrain})`, multiplier: defTerrainMult, appliedTo: 'defender' })
+    const label = defenderOnHold && baseDefTerrainMult !== 1.0
+      ? `Terrain defense (${defenderTerrain}, hold ×${HOLD_TERRAIN_AMPLIFY})`
+      : `Terrain defense (${defenderTerrain})`
+    breakdown.push({ label, multiplier: defTerrainMult, appliedTo: 'defender' })
   }
   if (defenderMoraleMult !== 1.0) {
     breakdown.push({ label: 'Moral defenseur', multiplier: defenderMoraleMult, appliedTo: 'defender' })

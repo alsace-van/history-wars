@@ -55,7 +55,7 @@ export function evaluateOrders(
       continue
     }
 
-    const target = resolveActionTarget(unit, posture.action.kind, ctx)
+    const target = resolveActionTarget(unit, posture.action, ctx)
     if (!target.targetUnitId && !target.destHex && posture.action.kind !== 'hold') {
       const skipEval: OrderEvaluation = {
         posture,

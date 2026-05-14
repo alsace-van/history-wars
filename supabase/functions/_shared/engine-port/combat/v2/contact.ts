@@ -1,3 +1,4 @@
+// v1.3 (14/05/2026) — Phase 3.3 : mirror bonus défensif hold (préparation + terrain doublé)
 // v1.2 (11/05/2026) — Phase 2.5 : defenderSupport module la perte de moral du défenseur
 // v1.0 (10/05/2026) — Phase 2 2C.1 : port combat/v2/contact pour Deno
 // Source de verite : src/engine/combat/v2/contact.ts. Duplication controlee (piege #12).
@@ -26,11 +27,17 @@ export interface ContactInput {
   rng: () => number
   config?: CombatConfig
   defenderSupport?: SupportCount
+  /** Phase 3.3 — défenseur en posture hold (mirror src/engine v1.3). */
+  defenderOnHold?: boolean
 }
+
+/** Phase 3.3 — mirror src : préparation +15% + terrain doublé. */
+const HOLD_BASE_DEFENSE_MULT = 1.15
+const HOLD_TERRAIN_AMPLIFY = 2.0
 
 export function resolveContact(input: ContactInput): CombatResultV2 {
   const config = input.config ?? DEFAULT_COMBAT_CONFIG
-  const { attacker, defender, phase, attackerTerrain, defenderTerrain, distance, chargeMult, rng } = input
+  const { attacker, defender, phase, attackerTerrain, defenderTerrain, distance, chargeMult, rng, defenderOnHold = false } = input
 
   const aStats = resolveUnitStatsV2(attacker.kind, attacker.subKind)
   const dStats = resolveUnitStatsV2(defender.kind, defender.subKind)
@@ -45,9 +52,16 @@ export function resolveContact(input: ContactInput): CombatResultV2 {
   const baseDefenseFactor = dStats.defense
   const matchupCoef = getMatchupCoef(attacker.kind, defender.kind, phase, config)
   const atkTerrainMult = attackerCaps.atkPenalty
-  const defTerrainMult = defenderCaps.defBonus
+  // Phase 3.3 — amplifie le delta du bonus terrain si défenseur en hold (mirror src).
+  const baseDefTerrainMult = defenderCaps.defBonus
+  const defTerrainMult = defenderOnHold
+    ? 1.0 + (baseDefTerrainMult - 1.0) * HOLD_TERRAIN_AMPLIFY
+    : baseDefTerrainMult
+  const holdDefenseMult = defenderOnHold ? HOLD_BASE_DEFENSE_MULT : 1.0
   const precisionMult =
-    phase === 'ranged' ? distancePrecision(distance, aStats.range, aStats.minRange) : 1.0
+    phase === 'ranged'
+      ? distancePrecision(distance, aStats.range, aStats.minRange, aStats.optimalRangeMax)
+      : 1.0
   const attackerMoraleMult = 1 + moraleCombatBonus(attacker) / 100
   const defenderMoraleMult = 1 + moraleCombatBonus(defender) / 100
 
@@ -55,7 +69,7 @@ export function resolveContact(input: ContactInput): CombatResultV2 {
     menEngagedAttacker * baseAttackFactor * matchupCoef * chargeMult
     * atkTerrainMult * precisionMult * attackerMoraleMult
   const resistance =
-    menEngagedDefender * baseDefenseFactor * defTerrainMult * defenderMoraleMult
+    menEngagedDefender * baseDefenseFactor * holdDefenseMult * defTerrainMult * defenderMoraleMult
 
   // Phase 2.5 : plancher d'attrition proportionnel aux hommes engagés (mirror src v1.1)
   const attackPossible =
@@ -100,7 +114,13 @@ export function resolveContact(input: ContactInput): CombatResultV2 {
   if (precisionMult !== 1.0 && phase === 'ranged') breakdown.push({ label: `Distance ${distance}/${aStats.range}`, multiplier: precisionMult, appliedTo: 'attacker' })
   if (attackerMoraleMult !== 1.0) breakdown.push({ label: 'Moral attaquant', multiplier: attackerMoraleMult, appliedTo: 'attacker' })
   breakdown.push({ label: 'DEF base', multiplier: baseDefenseFactor, appliedTo: 'defender' })
-  if (defTerrainMult !== 1.0) breakdown.push({ label: `Terrain defense (${defenderTerrain})`, multiplier: defTerrainMult, appliedTo: 'defender' })
+  if (defenderOnHold) breakdown.push({ label: 'Posture hold (préparation)', multiplier: holdDefenseMult, appliedTo: 'defender' })
+  if (defTerrainMult !== 1.0) {
+    const label = defenderOnHold && baseDefTerrainMult !== 1.0
+      ? `Terrain defense (${defenderTerrain}, hold ×${HOLD_TERRAIN_AMPLIFY})`
+      : `Terrain defense (${defenderTerrain})`
+    breakdown.push({ label, multiplier: defTerrainMult, appliedTo: 'defender' })
+  }
   if (defenderMoraleMult !== 1.0) breakdown.push({ label: 'Moral defenseur', multiplier: defenderMoraleMult, appliedTo: 'defender' })
   breakdown.push({ label: 'Variance dé', multiplier: variance, appliedTo: 'attacker' })
 

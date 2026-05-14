@@ -1,3 +1,4 @@
+// v1.2 (14/05/2026) — Phase 3.3 : bonus défensif hold appliqué côté receveur (préparation + terrain doublé)
 // v1.1 (13/05/2026) — Phase 3.2-bis : réduction dégâts côté dominant (mirror src v1.1)
 // v1.0 (11/05/2026) — Phase 2.6 Vague B : port engagement/tick pour Deno
 // Source de verite : src/engine/engagement/tick.ts. Duplication controlee (piege #12).
@@ -23,12 +24,17 @@ import {
   type EngagementTickResult,
 } from './types.ts'
 
+/** Phase 3.3 — mirror contact.ts : préparation +15% + terrain doublé. */
+const HOLD_BASE_DEFENSE_MULT = 1.15
+const HOLD_TERRAIN_AMPLIFY = 2.0
+
 function computeAttritionDamage(
   attacker: UnitState,
   defender: UnitState,
   terrain: TerrainType,
   rng: () => number,
   config: CombatConfig,
+  defenderOnHold = false,
 ): { rawDamage: number; rollUsed: number; damageNoFloor: number } {
   const aStats = resolveUnitStatsV2(attacker.kind, attacker.subKind)
   const dStats = resolveUnitStatsV2(defender.kind, defender.subKind)
@@ -43,6 +49,13 @@ function computeAttritionDamage(
   const attackerMoraleMult = 1 + moraleCombatBonus(attacker) / 100
   const defenderMoraleMult = 1 + moraleCombatBonus(defender) / 100
 
+  // Phase 3.3 — bonus terrain défensif doublé si défenseur en hold.
+  const baseDefBonus = caps.defBonus
+  const defTerrainMult = defenderOnHold
+    ? 1.0 + (baseDefBonus - 1.0) * HOLD_TERRAIN_AMPLIFY
+    : baseDefBonus
+  const holdDefenseMult = defenderOnHold ? HOLD_BASE_DEFENSE_MULT : 1.0
+
   const power =
     menEngagedAttacker
     * aStats.attack
@@ -53,7 +66,8 @@ function computeAttritionDamage(
   const resistance =
     menEngagedDefender
     * dStats.defense
-    * caps.defBonus
+    * holdDefenseMult
+    * defTerrainMult
     * defenderMoraleMult
 
   const attackPossible = aStats.attack > 0 && matchupCoef > 0
@@ -122,8 +136,8 @@ export function resolveEngagementTick(input: EngagementTickInput): EngagementTic
   const caps = TERRAIN_CAPS[input.terrain]
   const contactCap = caps.contactCap
 
-  const aToB = computeAttritionDamage(input.sideA, input.sideB, input.terrain, input.rng, config)
-  const bToA = computeAttritionDamage(input.sideB, input.sideA, input.terrain, input.rng, config)
+  const aToB = computeAttritionDamage(input.sideA, input.sideB, input.terrain, input.rng, config, input.onHoldB)
+  const bToA = computeAttritionDamage(input.sideB, input.sideA, input.terrain, input.rng, config, input.onHoldA)
 
   // Phase 3.2-bis : réduction côté dominant (cf. src/engine/engagement/tick.ts v1.1).
   const eps = 1

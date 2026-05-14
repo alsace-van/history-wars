@@ -1,11 +1,13 @@
+// v2.2 (14/05/2026) — Phase 3.3 Lot B : UnitInstance porte activeOrder (icône d'ordre sur pion)
+// v2.1 (14/05/2026) — Phase 3.3 : UnitInstance porte subKind (artillery_light/heavy/archer)
 // v2.0a (10/05/2026) — Phase 2 2D.6 : HexTileState 'split-target' (case adjacente libre pour scinder)
 // v2.0 (10/05/2026) — Phase 2 2E.1 : UnitInstance enrichi avec effective/effectiveMax (Phase 2 effectif elastique)
-// v1.2 (10/05/2026) — Phase 1.5 : UnitInstance enrichi avec hp/hpMax/wounded pour scale + barre PV
-// v1.0 (09/05/2026) — Types render partages
 import type { Cube } from '@engine/hex'
 import type { Team, UnitKind } from '@/types/game'
+import type { UnitSubKind } from '@engine/units'
+import type { OrderActionKind } from '@engine/orders'
 
-export type HexTileState = 'idle' | 'hover' | 'selected' | 'reachable' | 'targetable' | 'dangerous' | 'split-target'
+export type HexTileState = 'idle' | 'hover' | 'selected' | 'reachable' | 'targetable' | 'dangerous' | 'split-target' | 'retreat-target'
 export type HexTileVisibility = 'visible' | 'fog' | 'hidden'
 
 export interface UnitInstance {
@@ -32,4 +34,8 @@ export interface UnitInstance {
   readonly hasAttacked?: boolean
   /** True si l'unité est dans au moins un engagement actif (mouvement = Rompre requis). */
   readonly engaged?: boolean
+  /** Phase 3.3 — sous-type (artillery_light/heavy/archer) pour labels + stats résolus côté UI. */
+  readonly subKind?: UnitSubKind
+  /** Phase 3.3 Lot B — kind du priority=1 ordre conditionnel actif (icône au-dessus du pion). */
+  readonly activeOrder?: OrderActionKind
 }

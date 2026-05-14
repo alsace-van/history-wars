@@ -124,7 +124,9 @@ Deno.serve(async (req: Request) => {
         effective_max: eff.max,
         effective_min: eff.min,
         killed: 0,
-        // sub_kind / regiment_id / formation : null par defaut (placeholders Phase 5/6)
+        // Phase 3.3 : sub_kind depuis scénario (null si non précisé).
+        sub_kind: p.subKind ?? null,
+        // regiment_id / formation : null par defaut (placeholders Phase 5/6)
       }
     })
 

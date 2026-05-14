@@ -82,6 +82,9 @@ export interface EngagementTickInput {
   /** Soutien tactique du côté A (allés rayon 1+2). Module perte moral. */
   readonly supportA?: SupportCount
   readonly supportB?: SupportCount
+  /** Phase 3.3 — posture hold côté A/B (bonus défensif appliqué quand l'autre frappe). */
+  readonly onHoldA?: boolean
+  readonly onHoldB?: boolean
 }
 
 /** Sortie d'un tick : 2 résultats + métadonnées de dissolution. */

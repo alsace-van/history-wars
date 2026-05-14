@@ -1,7 +1,7 @@
+// v1.4 (14/05/2026) — Phase 3.3 Lot C : ajout tileRetreatTarget (bleu pour pick hex retraite)
 // v1.3 (12/05/2026) — UX : ajout unitMergeTargetHalo (bleu cyan pour cible fusion)
 // v1.2 (10/05/2026) — P1-L1C4-04 : ajout tileDangerous/Edge (orange-warning, ZoC ennemie)
 // v1.1 (09/05/2026) — L1C.3 : ajout tileReachable/Edge (cyan) + tileTargetable/Edge (rouge) + unitSelectedRing (amber)
-// v1.0 (09/05/2026) — Constantes couleur Three.js, synchro tokens Tailwind
 // Tous les hex en notation 0xRRGGBB pour Three.js
 
 export const COLORS = {
@@ -33,6 +33,9 @@ export const COLORS = {
   // Phase 2 2D.6 : split-target = ambre lumineux (case adjacente libre pour scinder une unite)
   tileSplitTarget: 0x4a3a14,
   tileSplitTargetEdge: 0xfacc15,
+  // Phase 3.3 Lot C : retreat-target = bleu (cible de pré-repli, distinct du split ambre)
+  tileRetreatTarget: 0x1f3a5a,
+  tileRetreatTargetEdge: 0x60a5fa,
 
   // Unit highlights
   unitSelectedRing: 0xef9f27, // amber autour cylindre selectionne

@@ -1,10 +1,11 @@
+// v1.12 (14/05/2026) — Phase 3.3 Lot C : prop onRequestPickRetreatHex propagée à OrdersPanel
+// v1.11 (14/05/2026) — Phase 3.3 : passe unitVision à OrdersPanel (cap portée trigger non-fire)
 // v1.10 (13/05/2026) — Phase 3.3 : passe unitFireRange à OrdersPanel (cap portée trigger pour action fire)
 // v1.9 (13/05/2026) — Phase 3.2-bis : refonte UX sidebar — cartouche allégée + ParticipantsPanel collapsible
-// v1.8 (13/05/2026) — Phase 3.2 C2 : OrdersPanel intégré sous UnitInspector
-// v1.7 (12/05/2026) — QW2 : prop inspectedEnemy → EnemyUnitPanel (priorité selectedUnit > inspectedEnemy > fallback)
 import type { Team } from '@/types/game'
 import type { CohesionState, SupportCount } from '@engine/cohesion'
 import type { UnitState, SplitRatio } from '@engine/units'
+import type { Cube } from '@engine/hex'
 import { computeOrdinalLabels, resolveUnitStatsV2 } from '@engine/units'
 import type { SlotData } from '@ui/game/TeamPanel'
 import { ParticipantsPanel } from '@ui/game/ParticipantsPanel'
@@ -73,6 +74,8 @@ export interface BattleSidebarProps {
   onUpdateOrder?: (orderId: string, patch: Omit<SubmitOrdersOp, 'op' | 'order_id'>) => Promise<boolean>
   onDeleteOrder?: (orderId: string) => Promise<boolean>
   onReorderOrder?: (orderId: string, newPriority: number) => Promise<boolean>
+  /** Phase 3.3 Lot C — propagé à OrdersPanel pour le bouton "Choisir destination" du retreat. */
+  onRequestPickRetreatHex?: (onPicked: (hex: Cube) => void) => void
   blueSlots: SlotData[]
   redSlots: SlotData[]
   hostUserId: string
@@ -125,6 +128,7 @@ export function BattleSidebar({
   onUpdateOrder,
   onDeleteOrder,
   onReorderOrder,
+  onRequestPickRetreatHex,
   blueSlots,
   redSlots,
   hostUserId,
@@ -234,10 +238,12 @@ export function BattleSidebar({
           busy={!!ordersBusy}
           error={ordersError ?? null}
           unitFireRange={resolveUnitStatsV2(selectedUnit.kind, selectedUnit.subKind).range}
+          unitVision={resolveUnitStatsV2(selectedUnit.kind, selectedUnit.subKind).vision}
           onCreate={onCreateOrder}
           onUpdate={onUpdateOrder ?? (async () => false)}
           onDelete={onDeleteOrder}
           onReorder={onReorderOrder}
+          onRequestPickRetreatHex={onRequestPickRetreatHex}
         />
       )}
 

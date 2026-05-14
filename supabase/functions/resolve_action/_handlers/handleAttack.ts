@@ -1,6 +1,7 @@
+// v1.4 (14/05/2026) — Phase 3.3 : lookup hold posture pour bonus défensif (attaquant + défenseur)
+// v1.3 (14/05/2026) — Phase 3.3 : skip LoS si attacker.arcedTrajectory (obusier tire par-dessus les unités)
 // v1.2 (11/05/2026) — Phase 2.6 Vague B : INSERT engagement après mêlée non-mortelle
 // v1.1 (11/05/2026) — Phase 2.5 : check cohésion 'broken' bloque attaque standard + propage support combat
-// v1.0 (10/05/2026) — Phase 2 2C.3 : handleAttack v2 (resolveCombat avec terrain + charge cav + breakdown)
 
 import { jsonResponse, errorResponse } from '../../_shared/cors.ts'
 import {
@@ -22,7 +23,21 @@ import type { CombatConfig } from '../../_shared/engine-port/combat/v2/types.ts'
 import type { TerrainType } from '../../_shared/engine-port/terrain/index.ts'
 import type { Cube } from '../../_shared/engine-port/hex/index.ts'
 
-const TAG = '[handleAttack v1.2]'
+const TAG = '[handleAttack v1.4]'
+
+/** Phase 3.3 — lookup ordre priority=1 actif kind='hold' pour un pion (stance défensive). */
+// deno-lint-ignore no-explicit-any
+async function lookupOnHold(admin: any, unitId: string): Promise<boolean> {
+  const { data, error } = await admin
+    .from('unit_orders')
+    .select('action')
+    .eq('unit_id', unitId)
+    .eq('priority', 1)
+    .eq('active', true)
+    .maybeSingle()
+  if (error || !data) return false
+  return (data as { action?: { kind?: string } }).action?.kind === 'hold'
+}
 
 export interface HandleAttackArgs {
   // deno-lint-ignore no-explicit-any
@@ -75,20 +90,23 @@ export async function handleAttack(args: HandleAttackArgs): Promise<Response> {
       return errorResponse(ERROR_CODES.OUT_OF_RANGE, `melee requires distance 1, got ${distance}`, 400)
     }
   } else {
-    // ranged : range + LoS + min_range
+    // ranged : range + min_range + LoS conditionnel.
     if (distance > stats.range) {
       return errorResponse(ERROR_CODES.OUT_OF_RANGE, `target distance ${distance} > range ${stats.range}`, 400)
     }
     if (distance < stats.minRange) {
       return errorResponse(ERROR_CODES.OUT_OF_RANGE, `target distance ${distance} < min_range ${stats.minRange}`, 400)
     }
-    const blockers = new Set<string>()
-    for (const u of units) {
-      if (u.id === attackerId || u.id === defenderId) continue
-      blockers.add(cubeKey(cube(u.q, u.r)))
-    }
-    if (!hasLineOfSight(attackerPos, defenderPos, blockers)) {
-      return errorResponse(ERROR_CODES.NO_LINE_OF_SIGHT, 'line of sight blocked', 400)
+    // Phase 3.3 — tir en cloche (obusier) ignore les blockers unités. Sinon LoS classique.
+    if (!stats.arcedTrajectory) {
+      const blockers = new Set<string>()
+      for (const u of units) {
+        if (u.id === attackerId || u.id === defenderId) continue
+        blockers.add(cubeKey(cube(u.q, u.r)))
+      }
+      if (!hasLineOfSight(attackerPos, defenderPos, blockers)) {
+        return errorResponse(ERROR_CODES.NO_LINE_OF_SIGHT, 'line of sight blocked', 400)
+      }
     }
   }
 
@@ -132,6 +150,13 @@ export async function handleAttack(args: HandleAttackArgs): Promise<Response> {
   const seed = Date.now()
   const rng = seededRng(seed)
 
+  // Phase 3.3 — bonus défensif si le défenseur (et l'attaquant pour la riposte) ont
+  // une posture hold priority=1 active. Indépendant du trigger : la posture seule suffit.
+  const [defenderOnHold, attackerOnHold] = await Promise.all([
+    lookupOnHold(admin, defender.id),
+    lookupOnHold(admin, attacker.id),
+  ])
+
   const combatRun = resolveCombat({
     attacker,
     defender,
@@ -144,6 +169,8 @@ export async function handleAttack(args: HandleAttackArgs): Promise<Response> {
     config: combatConfig,
     attackerSupport,
     defenderSupport,
+    attackerOnHold,
+    defenderOnHold,
   })
 
   const combat = combatRun.result

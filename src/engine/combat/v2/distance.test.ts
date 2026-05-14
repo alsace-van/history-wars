@@ -53,4 +53,42 @@ describe('engine/combat/v2/distance — distancePrecision', () => {
     expect(at5).toBeGreaterThanOrEqual(at6)
     expect(at6).toBeGreaterThanOrEqual(at7)
   })
+
+  // ---------------------------------------------------------------------------
+  // Phase 3.3 — mode explicit (optimalRangeMax fourni, typique artillerie light/heavy)
+  // ---------------------------------------------------------------------------
+
+  it('artillery_light (range=3, minRange=2, optimalMax=3) : 1.0 sur tout [2,3]', () => {
+    // max = optimal → pas de falloff possible.
+    expect(distancePrecision(2, 3, 2, 3)).toBe(1.0)
+    expect(distancePrecision(3, 3, 2, 3)).toBe(1.0)
+  })
+
+  it('artillery_heavy (range=6, minRange=2, optimalMax=3) : zone optimale puis falloff vers 0.4', () => {
+    // Optimal zone [2, 3] → 1.0
+    expect(distancePrecision(2, 6, 2, 3)).toBe(1.0)
+    expect(distancePrecision(3, 6, 2, 3)).toBe(1.0)
+    // distance > optimalMax → lerp 1.0 → 0.4
+    // d=4 : t = (4-3)/(6-3) = 1/3 → 1.0 - 0.6*(1/3) = 0.8
+    expect(distancePrecision(4, 6, 2, 3)).toBeCloseTo(0.8, 5)
+    // d=5 : t = 2/3 → 1.0 - 0.6*(2/3) = 0.6
+    expect(distancePrecision(5, 6, 2, 3)).toBeCloseTo(0.6, 5)
+    // d=6 : t = 1.0 → floor 0.4
+    expect(distancePrecision(6, 6, 2, 3)).toBeCloseTo(0.4, 5)
+  })
+
+  it('mode explicit : hors portée [minRange, range] → 0', () => {
+    expect(distancePrecision(1, 3, 2, 3)).toBe(0)  // < minRange
+    expect(distancePrecision(7, 6, 2, 3)).toBe(0)  // > range
+  })
+
+  it('mode explicit est monotone décroissant au-delà de optimalMax', () => {
+    const at3 = distancePrecision(3, 6, 2, 3)
+    const at4 = distancePrecision(4, 6, 2, 3)
+    const at5 = distancePrecision(5, 6, 2, 3)
+    const at6 = distancePrecision(6, 6, 2, 3)
+    expect(at3).toBeGreaterThanOrEqual(at4)
+    expect(at4).toBeGreaterThanOrEqual(at5)
+    expect(at5).toBeGreaterThanOrEqual(at6)
+  })
 })

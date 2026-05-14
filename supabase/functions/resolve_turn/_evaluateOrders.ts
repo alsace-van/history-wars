@@ -1,6 +1,7 @@
+// v1.4 (14/05/2026) — Phase 3.3 : applyFireOrderCombat lookup hold posture (bonus défensif)
+// v1.3 (14/05/2026) — Phase 3.3 : order_triggered actor = owner du pion (toast côté propriétaire)
 // v1.2 (13/05/2026) — Phase 3.3 : fire en mêlée (ripost + engagement) + morale tax alerte −1
 // v1.1 (13/05/2026) — Phase 3.3 : fire applique réellement des dégâts via resolveCombat + insère attack_ranged
-// v1.0 (13/05/2026) — Phase 3.2 Vague B3 : évaluation des ordres conditionnels en début du tour entrant
 // Appelé par resolve_turn entre le reset des flags (§9) et le calcul de morale (§10).
 //
 // Scope Phase 3.3 :
@@ -52,6 +53,19 @@ import type {
   OrderTriggerDTO,
   Team,
 } from '../_shared/types.ts'
+
+/** Phase 3.3 — lookup ordre priority=1 actif kind='hold' (stance défensive). */
+async function lookupOnHold(admin: SupabaseClient, unitId: string): Promise<boolean> {
+  const { data, error } = await admin
+    .from('unit_orders')
+    .select('action')
+    .eq('unit_id', unitId)
+    .eq('priority', 1)
+    .eq('active', true)
+    .maybeSingle()
+  if (error || !data) return false
+  return (data as { action?: { kind?: string } }).action?.kind === 'hold'
+}
 
 interface EngagementRow {
   id: string
@@ -249,9 +263,14 @@ async function applyOrderEvaluation(p: ApplyParams): Promise<void> {
   }
   events.push(event)
 
+  // Phase 3.3 — actor_user_id = OWNER du pion (sa conditional fire dans son tour).
+  // useOrderTriggeredToasts côté client matche viewer.userId === actor pour n'émettre
+  // qu'au propriétaire (privacy : l'adversaire ne voit pas la ligne de log).
+  const orderActor = ownersByUnit.get(unit.id) ?? actorUserId
+
   // Skipped → pas de mutation, juste log.
   if (evaluation.skipped) {
-    await insertOrderTriggeredLog(admin, gameId, actorUserId, currentTurn, event)
+    await insertOrderTriggeredLog(admin, gameId, orderActor, currentTurn, event)
     return
   }
 
@@ -349,7 +368,7 @@ async function applyOrderEvaluation(p: ApplyParams): Promise<void> {
     }
   }
 
-  await insertOrderTriggeredLog(admin, gameId, actorUserId, currentTurn, event)
+  await insertOrderTriggeredLog(admin, gameId, orderActor, currentTurn, event)
 }
 
 interface FireCombatParams {
@@ -392,6 +411,13 @@ async function applyFireOrderCombat(p: FireCombatParams): Promise<void> {
 
   const seed = Date.now()
   const rng = seededRng(seed)
+
+  // Phase 3.3 — lookup hold posture sur défenseur ET attaquant (pour ripost si melee).
+  const [defenderOnHold, attackerOnHold] = await Promise.all([
+    lookupOnHold(admin, defender.id),
+    lookupOnHold(admin, attacker.id),
+  ])
+
   const { result: combat, ripost } = resolveCombat({
     attacker, defender,
     attackerTerrain, defenderTerrain,
@@ -399,6 +425,8 @@ async function applyFireOrderCombat(p: FireCombatParams): Promise<void> {
     rng,
     config: combatConfig,
     attackerSupport, defenderSupport,
+    attackerOnHold,
+    defenderOnHold,
   })
 
   // Phase 3.3 — état attaquant post-riposte (cohérent handleAttack.ts l153-182).
@@ -538,7 +566,13 @@ async function insertOrderTriggeredLog(
     turn,
     actor_user_id: actorUserId,
     action_type: 'order_triggered',
-    payload: { posture_id: event.posture_id, unit_id: event.unit_id },
+    payload: {
+      posture_id: event.posture_id,
+      unit_id: event.unit_id,
+      resolved_action: event.resolved_action,
+      target_unit_id: event.target_unit_id,
+      skipped: event.skipped,
+    },
     result: event,
     seed: Date.now(),
   })

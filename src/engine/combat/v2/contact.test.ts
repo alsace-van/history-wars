@@ -44,6 +44,7 @@ interface ContactRunOpts {
   subKindAtt?: UnitSubKind
   subKindDef?: UnitSubKind
   defenderSupport?: SupportCount
+  defenderOnHold?: boolean
 }
 
 function runContact(opts: ContactRunOpts = {}) {
@@ -65,6 +66,7 @@ function runContact(opts: ContactRunOpts = {}) {
     chargeMult: opts.chargeMult ?? 1.0,
     rng: seededRng(opts.seed ?? 1),
     defenderSupport: opts.defenderSupport,
+    defenderOnHold: opts.defenderOnHold,
   })
 }
 
@@ -421,5 +423,47 @@ describe('engine/combat/v2/contact — Phase 2.5 modulation moral via soutien', 
       defenderSupport: { adjacent: 3, nearby: 0, total: 3 },
     })
     expect(supported.attackerMoraleDelta).toBe(baseline.attackerMoraleDelta)
+  })
+})
+
+describe('engine/combat/v2/contact — Phase 3.3 hold defensive bonus', () => {
+  it('défenseur en hold subit moins de pertes que sans hold (bonus base +15% sur plaine)', () => {
+    // I (100) → A (200) melee : matchup 1.5, defense art 0.3, power=150 > resistance=60,
+    // damageRaw=90 bien au-dessus du plancher (8) ET sous-saturé (defender 200 hommes).
+    // Hold : resistance 60→69, damageRaw 90→81 → différence visible.
+    const baseline = runContact({
+      attacker: { kind: 'I', effective: 100 },
+      defender: { kind: 'A', effective: 200, effectiveMax: 200 },
+      seed: 7,
+    })
+    const onHold = runContact({
+      attacker: { kind: 'I', effective: 100 },
+      defender: { kind: 'A', effective: 200, effectiveMax: 200 },
+      seed: 7,
+      defenderOnHold: true,
+    })
+    expect(onHold.actualDamage).toBeLessThan(baseline.actualDamage)
+  })
+
+  it('bonus hold sur terrain défensif (forêt) > bonus hold sur plaine (terrain amplifié ×2)', () => {
+    // Tailles sous le cap de la forêt (100) pour neutraliser l'effet du contactCap
+    // — sinon le cap forêt (100) cancel le bonus terrain doublé.
+    const holdPlaine = runContact({
+      attacker: { kind: 'I', effective: 50 },
+      defender: { kind: 'A', effective: 80, effectiveMax: 80, effectiveMin: 30 },
+      attackerTerrain: 'plaine_standard',
+      defenderTerrain: 'plaine_standard',
+      seed: 13,
+      defenderOnHold: true,
+    })
+    const holdForet = runContact({
+      attacker: { kind: 'I', effective: 50 },
+      defender: { kind: 'A', effective: 80, effectiveMax: 80, effectiveMin: 30 },
+      attackerTerrain: 'plaine_standard',
+      defenderTerrain: 'foret',
+      seed: 13,
+      defenderOnHold: true,
+    })
+    expect(holdForet.actualDamage).toBeLessThan(holdPlaine.actualDamage)
   })
 })

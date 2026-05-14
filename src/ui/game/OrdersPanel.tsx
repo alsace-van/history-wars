@@ -1,3 +1,5 @@
+// v1.3 (14/05/2026) — Phase 3.3 Lot C : bouton "Choisir destination" pour retreat directionnel
+// v1.2 (14/05/2026) — Phase 3.3 : portée trigger non-fire cappée à max(range, vision) au lieu de 10
 // v1.1 (13/05/2026) — Phase 3.3 : portée trigger cappée à stats.range de l'unité (cohérence fire)
 // v1.0 (13/05/2026) — Phase 3.2 Vague C2 : UI gestion des ordres conditionnels d'une unité
 import { useState } from 'react'
@@ -7,6 +9,7 @@ import type {
   OrderTriggerKindUI,
   SubmitOrdersOp,
 } from '@hooks/usePreOrders'
+import type { Cube } from '@engine/hex'
 import { ACTION_LABEL, TRIGGER_LABEL, describePosture } from './orderLabels'
 
 const TRIGGER_KINDS: OrderTriggerKindUI[] = ['on_attacked', 'enemy_in_range', 'cohesion_broken', 'enemy_los']
@@ -23,25 +26,41 @@ interface OrdersPanelProps {
    * Pour archer/artillerie : leur range respective.
    */
   unitFireRange: number
+  /**
+   * Phase 3.3 — portée de vision de l'unité (sert de plafond pour actions
+   * non-fire : on ne peut pas réagir à un ennemi qu'on ne voit pas).
+   */
+  unitVision: number
   onCreate: (trigger: SubmitOrdersOp['trigger'], action: SubmitOrdersOp['action']) => Promise<boolean>
   onUpdate: (orderId: string, patch: Omit<SubmitOrdersOp, 'op' | 'order_id'>) => Promise<boolean>
   onDelete: (orderId: string) => Promise<boolean>
   onReorder: (orderId: string, newPriority: number) => Promise<boolean>
+  /**
+   * Phase 3.3 Lot C — déclenche le mode "pick retreat hex" côté parent. Le parent
+   * highlight les hex atteignables et invoque `onPicked(hex)` quand l'utilisateur
+   * en sélectionne un. Optionnel : si absent, le bouton "Choisir destination" est
+   * masqué (fallback comportement auto Phase 3.2).
+   */
+  onRequestPickRetreatHex?: (onPicked: (hex: Cube) => void) => void
 }
 
 export function OrdersPanel(p: OrdersPanelProps) {
-  const { isMyUnit, orders, busy, error, unitFireRange, onCreate, onUpdate: _onUpdate, onDelete, onReorder } = p
+  const { isMyUnit, orders, busy, error, unitFireRange, unitVision, onCreate, onUpdate: _onUpdate, onDelete, onReorder, onRequestPickRetreatHex } = p
   const [adding, setAdding] = useState(false)
   const [newTrigger, setNewTrigger] = useState<OrderTriggerKindUI>('enemy_in_range')
   const [newRange, setNewRange] = useState<number>(Math.min(3, Math.max(1, unitFireRange)))
   const [newAction, setNewAction] = useState<OrderActionKindUI>('hold')
+  // Phase 3.3 Lot C — destination retreat sélectionnée par l'utilisateur (cliquée sur la map).
+  // Null = fallback comportement auto (engine choisit le voisin le plus éloigné des ennemis).
+  const [draftDestHex, setDraftDestHex] = useState<Cube | null>(null)
 
   // Phase 3.3 — borne max du slider portée. Si l'action est `fire`, on respecte la
   // range réelle de l'unité (infanterie 1, archer/arti leur range). Pour les autres
-  // actions (charge/retreat/hold) la portée trigger reste une simple détection
-  // (l'unité réagit dès qu'un ennemi entre, peu importe sa propre portée de tir),
-  // donc on laisse jusqu'à 10 hex.
-  const rangeMax = newAction === 'fire' ? Math.max(1, unitFireRange) : 10
+  // actions (charge/retreat/hold), on cappe à max(range, vision) : pas de
+  // réaction à un ennemi qu'on ne pourrait ni voir ni atteindre (≠ ancien 10 fixe).
+  const rangeMax = newAction === 'fire'
+    ? Math.max(1, unitFireRange)
+    : Math.max(1, unitFireRange, unitVision)
 
   if (!isMyUnit) {
     return (
@@ -58,9 +77,18 @@ export function OrdersPanel(p: OrdersPanelProps) {
     setNewTrigger('enemy_in_range')
     setNewRange(Math.min(3, Math.max(1, unitFireRange)))
     setNewAction('hold')
+    setDraftDestHex(null)
   }
 
-  function cancelAdd() { setAdding(false) }
+  function cancelAdd() {
+    setAdding(false)
+    setDraftDestHex(null)
+  }
+
+  function requestPickHex() {
+    if (!onRequestPickRetreatHex) return
+    onRequestPickRetreatHex(hex => setDraftDestHex(hex))
+  }
 
   async function commitAdd() {
     // Phase 3.3 — re-clamp à rangeMax au commit pour éviter envoi stale (ex : portée 5
@@ -69,9 +97,15 @@ export function OrdersPanel(p: OrdersPanelProps) {
     const trigger: SubmitOrdersOp['trigger'] = newTrigger === 'enemy_in_range'
       ? { kind: 'enemy_in_range', params: { range: clampedRange } }
       : { kind: newTrigger }
-    const action: SubmitOrdersOp['action'] = { kind: newAction }
+    // Phase 3.3 Lot C — injecte destHex si retreat + user a cliqué une cible.
+    const action: SubmitOrdersOp['action'] = newAction === 'retreat' && draftDestHex
+      ? { kind: 'retreat', params: { destHex: { q: draftDestHex.q, r: draftDestHex.r, s: draftDestHex.s } } }
+      : { kind: newAction }
     const ok = await onCreate(trigger, action)
-    if (ok) setAdding(false)
+    if (ok) {
+      setAdding(false)
+      setDraftDestHex(null)
+    }
   }
 
   const preview = describePosture(
@@ -161,6 +195,34 @@ export function OrdersPanel(p: OrdersPanelProps) {
               </select>
             </label>
           </div>
+          {newAction === 'retreat' && onRequestPickRetreatHex && (
+            <div className="text-[11px] space-y-1">
+              <span className="block uppercase tracking-[0.08em] text-muted-foreground">
+                Destination repli
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="px-2 py-1 border border-[rgba(96,165,250,0.4)] rounded-[2px] bg-[rgba(96,165,250,0.08)] text-[#60a5fa] hover:bg-[rgba(96,165,250,0.18)] disabled:opacity-40"
+                  onClick={requestPickHex}
+                  disabled={busy}
+                >Choisir hex sur la map</button>
+                <span className="text-muted-foreground">
+                  {draftDestHex
+                    ? `Vers (q=${draftDestHex.q}, r=${draftDestHex.r})`
+                    : 'Vers : auto (engine choisit)'}
+                </span>
+                {draftDestHex && (
+                  <button
+                    type="button"
+                    className="text-red-400 hover:text-red-300 text-[10px]"
+                    onClick={() => setDraftDestHex(null)}
+                    title="Effacer destination"
+                  >✕</button>
+                )}
+              </div>
+            </div>
+          )}
           {newTrigger === 'enemy_in_range' && (
             <label className="block text-[11px] space-y-1">
               <span className="uppercase tracking-[0.08em] text-muted-foreground flex items-center gap-2">

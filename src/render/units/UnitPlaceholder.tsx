@@ -1,7 +1,7 @@
-// v2.6 (12/05/2026) — Phase 3.1-B : prop silhouette → mesh atténué + masquage label/anneaux/healthbar
-// v2.5 (12/05/2026) — Label kind monté pour cavalerie (suit la hauteur du mesh C plus grand)
-// v2.4 (12/05/2026) — CavalryMesh dédié pour unit.kind === 'C' (cavalier.glb)
-// v2.3 (12/05/2026) — UX : prop mergeTarget (halo bleu cyan, cible fusion sélectionnable)
+// v2.13 (14/05/2026) — Phase 3.3 : pictogrammes activeOrder thématiques (♞ charge / ⚔ fire / ↩ retreat / 🛡 hold)
+// v2.12 (14/05/2026) — Phase 3.3 : activeOrder déplacé sous le count (au-dessus était masqué par la barre PV)
+// v2.11 (14/05/2026) — Phase 3.3 : marge icônes ⚔/⬢ augmentée (anti-chevauchement label)
+// v2.10 (14/05/2026) — Phase 3.3 Lot B : icône activeOrder (→/↗/↖/◆) au-dessus du label
 import { Suspense, useEffect, useMemo, useRef } from 'react'
 import { Billboard, Text } from '@react-three/drei'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
@@ -416,39 +416,68 @@ export function UnitPlaceholder({
       )}
 
       <Billboard position={[0, soldierScale * MESH_TOP_HEIGHT_BY_KIND[unit.kind] + 0.3, 0]} follow lockX={false} lockY={false} lockZ={false}>
-        {/* v2.7 : ordinalLabel (I.1, C.2…) si dispo, sinon kind ; "?" en silhouette. */}
-        <Text fontSize={0.32} color="#ffffff" anchorX="center" anchorY="middle" outlineWidth={0.025} outlineColor="#000000">
-          {silhouette ? '?' : (unit.ordinalLabel ?? unit.kind)}
-        </Text>
-        {/* v2.8 (Phase 3.2-bis) : icônes d'état d'ordres EN LIGNE de part et d'autre du label
-            (au lieu d'au-dessus, qui rentrait en conflit avec la barre PV).
-            ⚔ gauche = attaque · ⬢ droite = mouvement. Vert dispo · orange limité · rouge consommé. */}
-        {!silhouette && showHealthBar && (
-          <>
-            <Text
-              position={[-0.45, 0.02, 0]}
-              fontSize={0.28}
-              anchorX="center"
-              anchorY="middle"
-              outlineWidth={0.028}
-              outlineColor="#000000"
-              color={resolveAttackIconColor(unit)}
-            >
-              ⚔
-            </Text>
-            <Text
-              position={[0.45, 0.02, 0]}
-              fontSize={0.28}
-              anchorX="center"
-              anchorY="middle"
-              outlineWidth={0.028}
-              outlineColor="#000000"
-              color={resolveMoveIconColor(unit)}
-            >
-              ⬢
-            </Text>
-          </>
-        )}
+        {(() => {
+          const labelText = silhouette ? '?' : (unit.ordinalLabel ?? unit.kind)
+          // v2.11 : offset = demi-largeur texte + demi-largeur icône + marge.
+          // drei <Text> sans-serif fontSize 0.32 → ~0.18 par char en moyenne.
+          // demi-largeur label = len * 0.09, demi-largeur icône (fontSize 0.28) ≈ 0.16,
+          // marge confort 0.18 → total = len * 0.09 + 0.35. Anti-chevauchement même avec
+          // outline 0.028. Bumpé depuis v2.9 (0.28 marge insuffisante : icônes touchaient I.1).
+          const iconOffsetX = labelText.length * 0.09 + 0.50
+          const orderIcon = !silhouette && showHealthBar ? resolveActiveOrderIcon(unit.activeOrder) : null
+          return (
+            <>
+              {/* v2.7 : ordinalLabel (I.1, C.2…) si dispo, sinon kind ; "?" en silhouette. */}
+              <Text fontSize={0.32} color="#ffffff" anchorX="center" anchorY="middle" outlineWidth={0.025} outlineColor="#000000">
+                {labelText}
+              </Text>
+              {/* v2.12 (Lot B) : icône d'ordre conditionnel actif (priority=1) SOUS le count.
+                  Placement initial au-dessus (v2.10) chevauchait la barre PV — descendu sous "120".
+                  Seulement pour mes pions (RLS owner-only filtre côté Map source). */}
+              {orderIcon && (
+                <Text
+                  position={[0, -0.62, 0]}
+                  fontSize={0.24}
+                  anchorX="center"
+                  anchorY="middle"
+                  outlineWidth={0.025}
+                  outlineColor="#000000"
+                  color={orderIcon.color}
+                >
+                  {orderIcon.char}
+                </Text>
+              )}
+              {/* v2.8 : icônes d'état d'ordres EN LIGNE de part et d'autre du label.
+                  ⚔ gauche = attaque · ⬢ droite = mouvement. Vert dispo · orange limité · rouge consommé. */}
+              {!silhouette && showHealthBar && (
+                <>
+                  <Text
+                    position={[-iconOffsetX, 0.02, 0]}
+                    fontSize={0.28}
+                    anchorX="center"
+                    anchorY="middle"
+                    outlineWidth={0.028}
+                    outlineColor="#000000"
+                    color={resolveAttackIconColor(unit)}
+                  >
+                    ⚔
+                  </Text>
+                  <Text
+                    position={[iconOffsetX, 0.02, 0]}
+                    fontSize={0.28}
+                    anchorX="center"
+                    anchorY="middle"
+                    outlineWidth={0.028}
+                    outlineColor="#000000"
+                    color={resolveMoveIconColor(unit)}
+                  >
+                    ⬢
+                  </Text>
+                </>
+              )}
+            </>
+          )
+        })()}
         {/* Phase 1.5 : effectif chiffre visible uniquement pour mes propres unites (fog of war partiel). */}
         {!silhouette && showHealthBar && unit.count !== undefined && (
           <Text position={[0, -0.32, 0]} fontSize={0.18} color="#e2e8f0" anchorX="center" anchorY="middle" outlineWidth={0.018} outlineColor="#000000">
@@ -478,4 +507,19 @@ export function resolveMoveIconColor(unit: UnitInstance): string {
   if (unit.routed) return ICON_ORANGE  // déroute : 1 hex / tour (mouvement limité)
   if (unit.engaged) return ICON_ORANGE  // engagement : Rompre requis avant mouvement
   return ICON_GREEN
+}
+
+// Phase 3.3 Lot B — pictogrammes thématiques pour l'ordre conditionnel actif (priority=1).
+// v2.13 : symboles cohérents avec l'action : cavalier=charge, épée=tir/attaque,
+// flèche retour=repli, bouclier=tenir position. Couleurs sémantiques inchangées.
+const ORDER_ICON: Record<NonNullable<UnitInstance['activeOrder']>, { char: string; color: string }> = {
+  charge:  { char: '♞',  color: '#ef4444' },  // chess knight = cavalier (aggressif)
+  fire:    { char: '⚔',  color: '#fb923c' },  // épée = attaque
+  retreat: { char: '↩',  color: '#60a5fa' },  // flèche retour = repli
+  hold:    { char: '🛡',  color: '#94a3b8' },  // bouclier = tenir
+}
+
+export function resolveActiveOrderIcon(kind: UnitInstance['activeOrder']): { char: string; color: string } | null {
+  if (!kind) return null
+  return ORDER_ICON[kind] ?? null
 }

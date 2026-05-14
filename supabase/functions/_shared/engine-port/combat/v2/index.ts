@@ -1,3 +1,4 @@
+// v1.2 (14/05/2026) — Phase 3.3 : propage attackerOnHold / defenderOnHold (mirror src v1.2)
 // v1.1 (11/05/2026) — Phase 2.5 : propage attackerSupport / defenderSupport pour modulation moral
 // v1.0 (10/05/2026) — Phase 2 2C.1 : barrel + dispatch resolveCombat pour Deno
 // Source de verite : src/engine/combat/v2/index.ts. Duplication controlee (piege #12).
@@ -35,6 +36,10 @@ export interface ResolveCombatInput {
   attackerSupport?: SupportCount
   /** Phase 2.5 — module la perte moral défenseur à l'impact. */
   defenderSupport?: SupportCount
+  /** Phase 3.3 — posture hold côté attaquant (devient défenseur en riposte). */
+  attackerOnHold?: boolean
+  /** Phase 3.3 — posture hold côté défenseur (impact principal). */
+  defenderOnHold?: boolean
 }
 
 export interface ResolveCombatResult {
@@ -59,6 +64,7 @@ export function resolveCombat(input: ResolveCombatInput): ResolveCombatResult {
     rng: input.rng,
     config: input.config,
     defenderSupport: input.defenderSupport,
+    defenderOnHold: input.defenderOnHold,
   }
   const result = resolveContact(attackInput)
 
@@ -84,6 +90,8 @@ export function resolveCombat(input: ResolveCombatInput): ResolveCombatResult {
       config: input.config,
       // Phase 2.5 : en riposte, l'attaquant initial devient défenseur → son support
       defenderSupport: input.attackerSupport,
+      // Phase 3.3 : en riposte, l'attaquant initial devient défenseur → sa posture hold
+      defenderOnHold: input.attackerOnHold,
     }
     ripost = resolveContact(ripostInput)
   }

@@ -1,6 +1,6 @@
+// v1.2 (14/05/2026) — Phase 3.3 : bonus défensif hold appliqué côté receveur (préparation + terrain doublé)
 // v1.1 (13/05/2026) — Phase 3.2-bis : réduction dégâts subis côté dominant (récompense victoire tactique)
 // v1.0 (11/05/2026) — Phase 2.6 Vague A : tick d'attrition continue (dégâts bilatéraux + relève 10%)
-// Source : docs/PLAN-ENGAGEMENT-PERSISTENT.md § 2 + 6 (multi-engagement)
 // Frontière engine/ : zéro React, zéro Three, zéro Supabase
 
 import type { SupportCount } from '../cohesion/types'
@@ -43,12 +43,17 @@ import {
  * Engagement = combat de ligne sur le même hex frontière, donc on suppose que
  * les 2 unités sont sur le **même type de terrain** (cf. caller resolveEngagementTick).
  */
+/** Phase 3.3 — mirror contact.ts : préparation +15% + terrain doublé. */
+const HOLD_BASE_DEFENSE_MULT = 1.15
+const HOLD_TERRAIN_AMPLIFY = 2.0
+
 function computeAttritionDamage(
   attacker: UnitState,
   defender: UnitState,
   terrain: TerrainType,
   rng: () => number,
   config: CombatConfig,
+  defenderOnHold = false,
 ): { rawDamage: number; rollUsed: number; damageNoFloor: number } {
   const aStats = resolveUnitStatsV2(attacker.kind, attacker.subKind)
   const dStats = resolveUnitStatsV2(defender.kind, defender.subKind)
@@ -63,6 +68,13 @@ function computeAttritionDamage(
   const attackerMoraleMult = 1 + moraleCombatBonus(attacker) / 100
   const defenderMoraleMult = 1 + moraleCombatBonus(defender) / 100
 
+  // Phase 3.3 — bonus terrain défensif doublé si défenseur en hold.
+  const baseDefBonus = caps.defBonus
+  const defTerrainMult = defenderOnHold
+    ? 1.0 + (baseDefBonus - 1.0) * HOLD_TERRAIN_AMPLIFY
+    : baseDefBonus
+  const holdDefenseMult = defenderOnHold ? HOLD_BASE_DEFENSE_MULT : 1.0
+
   const power =
     menEngagedAttacker
     * aStats.attack
@@ -73,7 +85,8 @@ function computeAttritionDamage(
   const resistance =
     menEngagedDefender
     * dStats.defense
-    * caps.defBonus
+    * holdDefenseMult
+    * defTerrainMult
     * defenderMoraleMult
 
   // Plancher d'attrition naturelle (cf. contact.ts v1.1 — Phase 2.5 balance)
@@ -182,8 +195,8 @@ export function resolveEngagementTick(input: EngagementTickInput): EngagementTic
   const contactCap = caps.contactCap
 
   // 1. Dégâts bilatéraux calculés sur le snapshot d'avant tick (symétrie)
-  const aToB = computeAttritionDamage(input.sideA, input.sideB, input.terrain, input.rng, config)
-  const bToA = computeAttritionDamage(input.sideB, input.sideA, input.terrain, input.rng, config)
+  const aToB = computeAttritionDamage(input.sideA, input.sideB, input.terrain, input.rng, config, input.onHoldB)
+  const bToA = computeAttritionDamage(input.sideB, input.sideA, input.terrain, input.rng, config, input.onHoldA)
 
   // 2. Phase 3.2-bis — réduction côté dominant. dominance = ratio damageNoFloor (A→B / B→A).
   //    Si A inflige bien plus de dégâts qu'il en reçoit, A est dominant tactique

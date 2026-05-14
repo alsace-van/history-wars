@@ -232,9 +232,9 @@ describe('engine/units/sizing — mergeUnits', () => {
     expect(result.routed).toBe(false)
   })
 
-  it('merge refuse si subKind different (ex: archer vs artillery)', () => {
+  it('merge refuse si subKind different (ex: archer vs artillery_heavy)', () => {
     const target = makeUnit({ id: 'a', kind: 'A', subKind: 'archer', effective: 60, effectiveMax: 120, effectiveMin: 30, position: cube(0, 0, 0) })
-    const source = makeUnit({ id: 'b', kind: 'A', subKind: 'artillery', effective: 60, effectiveMax: 120, effectiveMin: 30, position: cube(1, 0, -1) })
+    const source = makeUnit({ id: 'b', kind: 'A', subKind: 'artillery_heavy', effective: 60, effectiveMax: 120, effectiveMin: 30, position: cube(1, 0, -1) })
     const result = mergeUnits({ target, source })
     expect(isSizingError(result)).toBe(true)
     if (!isSizingError(result)) return

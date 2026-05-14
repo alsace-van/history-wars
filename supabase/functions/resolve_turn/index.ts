@@ -227,6 +227,27 @@ Deno.serve(async (req: Request) => {
     const combatConfig: CombatConfig =
       (configResp.data?.config as CombatConfig | undefined) ?? DEFAULT_COMBAT_CONFIG
 
+    // 7.55. Phase 3.3 — fetch posture hold priority=1 active pour toutes les unités
+    //       engagées (1 query) → Set<unit_id> consommé par les ticks.
+    const engagedUnitIds = new Set<string>()
+    for (const e of engagements) {
+      engagedUnitIds.add(e.unit_a_id)
+      engagedUnitIds.add(e.unit_b_id)
+    }
+    const onHoldSet = new Set<string>()
+    if (engagedUnitIds.size > 0) {
+      const { data: holdRows } = await admin
+        .from('unit_orders')
+        .select('unit_id, action')
+        .eq('game_id', gameId)
+        .eq('priority', 1)
+        .eq('active', true)
+        .in('unit_id', Array.from(engagedUnitIds))
+      for (const r of (holdRows ?? []) as Array<{ unit_id: string; action: { kind?: string } }>) {
+        if (r.action?.kind === 'hold') onHoldSet.add(r.unit_id)
+      }
+    }
+
     // 7.6. Phase 2.6 — Tick d'attrition par engagement actif (séquentiel).
     //
     // Multi-engagement : la version MVP applique les ticks dans l'ordre BDD,
@@ -280,6 +301,8 @@ Deno.serve(async (req: Request) => {
         config: combatConfig,
         supportA,
         supportB,
+        onHoldA: onHoldSet.has(a.id),
+        onHoldB: onHoldSet.has(b.id),
       })
 
       // Mise à jour des snapshots mémoire (effective + morale + flags).

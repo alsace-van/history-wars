@@ -167,6 +167,40 @@ describe('engine/orders — actions (pick*)', () => {
     const ctx = buildCtx([u, ...enemies], { visible: enemies.map(e => e.id) })
     expect(pickRetreatHex(u, ctx).destHex).toBeNull()
   })
+
+  // Phase 3.3 Lot C — retreat directionnel via action.params.destHex (cliqué par user).
+  it('13a. pickRetreatHex honore destHex utilisateur (voisin direct libre)', () => {
+    const u = makeUnit({ id: 'u', kind: 'I', team: 'blue', position: cube(0, 0, 0) })
+    const ctx = buildCtx([u])
+    const dest = cube(1, 0, -1)
+    const action = { kind: 'retreat' as const, params: { destHex: dest } }
+    const result = pickRetreatHex(u, ctx, action)
+    expect(result.destHex).toEqual(dest)
+  })
+
+  it('13b. pickRetreatHex destHex hors movement → step vers cet hex (capping)', () => {
+    // Infanterie : movement=3. Dest à distance 5 → on prend le voisin de unit qui rapproche.
+    const u = makeUnit({ id: 'u', kind: 'I', team: 'blue', position: cube(0, 0, 0) })
+    const ctx = buildCtx([u])
+    const farDest = cube(5, 0, -5)
+    const action = { kind: 'retreat' as const, params: { destHex: farDest } }
+    const result = pickRetreatHex(u, ctx, action)
+    // Le meilleur voisin direct est (1,0,-1) (distance 4 du farDest, vs 5 ou 6 pour les autres).
+    expect(result.destHex).toEqual(cube(1, 0, -1))
+  })
+
+  it('13c. pickRetreatHex destHex occupé → fallback auto (heuristique distance ennemis)', () => {
+    const u = makeUnit({ id: 'u', kind: 'I', team: 'blue', position: cube(0, 0, 0) })
+    const blocker = makeUnit({ id: 'b', team: 'blue', position: cube(1, 0, -1) })
+    const enemy = makeUnit({ id: 'e', team: 'red', position: cube(-2, 0, 2) })
+    const ctx = buildCtx([u, blocker, enemy], { visible: ['e'] })
+    const action = { kind: 'retreat' as const, params: { destHex: cube(1, 0, -1) } }
+    const result = pickRetreatHex(u, ctx, action)
+    // L'hex demandé est occupé → fallback : voisin qui maximise distance à l'ennemi (-2,0,2).
+    // Le plus éloigné = (1,-1,0) ou (1,0,-1) (occupé). On accepte tout voisin sauf (-1,0,1).
+    expect(result.destHex).not.toBeNull()
+    expect(result.destHex).not.toEqual(cube(-1, 0, 1)) // pire choix : se rapproche de l'ennemi
+  })
 })
 
 describe('engine/orders — evaluateOrders', () => {
