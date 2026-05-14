@@ -26,7 +26,7 @@ export interface UseActiveOrdersByUnitResult {
   refresh: () => Promise<void>
 }
 
-const ACTION_KINDS = new Set<OrderActionKind>(['charge', 'fire', 'retreat', 'hold'])
+const ACTION_KINDS = new Set<OrderActionKind>(['charge', 'fire', 'retreat', 'hold', 'camp'])
 
 function pickActionKind(a: { kind: string }): OrderActionKind | null {
   return ACTION_KINDS.has(a.kind as OrderActionKind) ? (a.kind as OrderActionKind) : null

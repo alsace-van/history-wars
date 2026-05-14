@@ -2,6 +2,123 @@
 
 ---
 
+## Session 22 (clôture) &mdash; 14/05/2026 &mdash; Phase 3.3 + Phase 3.3-bis (charge réelle + campement) + Phase 4 Lot A (IA solo MVP serveur)
+
+**3 phases livrées + déployées en une session marathon.** Bot solo encore en cours de debug fin de session — le hook fire, l'EF répond `ok actions_applied=5`, mais les 5 actions insérées sont toutes `hold` malgré les fixes scoreMove/picker. Logs serveur ajoutés en fin de session pour next diagnostic.
+
+### Phase 3.3 livrée
+
+Sprint UX + balance fin de Phase 3.
+
+- **Artilleries split light/heavy** (subKind `artillery_light` = obusier vs `artillery_heavy` = canon). Stats distinctes : range 3 vs 6, `arcedTrajectory` true/false (obusier tire en cloche par-dessus unités, canon tir tendu LoS requis), `optimalRangeMax` pour falloff explicite (zone optimale [minRange, 3]). Labels **AO** (obusier) / **AC** (canon) côté UI 3D + sidebar via `getKindCode()` dans `computeOrdinalLabels` v1.1.
+- **Plafond détection ordres dynamique** : fire → `stats.range` de l'unité (1 pour infanterie alerte, 3 obusier, 6 canon). Non-fire → `max(range, vision)` au lieu de 10 fixe. Évite "détection 10 hex" sur artillerie. `OrdersPanel` v1.2.
+- **Bonus défensif hold** : `+15% défense base` + `bonus terrain ×2 delta` (plaine +15%, forêt +50%, brèche +73%). Appliqué sur 3 sites : `handleAttack` v1.4 (attaque manuelle), `applyFireOrderCombat` v1.4 (ordre fire), `engagement/tick.ts` v1.2 (mêlée continue). Symétrique attaquant/défenseur (riposte) via `attackerOnHold`. Breakdown UI : "Posture hold (préparation) ×1.15" + "Terrain defense (foret, hold ×2)".
+- **Migration 021** : sub_kind `'artillery'` renommé `'artillery_heavy'` + scenarios MVP étendus à 10 unités (5 vs 5) avec 1 obusier + 1 canon par camp.
+
+### Phase 3.3-bis livrée (Charge réelle + Mode campement)
+
+- **Charge réelle avec dégâts** (`_evaluateOrders.ts` v1.5 `applyChargeOrderCombat`) : avant l'ordre `charge` ne faisait que déplacement + flag has_attacked + INSERT engagement, **0 dégât**. Maintenant : synthétise `attackerPath` via `cubeLineDraw(origPos → destHex)` pour activer charge cav (≥ 3 hex straight) → `resolveCombat` complet avec ripost + INSERT `attack_melee/charge` + engagement si survivants. −1 morale effort.
+- **Mode campement** (4ᵉ posture) : `OrderActionKind = 'camp'` + nouveau `OrderTriggerKind = 'always'`. Effets : `morale +5` (cap moraleMax), heal auto `min(round(wounded × 0.10), wounded)` réintègre `effective`. Pas de bonus défensif (trade-off du hold). Pattern d'usage type : `priority=1: on_attacked → retreat` + `priority=2: always → camp` (camp en fallback quand pas attaqué). Icône `⛺` vert sur pion 3D ([UnitPlaceholder](src/render/units/UnitPlaceholder.tsx) v2.14). Toast "AC.1 campe (+5 moral)".
+- **Listener `order_triggered` + toast owner** ([useOrderTriggeredToasts.ts](src/hooks/useOrderTriggeredToasts.ts) v1.0) : Realtime subscribe `game_actions.action_type='order_triggered'`, filtré `actor_user_id === viewerUserId` (privacy). Émission toast "Ordre déclenché — I.1 charge sur C.2".
+- **Icône ordre conditionnel sur pion 3D** (`useActiveOrdersByUnit.ts` v1.0 + `UnitPlaceholder` v2.13) : Map `unit_id → priority=1 active kind`. Pictogrammes thématiques : ♞ charge (rouge) / ⚔ fire (orange) / ↩ retreat (bleu) / 🛡 hold (gris) / ⛺ camp (vert). Affiché sous le count.
+- **Retreat directionnel** (Lot C) : `OrdersPanel` v1.3 bouton "Choisir hex sur la map" → mode `orderRetreatPickMode` dans `useTacticalSelection` v1.12 → highlight `spiral(unit.position, movement)` en bleu (`tileRetreatTarget`). `pickRetreatHex` honore `params.destHex` si fourni (voisin direct si ≤ movement, sinon step-toward, fallback auto si invalide). Stocké dans `unit_orders.action.params.destHex` (JSONB, pas de migration).
+
+### Phase 4 Lot A livrée (IA solo MVP serveur 1 ply)
+
+**Décisions** :
+- IA côté serveur (EF Deno) — déterministe, anti-cheat, réuse engine-port.
+- MVP 1 ply (greedy) — pas de lookahead. Différenciation difficulté : `easy` = random parmi top 3, `medium` = greedy strict, `hard` = greedy + tiebreak offensif (attaque > move > hold).
+- Fog server-side RLS différé en Phase 4-bis.
+
+**Engine** (`src/engine/ai/` + mirror Deno `engine-port/ai/`) :
+- `types.ts` : `AIProfile`, `AIAction` discriminated union (`move | attack_melee | attack_ranged | hold`), `AIContext`.
+- `scorer.ts` : `scoreAction(unit, action, ctx)` → attack = `damageMax − riskMax` (+30 kill bonus, +10 charge bonus), move = `approach − risk` (rapprochement vers ennemi le plus faible), hold = 0 ou +5 si morale<50 non engagé. **MVP cheat** : voit tous les ennemis (pas seulement visibles) sinon bot reste planté en début de partie.
+- `picker.ts` : `enumerateActions` (attaques visibles avec LoS + 12 moves max BFS + hold) + `pickBestActionForUnit` (DESC sort, easy=random top 3, medium=top 1, hard=tiebreak offensif). Filtre `visibleTileKeys` retiré (l'IA peut bouger dans le fog).
+- 11 tests engine (scorer 6 + picker 5).
+
+**Edge Function** ([run_bot_turn/index.ts](supabase/functions/run_bot_turn/index.ts)) :
+- Auth JWT (user dans game_players) + body `{ game_id }`.
+- Charge units + terrain + combat_config + engagements. Active team via `state.tactical.activeTeam` (camelCase — fix bug snake_case `active_team` qui fallback toujours à 'blue').
+- boardRadius via `state.tactical.boardRadius` (fallback 7).
+- Boucle units bot (id ASC) → `pickBestActionForUnit` → `applyBotAction` (move : UPDATE units + INSERT `move`; attack : resolveCombat + INSERT `attack_melee/ranged` + engagement ; hold : INSERT `end_turn` avec payload `bot_action='hold'`).
+- Le client humain reste responsable du `resolve_turn` final (pour MVP simplicité, pas d'auto end_turn bot).
+
+**Migration 022** : `user_id NULL` autorisé si `is_bot=true`. RLS host peut INSERT/DELETE bot rows. Check constraint `(is_bot=true) OR (user_id IS NOT NULL)`.
+
+**Migration 023** : mode spectateur. Tout authenticated peut SELECT games/units/game_actions/game_players/terrain_tiles/engagements quand `status='in_progress'`. Permet à un 2ᵉ compte de regarder la partie sans être membre (utile pour debug IA — fog désactivé client-side quand `myTeam=null`).
+
+**Client UI** :
+- `AddBotButton.tsx` (new) : dropdown 3 difficultés Facile/Moyen/Difficile.
+- `TeamPanel` v1.1 : prop `onAddBot` → bouton sous slots si host + slot vacant.
+- `Game.tsx` `handleAddBot` : INSERT game_players (RLS check) + toast.
+- `useBotAutoTurn.ts` (new) : auto-invoke `run_bot_turn` quand activeTeam = bot, host only (anti-double-trigger), idempotence locale via `lastTriggeredTurnRef`. Bug **résolu** : useEffect re-fire à chaque render (deps `players.map(...)` crée nouveau ref) → cleanup `clearTimeout(t)` annulait le setTimeout 500ms AVANT invoke. Fix : retirer cleanup + retirer setTimeout (invoke direct).
+- `useCombatNotifications` v2.5 : accepte `actor_user_id=null` pour bot, déduit team depuis `units.attacker_id`. Spectateur (`viewerTeam=null`) voit TOUS les combats.
+- `GameCard.tsx` v1.1 : bouton **👁 Spectateur** pour parties in_progress non-membre.
+- `Game.tsx` accès autorisé aux non-membres si `status='in_progress'`.
+
+### Bugs critiques diagnostiqués session 22
+
+1. **Hook bot ne fire jamais malgré "TRIGGER"** : useEffect re-fire à chaque render → cleanup `clearTimeout(t)` annulait le setTimeout. Ref empêchait re-lancement. Fix : retirer cleanup + invoke direct sans setTimeout.
+
+2. **EF run_bot_turn retourne 400** : lecture `state.tactical.active_team` (snake_case) au lieu de `activeTeam` (camelCase) → fallback toujours `'blue'` → `NO_BOT_ON_ACTIVE_TEAM`. Fix dans `run_bot_turn/index.ts` ligne ~75.
+
+3. **canStart greyé avec bot** : `occupiedPlayers` filtrait `user_id !== null`, excluait les bots. Fix client `Game.tsx:158` + server `start_battle/index.ts:97` : accepter `is_bot=true` aussi.
+
+4. **boardRadius hardcodé 5 dans EF bot** : scenario utilise 7 → unités bot à q=6 hors plateau → `bfsReachable` vide → bot reste planté. Fix : lire depuis `state.tactical.boardRadius`.
+
+### Bug ouvert fin session 22 — Bot insère 5× `hold` malgré fixes
+
+Status à clôture : hook fire ✓, EF répond `ok actions_applied=5` ✓, mais les 5 actions sont des `hold` (table `game_actions` : `action_type='end_turn'`, `payload.bot_action='hold'`).
+
+Fixes appliqués qui devraient résoudre (vérifié sur EF déployée v5 via `mcp__claude_ai_Supabase__get_edge_function`) :
+- `scoreMove` retiré filtre `visibleEnemyIds.has(enemy.id)` — l'IA voit tous les ennemis (MVP cheat).
+- `enumerateActions` retiré filtre `visibleTileKeys` — moves dans le fog OK.
+
+Logique attendue : pour unité C(6,-4,-2) vs humain à q=-6, distance ~12 → move vers (5,-3,-2) → distAfter=11 → approach=1 → scoreMove = `1 × 10 − risk(0)` = 10 ; scoreHold = 0 ; medium picker → move gagne.
+
+Mais en pratique tous les actions sont `hold`. **Logs serveur ajoutés** dans `run_bot_turn` ligne ~164 : `console.log` qui affiche `unit, kind, pos, visibleEnemies.size, action choisie`. EF redéployée. **Next session : créer une nouvelle partie + faire end_turn humain → check `get_logs` Edge Function pour voir ce que `pickBestActionForUnit` retourne réellement**. Hypothèses :
+- `bfsReachable` retourne 0 hex (problème blockers/zoc) → enumerate ne génère pas de moves
+- `pickBestActionForUnit` skip moves pour autre raison
+- Le code Deno port n'a pas vraiment été redéployé (cache CDN ?)
+
+### Workflow PWA — Bug subtil dev mode
+
+Vite HMR pousse les modifications côté client, **mais le Service Worker PWA peut servir une ancienne version cachée**. Pour debugger : DevTools → Application → Service Workers → Unregister + Network → Disable cache. Ajouté procédure à la note.
+
+### Branches GitHub nettoyées
+
+9 branches `claude/*` (PRs déjà mergées #27/28/29/33/35/41/43/44/45) à supprimer manuellement par l'utilisateur via `git push origin --delete`. Auto-mode classifier bloque la suppression en lot — script donné. Recommandation : activer "Automatically delete head branches" dans Settings GitHub.
+
+### Stats fin session 22
+
+- **345/345 tests Vitest verts** (+31 vs session 21 : 11 IA + 5 hold bonus + 4 camp/always + 3 retreat destHex + 2 labels AO/AC + tests divers).
+- `tsc` 0 erreur.
+- Migrations BDD : 021 (artillery_light/heavy) + 022 (bot user_id nullable + RLS) + 023 (spectator mode) appliquées prod via MCP.
+- EFs prod : `run_bot_turn` v5 (nouvelle), `resolve_turn` v19, `resolve_action` v21, `submit_orders` v4, `start_battle` v5.
+- Commit `cd6b451` Phase 3.3 push pending. Tous les changements Phase 3.3-bis + Phase 4 Lot A non commités.
+- Game.tsx ~660 lignes (toujours > 600 — dette technique reportée).
+
+### Decisions backlog session 22
+
+- **Mode campement Phase 5** : ajouter Infirmier dédié qui amplifie le heal. Aujourd'hui auto-soin 10%/tour. Backlog Phase 5.
+- **Bot lookahead 2-3 ply** : Phase 4-bis avec α-β pruning pour profil `hard`.
+- **Fog RLS server-side** : Phase 4-bis (vue SQL filtrée par LoS PL/pgSQL). Aujourd'hui fog client-side seulement.
+- **Bot auto end_turn** : Phase 4-bis. Aujourd'hui le client humain doit cliquer end_turn pour basculer activeTeam après le bot.
+- **Limite UnitPlaceholder icônes** : feedback user "ne pas superposer les icônes" sauvegardé en mémoire `~/.claude/projects/.../memory/feedback_no_icon_overlap.md`.
+
+### Prochaine étape — Session 23
+
+1. **Debug bot pickBestActionForUnit** : créer partie + bot + end_turn → check `mcp get_logs` pour voir le `console.log` ajouté dans run_bot_turn (verra unit/kind/pos/visibleEnemies/action). Si action='hold' systématiquement → bug dans enumerate ou scorer (peut-être `bfsReachable` retourne 0 candidats, ou `ctx.boardKeys` mal chargé). Si action='move' mais `applyBotAction` échoue → vérifier UPDATE units côté admin.
+2. **Push commit `cd6b451` (Phase 3.3)** + commit Phase 3.3-bis + Phase 4 Lot A.
+3. **Nettoyer les 9 branches `claude/*` mergées** sur GitHub (script donné).
+4. Possible Phase 4-bis si bot fonctionne (lookahead, fog RLS, auto end_turn).
+
+### Plan file utilisé session 22
+
+`/Users/stephanekapp/.claude/plans/toasty-puzzling-beaver.md` — successivement réécrit pour Phase 3.3 (Lots A/B/C), puis Phase 3.3-bis (charge + camp), puis Phase 4 Lot A (IA solo). Approuvé par user 3 fois via ExitPlanMode.
+
+---
+
 ## Session 21 (clôture) &mdash; 13/05/2026 &mdash; Phase 3.2 (ordres conditionnels) + Phase 3.2-bis (clarté UX engagement + refonte sidebar + routed effectif-based)
 
 **Phase 3.2 livrée et déployée** : ordres conditionnels (charge/fire/retreat/hold sur triggers on_attacked / enemy_in_range / cohesion_broken / enemy_los), max 3 par unité, résolus serveur en début de tour entrant via `resolve_turn §10.5`. RLS owner-only sur `unit_orders` (privacy). EFs prod : `submit_orders` v2, `resolve_turn` v9+, `resolve_action` v16+.

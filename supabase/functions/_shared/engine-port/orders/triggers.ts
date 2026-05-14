@@ -1,3 +1,4 @@
+// v1.1 (14/05/2026) — Phase 3.3-bis : trigger `always` (mirror src v1.1)
 // v1.0 (13/05/2026) — Phase 3.2 Vague A2 : prédicats triggers (mirror src/engine/orders/triggers.ts)
 // PORT FROM src/engine/orders/triggers.ts — DO NOT EDIT MANUALLY.
 
@@ -36,6 +37,11 @@ export function isEnemyLos(unit: UnitState, ctx: EvaluateOrdersContext): boolean
   return false
 }
 
+/** Phase 3.3-bis — mirror src : trigger toujours vrai (fallback passif). */
+export function isAlways(_unit: UnitState, _ctx: EvaluateOrdersContext): boolean {
+  return true
+}
+
 export function evaluateTrigger(
   unit: UnitState,
   trigger: OrderTrigger,
@@ -46,6 +52,7 @@ export function evaluateTrigger(
     case 'enemy_in_range': return isEnemyInRange(unit, trigger, ctx)
     case 'cohesion_broken': return isCohesionBroken(unit, ctx)
     case 'enemy_los': return isEnemyLos(unit, ctx)
+    case 'always': return isAlways(unit, ctx)
     default: {
       const _exhaustive: never = trigger.kind
       return _exhaustive

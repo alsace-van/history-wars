@@ -1,7 +1,7 @@
+// v1.4 (14/05/2026) — Phase 3.3-bis : case 'camp' no-op (mirror src v1.4)
 // v1.3 (14/05/2026) — Phase 3.3 Lot C : pickRetreatHex honore destHex utilisateur (cap movement)
 // v1.2 (14/05/2026) — Phase 3.3 : pickFireTarget skip LoS si arcedTrajectory (obusier)
 // v1.1 (13/05/2026) — Phase 3.3 : pickFireTarget accepte unités mêlée (range=1) — mode alerte
-// v1.0 (13/05/2026) — Phase 3.2 Vague A2 : pick* actions (mirror src/engine/orders/actions.ts)
 // PORT FROM src/engine/orders/actions.ts — DO NOT EDIT MANUALLY.
 
 import { cubeKey, cubeDistance, neighbors } from '../hex/index.ts'
@@ -148,6 +148,7 @@ export function resolveActionTarget(
     case 'fire': return pickFireTarget(unit, ctx)
     case 'retreat': return pickRetreatHex(unit, ctx, action)
     case 'hold': return { targetUnitId: null, destHex: null }
+    case 'camp': return { targetUnitId: null, destHex: null }
     default: {
       const _exhaustive: never = action.kind
       return _exhaustive

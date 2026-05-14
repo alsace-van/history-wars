@@ -86,7 +86,8 @@ export function evaluateOrders(
     }
 
     const target = resolveActionTarget(unit, posture.action, ctx)
-    if (!target.targetUnitId && !target.destHex && posture.action.kind !== 'hold') {
+    // Phase 3.3-bis : hold ET camp sont des actions passives sans cible/destination.
+    if (!target.targetUnitId && !target.destHex && posture.action.kind !== 'hold' && posture.action.kind !== 'camp') {
       const skipEval: OrderEvaluation = {
         posture,
         resolvedAction: posture.action.kind,

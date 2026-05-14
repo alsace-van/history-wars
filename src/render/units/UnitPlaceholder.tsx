@@ -1,7 +1,7 @@
+// v2.14 (14/05/2026) — Phase 3.3-bis : icône ⛺ camp (vert émeraude, regen passif)
 // v2.13 (14/05/2026) — Phase 3.3 : pictogrammes activeOrder thématiques (♞ charge / ⚔ fire / ↩ retreat / 🛡 hold)
 // v2.12 (14/05/2026) — Phase 3.3 : activeOrder déplacé sous le count (au-dessus était masqué par la barre PV)
 // v2.11 (14/05/2026) — Phase 3.3 : marge icônes ⚔/⬢ augmentée (anti-chevauchement label)
-// v2.10 (14/05/2026) — Phase 3.3 Lot B : icône activeOrder (→/↗/↖/◆) au-dessus du label
 import { Suspense, useEffect, useMemo, useRef } from 'react'
 import { Billboard, Text } from '@react-three/drei'
 import { useFrame, type ThreeEvent } from '@react-three/fiber'
@@ -510,13 +510,14 @@ export function resolveMoveIconColor(unit: UnitInstance): string {
 }
 
 // Phase 3.3 Lot B — pictogrammes thématiques pour l'ordre conditionnel actif (priority=1).
-// v2.13 : symboles cohérents avec l'action : cavalier=charge, épée=tir/attaque,
-// flèche retour=repli, bouclier=tenir position. Couleurs sémantiques inchangées.
+// v2.13 : cavalier=charge, épée=tir/attaque, flèche retour=repli, bouclier=tenir position.
+// v2.14 (Phase 3.3-bis) : tente=camp (repos/regen).
 const ORDER_ICON: Record<NonNullable<UnitInstance['activeOrder']>, { char: string; color: string }> = {
   charge:  { char: '♞',  color: '#ef4444' },  // chess knight = cavalier (aggressif)
   fire:    { char: '⚔',  color: '#fb923c' },  // épée = attaque
   retreat: { char: '↩',  color: '#60a5fa' },  // flèche retour = repli
   hold:    { char: '🛡',  color: '#94a3b8' },  // bouclier = tenir
+  camp:    { char: '⛺',  color: '#10b981' },  // tente = campement (repos/regen)
 }
 
 export function resolveActiveOrderIcon(kind: UnitInstance['activeOrder']): { char: string; color: string } | null {

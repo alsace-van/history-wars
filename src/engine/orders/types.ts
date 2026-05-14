@@ -1,5 +1,5 @@
+// v1.1 (14/05/2026) — Phase 3.3-bis : ajout 'camp' (action passive regen) + 'always' (trigger)
 // v1.0 (13/05/2026) — Phase 3.2 Vague A : types ordres conditionnels (pré-postures)
-// Source : docs/PLAN-PHASE-3-2.md (à créer) + plan on-demarre-la-phase-silly-reddy.md.
 // Frontière engine/ : zéro React, zéro Three, zéro Supabase.
 
 import type { Cube } from '../hex'
@@ -11,17 +11,22 @@ import type { UnitId, UnitState } from '../units/types'
  *  - `enemy_in_range`  : au moins 1 ennemi visible à distance ≤ `params.range` hex.
  *  - `cohesion_broken` : la cohésion de l'unité est `broken`.
  *  - `enemy_los`       : au moins 1 ennemi à portée de vision ET LoS dégagée.
+ *  - `always`          : Phase 3.3-bis — toujours vrai. Utilisé comme fallback passif
+ *                        (ex: priority=2 `always → camp` quand priority=1 ne fire pas).
  */
-export type OrderTriggerKind = 'on_attacked' | 'enemy_in_range' | 'cohesion_broken' | 'enemy_los'
+export type OrderTriggerKind = 'on_attacked' | 'enemy_in_range' | 'cohesion_broken' | 'enemy_los' | 'always'
 
 /**
  * Kind d'action déclenchée. Mappe vers les actions du moteur de combat existant.
- *  - `charge`  : se déplacer au contact de l'ennemi prioritaire (le plus menaçant) + attaque mêlée.
+ *  - `charge`  : se déplacer au contact de l'ennemi prioritaire + attaque mêlée (Phase 3.3-bis : combat réel).
  *  - `fire`    : tir distance sur l'ennemi prioritaire visible (archer/artillerie).
- *  - `retreat` : se déplacer vers l'hex le plus éloigné de tous les ennemis visibles.
- *  - `hold`    : ne rien faire (placeholder pour priorité de blocage : "ne pas charger SAUF SI X").
+ *  - `retreat` : se déplacer vers l'hex le plus éloigné de tous les ennemis visibles (ou destHex utilisateur).
+ *  - `hold`    : tenir la position. Bonus défensif +15% + terrain ×2.
+ *  - `camp`    : Phase 3.3-bis — mode campement. La troupe se relâche : regen morale +5,
+ *                soin auto wounded 10%/tour. Pas de bonus défensif (trade-off de hold).
+ *                Sortie automatique via priorités : on_attacked → retreat reprend la main.
  */
-export type OrderActionKind = 'charge' | 'fire' | 'retreat' | 'hold'
+export type OrderActionKind = 'charge' | 'fire' | 'retreat' | 'hold' | 'camp'
 
 /** Trigger avec paramètres optionnels. Range applicable pour `enemy_in_range`. */
 export interface OrderTrigger {

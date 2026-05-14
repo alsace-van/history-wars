@@ -1,7 +1,7 @@
+// v1.4 (14/05/2026) — Phase 3.3-bis : ajout 'always' (trigger) + 'camp' (action) dans dropdowns
 // v1.3 (14/05/2026) — Phase 3.3 Lot C : bouton "Choisir destination" pour retreat directionnel
 // v1.2 (14/05/2026) — Phase 3.3 : portée trigger non-fire cappée à max(range, vision) au lieu de 10
 // v1.1 (13/05/2026) — Phase 3.3 : portée trigger cappée à stats.range de l'unité (cohérence fire)
-// v1.0 (13/05/2026) — Phase 3.2 Vague C2 : UI gestion des ordres conditionnels d'une unité
 import { useState } from 'react'
 import type {
   UnitOrderRow,
@@ -12,8 +12,8 @@ import type {
 import type { Cube } from '@engine/hex'
 import { ACTION_LABEL, TRIGGER_LABEL, describePosture } from './orderLabels'
 
-const TRIGGER_KINDS: OrderTriggerKindUI[] = ['on_attacked', 'enemy_in_range', 'cohesion_broken', 'enemy_los']
-const ACTION_KINDS: OrderActionKindUI[] = ['charge', 'fire', 'retreat', 'hold']
+const TRIGGER_KINDS: OrderTriggerKindUI[] = ['on_attacked', 'enemy_in_range', 'cohesion_broken', 'enemy_los', 'always']
+const ACTION_KINDS: OrderActionKindUI[] = ['charge', 'fire', 'retreat', 'hold', 'camp']
 
 interface OrdersPanelProps {
   isMyUnit: boolean

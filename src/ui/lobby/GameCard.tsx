@@ -1,3 +1,4 @@
+// v1.1 (14/05/2026) — Phase 4 : bouton "Spectateur" pour parties in_progress (non-membre)
 // v1.0 (08/05/2026) — Carte d'une partie dans la liste du Lobby
 import { type GameWithPlayers, isHost, isPlayerInGame, isGameFull } from '@/types/game'
 import { Button } from '@ui/components/Button'
@@ -15,6 +16,7 @@ export function GameCard({ game, currentUserId, onJoin, onView }: GameCardProps)
   const iAmIn = isPlayerInGame(game.players, currentUserId)
   const isMine = iAmHost || iAmIn
   const full = isGameFull(game, game.players.length)
+  const inProgress = game.status === 'in_progress'
   const hostPlayer = game.players.find(p => p.user_id === game.created_by)
   const hostName = hostPlayer?.username ?? '...'
   const ago = formatRelative(game.created_at)
@@ -90,6 +92,13 @@ export function GameCard({ game, currentUserId, onJoin, onView }: GameCardProps)
         <Button variant="outline" size="sm" onClick={() => onView(game.id)}>
           Voir
         </Button>
+      ) : inProgress ? (
+        <button
+          onClick={() => onView(game.id)}
+          className="inline-flex items-center justify-center gap-[6px] px-[14px] py-[7px] rounded-full text-[11px] font-semibold uppercase tracking-[0.12em] bg-tactica-amber/15 text-tactica-amber border border-tactica-amber/40 hover:bg-tactica-amber/25 transition-colors"
+        >
+          👁 Spectateur
+        </button>
       ) : full ? (
         <Button variant="ghost" size="sm" disabled>
           Pleine

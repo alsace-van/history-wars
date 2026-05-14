@@ -1,3 +1,4 @@
+// v1.2 (14/05/2026) — Phase 3.3-bis : enum +'camp' (action) +'always' (trigger)
 // v1.1 (14/05/2026) — Phase 3.3 Lot C : validation action.params.destHex pour retreat dirigé
 // v1.0 (13/05/2026) — Phase 3.2 Vague B2 : CRUD batch des ordres conditionnels par unité
 // Source : plan on-demarre-la-phase-silly-reddy.md Vague B2.
@@ -25,8 +26,8 @@ import {
 const TAG = '[submit_orders v1.1]'
 const BOARD_RADIUS = 7  // garde-fou bornes destHex (rayon plateau MVP)
 
-const TRIGGER_KINDS = new Set(['on_attacked', 'enemy_in_range', 'cohesion_broken', 'enemy_los'])
-const ACTION_KINDS = new Set(['charge', 'fire', 'retreat', 'hold'])
+const TRIGGER_KINDS = new Set(['on_attacked', 'enemy_in_range', 'cohesion_broken', 'enemy_los', 'always'])
+const ACTION_KINDS = new Set(['charge', 'fire', 'retreat', 'hold', 'camp'])
 const MAX_ORDERS = 3
 
 function validateTrigger(t: unknown): t is OrderTriggerDTO {

@@ -1,3 +1,4 @@
+// v1.1 (14/05/2026) — Phase 3.3-bis : ajout 'always' (Toujours) + 'camp' (Camper)
 // v1.0 (13/05/2026) — Phase 3.2 Vague C2 : labels FR pour ordres conditionnels
 import type { OrderActionKindUI, OrderTriggerKindUI } from '@hooks/usePreOrders'
 
@@ -6,6 +7,7 @@ export const TRIGGER_LABEL: Record<OrderTriggerKindUI, string> = {
   enemy_in_range: 'Si ennemi à portée',
   cohesion_broken: 'Si Brisée',
   enemy_los: 'Si ennemi visible',
+  always: 'Toujours',
 }
 
 export const ACTION_LABEL: Record<OrderActionKindUI, string> = {
@@ -13,6 +15,7 @@ export const ACTION_LABEL: Record<OrderActionKindUI, string> = {
   fire: 'Tirer',
   retreat: 'Replier',
   hold: 'Tenir position',
+  camp: 'Camper (repos)',
 }
 
 export const SKIP_LABEL: Record<string, string> = {

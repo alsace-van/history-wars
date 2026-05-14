@@ -85,16 +85,17 @@ Deno.serve(async (req: Request) => {
       return errorResponse(ERROR_CODES.INVALID_SCENARIO, `scenario ${game.scenario_id} not supported`, 400)
     }
 
-    // 4. Players : au moins 2, au moins 1 par equipe
+    // 4. Players : au moins 2, au moins 1 par equipe.
+    // Phase 4 : un slot est "occupé" si humain (user_id) OU bot (is_bot=true).
     const { data: players, error: playersErr } = await admin
       .from('game_players')
-      .select('id, user_id, team')
+      .select('id, user_id, team, is_bot')
       .eq('game_id', gameId)
 
     if (playersErr) {
       return errorResponse(ERROR_CODES.INTERNAL, 'players fetch failed', 500)
     }
-    const occupiedSlots = (players ?? []).filter(p => p.user_id !== null)
+    const occupiedSlots = (players ?? []).filter(p => p.user_id !== null || p.is_bot)
     if (occupiedSlots.length < 2) {
       return errorResponse(ERROR_CODES.NOT_ENOUGH_PLAYERS, 'need at least 2 players', 400)
     }

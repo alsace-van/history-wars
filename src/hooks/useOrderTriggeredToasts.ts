@@ -8,7 +8,7 @@ import type { UnitState } from '@engine/units'
 interface OrderTriggeredPayload {
   posture_id?: string
   unit_id?: string
-  resolved_action?: 'charge' | 'fire' | 'retreat' | 'hold'
+  resolved_action?: 'charge' | 'fire' | 'retreat' | 'hold' | 'camp'
   target_unit_id?: string | null
   skipped?: string | null
 }
@@ -29,11 +29,12 @@ interface UseOrderTriggeredToastsOptions {
   enabled?: boolean
 }
 
-const ACTION_VERB: Record<'charge' | 'fire' | 'retreat' | 'hold', string> = {
+const ACTION_VERB: Record<'charge' | 'fire' | 'retreat' | 'hold' | 'camp', string> = {
   charge: 'charge',
   fire: 'tire',
   retreat: 'se replie',
   hold: 'tient sa position',
+  camp: 'campe (+5 moral)',
 }
 
 const SKIP_REASON_LABEL: Record<string, string> = {

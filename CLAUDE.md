@@ -86,35 +86,47 @@ Exception : confiance < 95 % AVANT de coder → plan détaillé + questions auto
 
 Ne jamais demander un re-upload si le fichier est accessible via une de ces sources.
 
-## 7. État courant (13/05/2026 — session 21 clôturée)
+## 7. État courant (14/05/2026 — session 22 clôturée)
 
-- Phase 0 ✅ 13/13
-- Phase 1 ✅ 13/13 — combat MVP tactique complet
-- Phase 1.5 ✅ polish wounded + visuels asymétriques + toasts combat
-- **Phase 2 ✅** refonte combat v2 livrée (sessions 15-16)
-- **Phase 2.5 ✅** moral / cohésion / soutien livrée prod (session 17)
-- **Phase 2.6 ✅** engagement persistant livrée + testée humain (sessions 18-19). Tag `phase-2-complete`.
-- **Phase 3.1 ✅** fog of war évolué livrée + testée humain (session 20). Tag `phase-3-1-complete`.
-- **Phase 3.2 ✅** ordres conditionnels livrés + déployés (session 21). Migrations 019+020 prod. EF `submit_orders` v2, `resolve_turn` v9+. Test humain 5 scénarios = session 22.
-- **Phase 3.2-bis ✅** (session 21) — Sprint UX + balance suite test humain :
-  - **Engagement clarity** : `engagement_ticks` dans EndTurnResult → toasts "Combat continu (T+N)" + DamageFloaters tick + badge `⚔ T+N` sur EngagementOverlay + lerp 600ms UnitHealthBar.
-  - **Routed décorrélé du moral** : `routed = effective < 20% effectiveMax` (`ROUT_EFFECTIVE_RATIO`). `applyMoraleDelta` + `isRouted` + sites de recompute mis à jour engine + Deno. Server handlers retreat/suicide/surrender acceptent désormais `routed OR cohesion broken`.
-  - **Dominance asymétrique tick** : `dominance = damageNoFloor_A/B`. Côté gagnant prend `clamp(1/dominance, 0.25, 1)` × dégâts. Fatigue moral -2 → -1.
-  - **Vision routed** : ennemi engagé en mêlée toujours `identified` (force depuis engagementRows). spiral(movement) inclus dans visibleTileKeys pour permettre repli.
-  - **Sidebar refondue** : voyant lumineux (couleur active team), nom joueur fixé sur MON camp (couleur team), ligne par pion `[I.1 ⚔⬢ ████ 200/400]` clickable (recentre caméra), `ParticipantsPanel` collapsible (host = dot vert, moi = highlight ambre). GameTopBar nom officier coloré team.
-  - **Helper `computeOrdinalLabels`** (`src/engine/units/labels.ts`) : `${kind}.${N}` par team+kind. Affiché au-dessus pion 3D + dans sidebar (cohérence).
-  - **Icônes ordres** ⚔/⬢ : 3D au-dessus du pion (gauche/droite du label) + HTML inline sidebar. Helper colorimétrique partagé. Remplace section textuelle "Ordres disponibles".
-  - **UnitStatusRing** : routed = orange clignotement lent (distinct broken rapide).
-  - **Bug critique fixé** : `resolve_turn` v7 crashait au boot (import `spiral` manquant dans port Deno hex/index). Piège §12 à ajouter (imports manquants Deno = crash silencieux sans log EF).
-- Phase 3.3 ⬜ polish / balance fin de Phase 3.
-- Phase 4 ⬜ IA solo + fog server-side RLS (vue SQL filtrée units).
-- Phase 5 ⬜ profondeur tactique (formations, fatigue/endurance dédiée, ravitaillement, Infirmier, météo).
+- Phase 0 → 2.6 ✅ (cf. WIP.md sessions 1-19)
+- Phase 3.1 ✅ fog of war évolué client-side (session 20). Tag `phase-3-1-complete`.
+- Phase 3.2 ✅ ordres conditionnels (session 21). Tag `phase-2-complete`.
+- Phase 3.2-bis ✅ sprint UX engagement clarity + routed effectif-based + sidebar refondue + icônes ordres (session 21).
+- **Phase 3.3 ✅** (session 22) — polish/balance fin Phase 3 :
+  - **Artilleries split** : `artillery_light` (obusier, range 3, arcedTrajectory true, tir en cloche) vs `artillery_heavy` (canon, range 6, LoS requis, falloff). Labels AO/AC.
+  - **Plafond détection ordres dynamique** : fire = `stats.range`, non-fire = `max(range, vision)` (au lieu de 10 fixe).
+  - **Bonus défensif hold** : +15% défense base + bonus terrain ×2 delta. Appliqué attaque manuelle + fire order + engagement tick. Symétrique riposte.
+  - **Migration 021** : sub_kind enum + scenarios MVP étendus 10 unités (1 obusier + 1 canon par camp).
+- **Phase 3.3-bis ✅** (session 22) — charge réelle + campement :
+  - **Charge cav avec dégâts** : `applyChargeOrderCombat` dans `_evaluateOrders.ts` v1.5 (avant : flag-only, 0 dégât). Synthétise `attackerPath` via `cubeLineDraw` → resolveCombat complet + ripost + engagement.
+  - **Mode campement** : `OrderActionKind='camp'` + `OrderTriggerKind='always'`. Effets : +5 morale, heal 10% wounded/tour. Pas de bonus défensif (trade-off hold). Pattern : `priority=1: on_attacked → retreat` + `priority=2: always → camp`.
+  - **Listener `order_triggered` + toast owner** (`useOrderTriggeredToasts.ts`).
+  - **Icône ordre sur pion 3D** (`useActiveOrdersByUnit.ts`) : ♞ charge / ⚔ fire / ↩ retreat / 🛡 hold / ⛺ camp, couleurs sémantiques.
+  - **Retreat directionnel** : bouton "Choisir hex" dans OrdersPanel → mode `orderRetreatPickMode` highlight bleu spiral(movement). `pickRetreatHex` honore `params.destHex` (avec fallback step-toward si > movement).
+- **Phase 4 Lot A ✅** (session 22) — IA solo MVP serveur 1 ply :
+  - Engine `src/engine/ai/` (scorer, picker, types) + mirror Deno port. `scoreAction = damageMax − risk` heuristique. Profils easy/medium/hard via tiebreak (easy = random top 3, hard = offensive priority).
+  - EF `run_bot_turn` : auth JWT + iterate bot units (id ASC) + applyBotAction (move/attack via resolveCombat/hold). Le client humain end_turn reste responsable de la bascule.
+  - Migration 022 : `user_id NULL` autorisé si `is_bot=true` + RLS host peut INSERT/DELETE bot rows.
+  - Migration 023 : **mode spectateur** (RLS additif SELECT pour `status='in_progress'`).
+  - UI : `AddBotButton` (dropdown difficulté) + `TeamPanel` v1.1 + `useBotAutoTurn` hook (host only, anti-double-trigger). `useCombatNotifications` v2.5 accepte `actor_user_id=null` pour bot.
+  - **Bug critique fixés en cours session** : (1) hook bot ne fire pas → cleanup useEffect annulait setTimeout (fix : invoke direct). (2) EF 400 → lecture `active_team` snake_case au lieu de `activeTeam` camelCase. (3) `canStart` excluait bots → fix client + start_battle. (4) boardRadius hardcodé 5 dans EF.
+  - **Bug ouvert fin session** : bot insère 5× `hold` malgré fixes scoreMove/picker (voit tous ennemis + sans filtre fog). Logs serveur ajoutés `run_bot_turn` ligne ~164 pour diagnostic next session. EF v5 déployée vérifiée à jour via `mcp get_edge_function`.
+- Phase 4-bis ⬜ lookahead 2-3 ply + fog server-side RLS (vue SQL filtrée units) + bot auto end_turn.
+- Phase 5 ⬜ profondeur tactique (formations, fatigue/endurance dédiée, ravitaillement, Infirmier, météo, mode campement Phase 5 = Infirmier amplifie heal).
 - Phases 6-15 ⬜
 
-Prochaine action session 22 :
-- Test humain Phase 3.2 ordres conditionnels (5 scénarios : enemy_in_range+fire, on_attacked+retreat, cohesion_broken+hold, garde-fou 4ᵉ ordre, privacy RLS).
-- Possible QW : Game.tsx ~640 lignes (un peu au-dessus 600), extraction supplémentaire.
-- Possible Phase 3.3 (polish balance).
+Prochaine action session 23 :
+1. **Debug bot pick all-hold** : créer partie + bot + end_turn → `mcp get_logs edge-function` lire console.log `[run_bot_turn] unit= kind= pos= visibleEnemies= action=`. Si action='hold' → bug enumerate (peut-être bfsReachable retourne 0 ?). Si action='move' mais pas appliqué → bug applyBotAction UPDATE.
+2. **Push commit `cd6b451`** (Phase 3.3) + commit session 22 (Phase 3.3-bis + Phase 4 Lot A) + nettoyer 9 branches `claude/*` mergées (PRs #27/28/29/33/35/41/43/44/45).
+3. Possible Phase 4-bis si bot fonctionne (lookahead, fog RLS, auto end_turn).
 
-Feedback UX user sauvegardé en mémoire : `~/.claude/projects/.../memory/ux_tactica_lisibilite.md`
-Vision long-terme campagne opérationnelle : `~/.claude/projects/.../memory/vision_operational_campaign.md`
+EFs prod : `run_bot_turn` v5, `resolve_turn` v19, `resolve_action` v21, `submit_orders` v4, `start_battle` v5. Migrations 021/022/023 appliquées.
+
+Tests : 345/345 verts. Game.tsx ~660 lignes (toujours > 600 limite — dette technique).
+
+Plan file actif : `~/.claude/plans/toasty-puzzling-beaver.md` (Phase 4 Lot A).
+
+Mémoires user : `~/.claude/projects/.../memory/`
+- `ux_tactica_lisibilite.md` — FoW strict, ratios, économie visuelle
+- `vision_operational_campaign.md` — vision long-terme campagne
+- `feedback_no_icon_overlap.md` — règle marge icônes (session 22)

@@ -1,3 +1,4 @@
+// v1.1 (14/05/2026) — Phase 3.3-bis : trigger `always` (passif perma) pour mode camp fallback
 // v1.0 (13/05/2026) — Phase 3.2 Vague A : prédicats triggers ordres conditionnels
 // Frontière engine/ : zéro React, zéro Three, zéro Supabase.
 
@@ -63,6 +64,15 @@ export function isEnemyLos(unit: UnitState, ctx: EvaluateOrdersContext): boolean
 }
 
 /**
+ * Phase 3.3-bis — Trigger `always` : toujours vrai. Sert à programmer une action
+ * passive perma (typiquement `priority=2 always → camp` en fallback quand
+ * `priority=1 on_attacked → retreat` ne fire pas).
+ */
+export function isAlways(_unit: UnitState, _ctx: EvaluateOrdersContext): boolean {
+  return true
+}
+
+/**
  * Dispatcher : retourne true si le trigger se déclenche pour l'unité dans le contexte.
  * Pure fn, pas de mutation.
  */
@@ -76,6 +86,7 @@ export function evaluateTrigger(
     case 'enemy_in_range': return isEnemyInRange(unit, trigger, ctx)
     case 'cohesion_broken': return isCohesionBroken(unit, ctx)
     case 'enemy_los': return isEnemyLos(unit, ctx)
+    case 'always': return isAlways(unit, ctx)
     default: {
       // Exhaustiveness check (TS strict). Si nouveau kind ajouté, le compilo râle.
       const _exhaustive: never = trigger.kind

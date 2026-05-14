@@ -30,6 +30,8 @@ import { useCombatHighlight } from '@hooks/useCombatHighlight'
 import { useCameraFocus } from '@hooks/useCameraFocus'
 import { useOrderTriggeredToasts } from '@hooks/useOrderTriggeredToasts'
 import { useActiveOrdersByUnit } from '@hooks/useActiveOrdersByUnit'
+import { useBotAutoTurn } from '@hooks/useBotAutoTurn'
+import { supabase } from '@lib/supabase'
 import {
   isHost,
   isPlayerInGame,
@@ -93,7 +95,14 @@ export function Game() {
       navigate('/lobby')
       return
     }
-    if (game && !isHost(game, user.id) && !isPlayerInGame(players, user.id)) {
+    // Phase 4 — autoriser l'accès en mode spectateur pour les parties in_progress.
+    // Les autres status (lobby, briefing, finished, abandoned) exigent d'être membre.
+    if (
+      game &&
+      !isHost(game, user.id) &&
+      !isPlayerInGame(players, user.id) &&
+      game.status !== 'in_progress'
+    ) {
       toast.error("Tu n'es pas dans cette partie. Reviens depuis le lobby pour la rejoindre.")
       navigate('/lobby')
     }
@@ -152,7 +161,8 @@ export function Game() {
   const mvpCubes: Cube[] = spiral({ q: 0, r: 0, s: 0 }, boardRadius)
   const mvpBoardKeys = new Set(mvpCubes.map(cubeKey))
 
-  const occupiedPlayers = useMemo(() => players.filter(p => p.user_id !== null), [players])
+  // Phase 4 : un slot est "occupé" si user humain présent OU bot inséré (is_bot=true, user_id=null).
+  const occupiedPlayers = useMemo(() => players.filter(p => p.user_id !== null || p.is_bot), [players])
   const blueOccupied = occupiedPlayers.some(p => p.team === 'blue')
   const redOccupied = occupiedPlayers.some(p => p.team === 'red')
   const canStart =
@@ -454,6 +464,44 @@ export function Game() {
     void refreshActiveOrders()
   }, [preOrders.orders, refreshActiveOrders])
 
+  // Phase 4 Lot A5 — auto-trigger run_bot_turn quand activeTeam = bot. Host only.
+  // Le bot joue ses actions, puis le client humain doit cliquer endTurn pour basculer.
+  useBotAutoTurn({
+    gameId: gameId ?? null,
+    activeTeam: showBattle ? activeTeam : null,
+    players: players.map(p => ({ team: p.team, is_bot: p.is_bot })),
+    iAmHost,
+    currentTurn: tactical?.currentTurn ?? game?.turn_number ?? 0,
+    enabled: showBattle,
+    onBotTurnComplete: () => { void refresh() },
+  })
+
+  // Phase 4 — handler ajout bot (host uniquement, slot vacant). Insère game_players
+  // is_bot=true avec difficulté choisie. RLS migration 022 autorise.
+  const handleAddBot = useCallback(async (team: Team, difficulty: 'easy' | 'medium' | 'hard') => {
+    if (!gameId) return
+    const teamSlots = team === 'blue' ? blueSlots : redSlots
+    const emptySlot = teamSlots.find(s => s.player === null)
+    if (!emptySlot) {
+      toast.error('Aucun slot vacant pour ajouter un bot')
+      return
+    }
+    const { error } = await supabase.from('game_players').insert({
+      game_id: gameId,
+      user_id: null,
+      team,
+      slot_index: emptySlot.index,
+      role: emptySlot.role,
+      is_bot: true,
+      bot_difficulty: difficulty,
+    })
+    if (error) {
+      toast.error(`Bot impossible : ${error.message}`)
+      return
+    }
+    toast.success(`🤖 Bot ${difficulty} ajouté au camp ${team === 'blue' ? 'bleu' : 'rouge'}`)
+  }, [gameId, blueSlots, redSlots])
+
   if (authLoading || !user || loading || !game) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -623,8 +671,8 @@ export function Game() {
               />
             ) : (
               <>
-                <TeamPanel team="blue" slots={blueSlots} hostUserId={hostUserId} currentUserId={user.id} canKick={iAmHost} onKick={handleKick} compact />
-                <TeamPanel team="red" slots={redSlots} hostUserId={hostUserId} currentUserId={user.id} canKick={iAmHost} onKick={handleKick} compact />
+                <TeamPanel team="blue" slots={blueSlots} hostUserId={hostUserId} currentUserId={user.id} canKick={iAmHost} onKick={handleKick} compact onAddBot={iAmHost ? handleAddBot : undefined} />
+                <TeamPanel team="red" slots={redSlots} hostUserId={hostUserId} currentUserId={user.id} canKick={iAmHost} onKick={handleKick} compact onAddBot={iAmHost ? handleAddBot : undefined} />
               </>
             )}
           </div>

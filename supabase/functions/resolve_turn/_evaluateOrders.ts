@@ -1,7 +1,7 @@
+// v1.5 (14/05/2026) — Phase 3.3-bis : charge applique combat réel (resolveCombat + ripost) + case camp
 // v1.4 (14/05/2026) — Phase 3.3 : applyFireOrderCombat lookup hold posture (bonus défensif)
 // v1.3 (14/05/2026) — Phase 3.3 : order_triggered actor = owner du pion (toast côté propriétaire)
 // v1.2 (13/05/2026) — Phase 3.3 : fire en mêlée (ripost + engagement) + morale tax alerte −1
-// v1.1 (13/05/2026) — Phase 3.3 : fire applique réellement des dégâts via resolveCombat + insère attack_ranged
 // Appelé par resolve_turn entre le reset des flags (§9) et le calcul de morale (§10).
 //
 // Scope Phase 3.3 :
@@ -23,6 +23,7 @@ import {
   cube,
   cubeDistance,
   cubeKey,
+  cubeLineDraw,
   spiral,
   type Cube,
 } from '../_shared/engine-port/hex/index.ts'
@@ -280,6 +281,25 @@ async function applyOrderEvaluation(p: ApplyParams): Promise<void> {
       // No-op. Juste log.
       break
     }
+    case 'camp': {
+      // Phase 3.3-bis — mode campement : regen morale +5 et soin auto wounded 10%.
+      // Pas de bonus défensif (trade-off de hold). Sortie via priorités (on_attacked → retreat).
+      const healed = Math.min(Math.round(unit.wounded * 0.10), unit.wounded)
+      const newEffective = unit.effective + healed
+      const newWounded = unit.wounded - healed
+      const newMorale = Math.min(unit.moraleMax, unit.morale + 5)
+      const { error } = await admin
+        .from('units')
+        .update({
+          effective: newEffective,
+          wounded: newWounded,
+          morale: newMorale,
+        })
+        .eq('id', unit.id)
+        .eq('game_id', gameId)
+      if (error) console.warn('[applyOrderEvaluation] camp update failed:', error.message)
+      break
+    }
     case 'retreat': {
       if (!evaluation.destHex) break
       const { error } = await admin
@@ -301,37 +321,35 @@ async function applyOrderEvaluation(p: ApplyParams): Promise<void> {
       break
     }
     case 'charge': {
-      // Mouvement vers destHex puis flag has_attacked. Pas de damage (Phase 3.3).
-      if (evaluation.destHex) {
-        const { error: posErr } = await admin
-          .from('units')
-          .update({ q: evaluation.destHex.q, r: evaluation.destHex.r, has_moved: true, has_attacked: true })
-          .eq('id', unit.id)
-          .eq('game_id', gameId)
-        if (posErr) {
-          console.warn('[applyOrderEvaluation] charge update failed:', posErr.message)
-          break
-        }
-        positionCache.set(unit.id, evaluation.destHex)
-      } else {
-        // Pas de move (déjà adjacent) → juste flag attack.
-        const { error: flagErr } = await admin
+      // Phase 3.3-bis — combat charge réel. Avant : juste flag has_attacked + INSERT engagement
+      // sans dégâts. Maintenant : déplacement vers destHex + resolveCombat avec attackerPath
+      // synthétique pour activer charge cav si distance parcourue ≥ 2 hex en ligne droite.
+      if (!evaluation.targetUnitId) {
+        console.warn('[applyOrderEvaluation] charge without target — fallback flag only')
+        const { error } = await admin
           .from('units')
           .update({ has_attacked: true })
           .eq('id', unit.id)
           .eq('game_id', gameId)
-        if (flagErr) console.warn('[applyOrderEvaluation] charge flag failed:', flagErr.message)
+        if (error) console.warn('[applyOrderEvaluation] charge flag failed:', error.message)
+        break
       }
-      // INSERT engagement avec la cible (Phase 2.6 : invariant unit_a_id < unit_b_id).
-      if (evaluation.targetUnitId) {
-        const [a, b] = [unit.id, evaluation.targetUnitId].sort()
-        const { error: engErr } = await admin
-          .from('engagements')
-          .insert({ game_id: gameId, unit_a_id: a, unit_b_id: b, started_turn: currentTurn })
-        if (engErr && !engErr.message.includes('duplicate')) {
-          console.warn('[applyOrderEvaluation] charge engagement insert failed:', engErr.message)
-        }
+      if (killedThisBatch.has(evaluation.targetUnitId)) {
+        event.skipped = 'no_target'
+        break
       }
+      const defender = units.find(u => u.id === evaluation.targetUnitId)
+      if (!defender) {
+        console.warn('[applyOrderEvaluation] charge defender missing in snapshot')
+        break
+      }
+      const ownerUserId = ownersByUnit.get(unit.id) ?? actorUserId
+      await applyChargeOrderCombat({
+        admin, gameId, attacker: unit, defender, currentTurn,
+        ownerUserId, terrainMap, combatConfig, allUnits: units, killedThisBatch,
+        postureId: evaluation.posture.id, destHex: evaluation.destHex ?? null,
+        positionCache,
+      })
       break
     }
     case 'fire': {
@@ -578,5 +596,214 @@ async function insertOrderTriggeredLog(
   })
   if (error) {
     console.warn('[insertOrderTriggeredLog] insert failed:', error.message)
+  }
+}
+
+interface ChargeCombatParams {
+  admin: SupabaseClient
+  gameId: string
+  attacker: UnitState
+  defender: UnitState
+  currentTurn: number
+  ownerUserId: string
+  terrainMap: Map<string, TerrainType>
+  combatConfig: CombatConfig
+  allUnits: ReadonlyArray<UnitState>
+  killedThisBatch: Set<string>
+  postureId: string
+  /** Hex adjacent au défenseur où l'attaquant arrive en charge (null si déjà adjacent). */
+  destHex: Cube | null
+  positionCache: Map<string, Cube>
+}
+
+/**
+ * Phase 3.3-bis — Applique le combat d'un ordre `charge` avec déplacement + dégâts réels.
+ *
+ * Pipeline :
+ *  - Si destHex fourni : déplacer attaquant + flag has_moved (UPDATE units position).
+ *  - Synthétiser un attackerPath = cubeLineDraw(origPos, destHex) pour activer
+ *    chargeMult cav si path ≥ 3 hex en ligne droite.
+ *  - resolveCombat (phase auto : 'charge' si cav + path éligible, sinon 'melee').
+ *  - Appliquer dégâts défenseur + ripost si melee non-mortelle, identique à applyFireOrderCombat.
+ *  - Coût d'effort : −1 morale attaquant (consistance mode alerte).
+ *  - INSERT engagement si survivants mêlée.
+ */
+async function applyChargeOrderCombat(p: ChargeCombatParams): Promise<void> {
+  const {
+    admin, gameId, attacker, defender, currentTurn, ownerUserId, terrainMap, combatConfig,
+    allUnits, killedThisBatch, postureId, destHex, positionCache,
+  } = p
+
+  // 1. Déplacement attaquant si destHex fourni (charge avec move).
+  const origPos = attacker.position
+  const finalPos = destHex ?? origPos
+  if (destHex) {
+    const { error: posErr } = await admin
+      .from('units')
+      .update({ q: destHex.q, r: destHex.r, has_moved: true })
+      .eq('id', attacker.id)
+      .eq('game_id', gameId)
+    if (posErr) {
+      console.warn('[applyChargeOrderCombat] move update failed:', posErr.message)
+      return
+    }
+    positionCache.set(attacker.id, destHex)
+  }
+
+  // 2. Path synthétique pour détection charge cav (ligne droite orig → final).
+  //    isPathStraight + length ≥ 3 → chargeMult > 1.0. Sinon resolveCombat retombe en 'melee'.
+  const attackerPath = cubeLineDraw(origPos, finalPos)
+  const attackerPathTerrain = attackerPath.map(c => terrainMap.get(cubeKey(c)) ?? DEFAULT_TERRAIN)
+
+  // 3. Reconstruire un UnitState attaquant post-move (la position a changé).
+  const attackerPostMove: UnitState = { ...attacker, position: finalPos }
+
+  const attackerSupport = computeSupport(attackerPostMove, allUnits)
+  const defenderSupport = computeSupport(defender, allUnits)
+  const attackerTerrain = terrainMap.get(cubeKey(finalPos)) ?? DEFAULT_TERRAIN
+  const defenderTerrain = terrainMap.get(cubeKey(defender.position)) ?? DEFAULT_TERRAIN
+  const distance = cubeDistance(finalPos, defender.position)
+
+  const seed = Date.now()
+  const rng = seededRng(seed)
+
+  const [defenderOnHold, attackerOnHold] = await Promise.all([
+    lookupOnHold(admin, defender.id),
+    lookupOnHold(admin, attacker.id),
+  ])
+
+  const { result: combat, ripost } = resolveCombat({
+    attacker: attackerPostMove, defender,
+    attackerTerrain, defenderTerrain,
+    distance,
+    attackerPath, attackerPathTerrain,
+    rng,
+    config: combatConfig,
+    attackerSupport, defenderSupport,
+    attackerOnHold,
+    defenderOnHold,
+  })
+
+  // 4. Application des résultats (mirror applyFireOrderCombat).
+  let attackerHpAfter = attacker.hp
+  let attackerWoundedAfter = attacker.wounded
+  let attackerEffectiveAfter = attacker.effective
+  let attackerKilledStat = attacker.killed
+  let attackerMoraleAfter = combat.attackerMoraleAfter
+  let attackerRoutedAfter = combat.attackerRouted
+  let attackerKilled = false
+  let defenderMoraleAfter = combat.defenderMoraleAfter
+  let defenderRoutedAfter = combat.defenderRouted
+
+  if (ripost) {
+    attackerHpAfter = ripost.defenderHpAfter
+    attackerWoundedAfter = ripost.defenderWoundedAfter
+    attackerEffectiveAfter = ripost.defenderEffectiveAfter
+    attackerKilledStat = attacker.killed + ripost.killed
+    attackerMoraleAfter = ripost.defenderMoraleAfter
+    attackerRoutedAfter = ripost.defenderRouted
+    attackerKilled = ripost.defenderKilled
+    defenderMoraleAfter = ripost.attackerMoraleAfter
+    defenderRoutedAfter = ripost.attackerRouted
+  }
+
+  // Coût d'effort : −1 morale attaquant.
+  attackerMoraleAfter = Math.max(0, attackerMoraleAfter - 1)
+
+  const defenderKilled = combat.defenderKilled
+  const defenderKilledStat = defender.killed + combat.killed
+
+  // Update défenseur
+  if (defenderKilled) {
+    killedThisBatch.add(defender.id)
+    const { error } = await admin.from('units').delete().eq('id', defender.id).eq('game_id', gameId)
+    if (error) console.warn('[applyChargeOrderCombat] defender delete failed:', error.message)
+  } else {
+    const { error } = await admin
+      .from('units')
+      .update({
+        hp: combat.defenderHpAfter,
+        wounded: combat.defenderWoundedAfter,
+        effective: combat.defenderEffectiveAfter,
+        killed: defenderKilledStat,
+        morale: defenderMoraleAfter,
+        routed: defenderRoutedAfter,
+      })
+      .eq('id', defender.id)
+      .eq('game_id', gameId)
+    if (error) console.warn('[applyChargeOrderCombat] defender update failed:', error.message)
+  }
+
+  // Update attaquant (has_attacked + hp/morale post-ripost si applicable)
+  if (attackerKilled) {
+    killedThisBatch.add(attacker.id)
+    const { error } = await admin.from('units').delete().eq('id', attacker.id).eq('game_id', gameId)
+    if (error) console.warn('[applyChargeOrderCombat] attacker delete failed:', error.message)
+  } else {
+    const { error } = await admin
+      .from('units')
+      .update({
+        hp: attackerHpAfter,
+        wounded: attackerWoundedAfter,
+        effective: attackerEffectiveAfter,
+        killed: attackerKilledStat,
+        morale: attackerMoraleAfter,
+        routed: attackerRoutedAfter,
+        has_attacked: true,
+      })
+      .eq('id', attacker.id)
+      .eq('game_id', gameId)
+    if (error) console.warn('[applyChargeOrderCombat] attacker update failed:', error.message)
+  }
+
+  // INSERT game_actions (action_type = attack_melee — résolveCombat différencie via combat.attackPhase).
+  const actionType = combat.attackPhase === 'ranged' ? 'attack_ranged' : 'attack_melee'
+  const result: AttackResultV2 = {
+    attacker_id: attacker.id,
+    defender_id: defender.id,
+    kind: combat.attackPhase,
+    combat: combat as CombatResultSnapshotV2,
+    riposte: (ripost as CombatResultSnapshotV2 | null) ?? null,
+    defender_killed: defenderKilled,
+    attacker_killed: attackerKilled,
+    attacker_after: attackerKilled ? null : {
+      hp: attackerHpAfter,
+      wounded: attackerWoundedAfter,
+      morale: attackerMoraleAfter,
+      routed: attackerRoutedAfter,
+      has_attacked: true,
+      effective: attackerEffectiveAfter,
+      killed: attackerKilledStat,
+    },
+    defender_after: defenderKilled ? null : {
+      hp: combat.defenderHpAfter,
+      wounded: combat.defenderWoundedAfter,
+      morale: defenderMoraleAfter,
+      routed: defenderRoutedAfter,
+      effective: combat.defenderEffectiveAfter,
+      killed: defenderKilledStat,
+    },
+    seed,
+  }
+  const { error: actErr } = await admin.from('game_actions').insert({
+    game_id: gameId,
+    turn: currentTurn,
+    actor_user_id: ownerUserId,
+    action_type: actionType,
+    payload: { unit_id: attacker.id, target_unit_id: defender.id, order_posture_id: postureId, charge: true },
+    result,
+    seed,
+  })
+  if (actErr) console.warn('[applyChargeOrderCombat] game_actions insert failed:', actErr.message)
+
+  // Engagement si melee non-mortelle bilatérale.
+  if (combat.attackPhase !== 'ranged' && !defenderKilled && !attackerKilled) {
+    const [a, b] = [attacker.id, defender.id].sort()
+    const { error: engErr } = await admin
+      .from('engagements')
+      .insert({ game_id: gameId, unit_a_id: a, unit_b_id: b, started_turn: currentTurn })
+    if (engErr && !engErr.message.includes('duplicate')) {
+      console.warn('[applyChargeOrderCombat] engagement insert failed:', engErr.message)
+    }
   }
 }

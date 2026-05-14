@@ -1,14 +1,14 @@
+// v1.1 (14/05/2026) — Phase 3.3-bis : +camp (action) + always (trigger) — mirror src v1.1
 // v1.0 (13/05/2026) — Phase 3.2 Vague A2 : types ordres conditionnels (mirror src/engine/orders/types.ts)
 // Source de verite : src/engine/orders/types.ts. Duplication controlee (piege #12).
-// PORT FROM src/engine/orders/types.ts — DO NOT EDIT MANUALLY (sync via PORT script ou copie miroir).
 
 import type { Cube } from '../hex/index.ts'
 import type { UnitState } from '../units.ts'
 
 type UnitId = string
 
-export type OrderTriggerKind = 'on_attacked' | 'enemy_in_range' | 'cohesion_broken' | 'enemy_los'
-export type OrderActionKind = 'charge' | 'fire' | 'retreat' | 'hold'
+export type OrderTriggerKind = 'on_attacked' | 'enemy_in_range' | 'cohesion_broken' | 'enemy_los' | 'always'
+export type OrderActionKind = 'charge' | 'fire' | 'retreat' | 'hold' | 'camp'
 
 export interface OrderTrigger {
   readonly kind: OrderTriggerKind

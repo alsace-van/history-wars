@@ -20,8 +20,8 @@ export interface UnitOrderRow {
   created_at: string
 }
 
-export type OrderTriggerKindUI = 'on_attacked' | 'enemy_in_range' | 'cohesion_broken' | 'enemy_los'
-export type OrderActionKindUI = 'charge' | 'fire' | 'retreat' | 'hold'
+export type OrderTriggerKindUI = 'on_attacked' | 'enemy_in_range' | 'cohesion_broken' | 'enemy_los' | 'always'
+export type OrderActionKindUI = 'charge' | 'fire' | 'retreat' | 'hold' | 'camp'
 
 export interface SubmitOrdersOp {
   op: 'create' | 'update' | 'delete'

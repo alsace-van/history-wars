@@ -1,6 +1,8 @@
+// v1.1 (14/05/2026) — Phase 4 Lot A5 : prop onAddBot (host) + AddBotButton si slot vacant
 // v1.0 (09/05/2026) — Panneau d'equipe extrait de Game.tsx pour le sous-lot 6B
 import type { GamePlayerWithProfile, PlayerRole, Team } from '@/types/game'
 import { PlayerSlot, EmptyPlayerSlot } from '@ui/game/PlayerSlot'
+import { AddBotButton, type BotDifficulty } from '@ui/game/AddBotButton'
 import { cn } from '@lib/cn'
 
 export interface SlotData {
@@ -19,6 +21,8 @@ interface TeamPanelProps {
   onKick: (playerId: string) => void
   /** Compact = sidebar mode (Lot 6B) */
   compact?: boolean
+  /** Phase 4 — host peut ajouter un bot dans un slot vacant. Visible si prop fournie. */
+  onAddBot?: (team: Team, difficulty: BotDifficulty) => Promise<void> | void
 }
 
 export function TeamPanel({
@@ -29,6 +33,7 @@ export function TeamPanel({
   canKick,
   onKick,
   compact = false,
+  onAddBot,
 }: TeamPanelProps) {
   const filled = slots.filter(s => s.player !== null).length
   const total = slots.length
@@ -79,6 +84,10 @@ export function TeamPanel({
         ) : (
           <EmptyPlayerSlot key={s.index} role={s.role} />
         )
+      )}
+
+      {onAddBot && slots.some(s => s.player === null) && (
+        <AddBotButton onAddBot={diff => onAddBot(team, diff)} />
       )}
     </div>
   )

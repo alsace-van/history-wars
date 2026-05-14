@@ -159,7 +159,8 @@ export function useCombatNotifications({
 
   useRealtime({
     channelName: gameId ? `combat-notif:${gameId}` : '',
-    enabled: enabled && !!gameId && !!viewerTeam,
+    // Phase 4 : viewerTeam=null = spectateur, hook actif quand même pour voir TOUS les combats.
+    enabled: enabled && !!gameId,
     postgresChanges: gameId
       ? [
           {
@@ -198,23 +199,30 @@ function parseAction(
   playerTeams: Map<string, Team>,
   units: ReadonlyArray<UnitState>,
 ): CombatNotification | null {
-  if (!viewerTeam) return null
+  // Phase 4 : viewerTeam=null = mode spectateur → on affiche TOUS les combats.
+  const isSpectator = !viewerTeam
   const newRow = (payload as { new?: GameActionRow }).new
   if (!newRow) return null
 
   const t = newRow.action_type
   if (t !== 'attack_melee' && t !== 'attack_ranged') return null
-  if (!newRow.actor_user_id) return null
-
-  const attackerTeam = playerTeams.get(newRow.actor_user_id)
-  if (!attackerTeam) return null
-
-  const isMyAttack = attackerTeam === viewerTeam
-  const defenderTeam: Team = attackerTeam === 'blue' ? 'red' : 'blue'
-  const isMyDefense = defenderTeam === viewerTeam
-  if (!isMyAttack && !isMyDefense) return null
 
   const result = newRow.result as AttackResultSnapshot | null
+  // Phase 4 : bot a actor_user_id=null. On déduit le camp via l'attaquant dans units.
+  let attackerTeam: Team | undefined
+  if (newRow.actor_user_id) {
+    attackerTeam = playerTeams.get(newRow.actor_user_id)
+  } else if (result) {
+    const attackerUnit = units.find(u => u.id === result.attacker_id)
+    attackerTeam = attackerUnit?.team
+  }
+  if (!attackerTeam) return null
+
+  const isMyAttack = !isSpectator && attackerTeam === viewerTeam
+  const defenderTeam: Team = attackerTeam === 'blue' ? 'red' : 'blue'
+  const isMyDefense = !isSpectator && defenderTeam === viewerTeam
+  if (!isSpectator && !isMyAttack && !isMyDefense) return null
+
   if (!result || !result.combat) return null
 
   const combat = result.combat

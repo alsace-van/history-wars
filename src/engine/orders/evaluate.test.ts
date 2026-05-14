@@ -6,7 +6,7 @@ import { cube, cubeKey, spiral } from '../hex'
 import type { CohesionState } from '../cohesion'
 import type { UnitState } from '../units'
 import { evaluateOrders } from './evaluate'
-import { evaluateTrigger, isCohesionBroken, isEnemyInRange, isEnemyLos, isOnAttacked } from './triggers'
+import { evaluateTrigger, isAlways, isCohesionBroken, isEnemyInRange, isEnemyLos, isOnAttacked } from './triggers'
 import { pickChargeTarget, pickFireTarget, pickRetreatHex } from './actions'
 import type { EvaluateOrdersContext, Posture } from './types'
 
@@ -275,5 +275,59 @@ describe('engine/orders — evaluateOrders', () => {
     const ctx = buildCtx([u], { engaged: ['u'] })
     const p1 = makePosture({ id: 'p1', unitId: 'u', priority: 1, active: false, trigger: { kind: 'on_attacked' }, action: { kind: 'hold' } })
     expect(evaluateOrders(u, [p1], ctx)).toBeNull()
+  })
+
+  // Phase 3.3-bis — trigger 'always' + action 'camp'
+  it('21. isAlways retourne true quel que soit le contexte', () => {
+    const u = makeUnit({ id: 'u' })
+    const ctx = buildCtx([u])
+    expect(isAlways(u, ctx)).toBe(true)
+  })
+
+  it('22. Posture (always, camp) déclenche toujours, resolvedAction=camp sans cible', () => {
+    const u = makeUnit({ id: 'u' })
+    const ctx = buildCtx([u])
+    const p = makePosture({
+      id: 'p', unitId: 'u', priority: 1,
+      trigger: { kind: 'always' }, action: { kind: 'camp' },
+    })
+    const result = evaluateOrders(u, [p], ctx)
+    expect(result?.posture.id).toBe('p')
+    expect(result?.resolvedAction).toBe('camp')
+    expect(result?.targetUnitId).toBeNull()
+    expect(result?.destHex).toBeNull()
+    expect(result?.skipped).toBeUndefined()
+  })
+
+  it('23. Priorité : on_attacked → retreat (P1) override always → camp (P2) si engagé', () => {
+    const u = makeUnit({ id: 'u' })
+    const ctx = buildCtx([u], { engaged: ['u'] })
+    const p1 = makePosture({
+      id: 'p1', unitId: 'u', priority: 1,
+      trigger: { kind: 'on_attacked' }, action: { kind: 'retreat' },
+    })
+    const p2 = makePosture({
+      id: 'p2', unitId: 'u', priority: 2,
+      trigger: { kind: 'always' }, action: { kind: 'camp' },
+    })
+    const result = evaluateOrders(u, [p1, p2], ctx)
+    expect(result?.posture.id).toBe('p1')
+    expect(result?.resolvedAction).toBe('retreat')
+  })
+
+  it('24. always → camp s\'exécute en P2 quand P1 (on_attacked) ne fire pas', () => {
+    const u = makeUnit({ id: 'u' })
+    const ctx = buildCtx([u])  // pas engagé
+    const p1 = makePosture({
+      id: 'p1', unitId: 'u', priority: 1,
+      trigger: { kind: 'on_attacked' }, action: { kind: 'retreat' },
+    })
+    const p2 = makePosture({
+      id: 'p2', unitId: 'u', priority: 2,
+      trigger: { kind: 'always' }, action: { kind: 'camp' },
+    })
+    const result = evaluateOrders(u, [p1, p2], ctx)
+    expect(result?.posture.id).toBe('p2')
+    expect(result?.resolvedAction).toBe('camp')
   })
 })
