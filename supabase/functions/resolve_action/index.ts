@@ -1,3 +1,4 @@
+// v2.3 (16/05/2026) — Phase 2.6 : dispatcher charge_stay / charge_retreat (menu post-charge cav)
 // v2.2 (11/05/2026) — Phase 2.6 Vague B : dispatcher break_combat (rupture engagement)
 // v2.1 (11/05/2026) — Phase 2.5 B : dispatcher retreat / surrender / suicide_attack
 // v2.0 (10/05/2026) — Phase 2 2C.2 : refacto en handlers (move, attack v2, split, merge) — dispatcher seul
@@ -19,6 +20,8 @@ import {
   type SurrenderPayload,
   type SuicidePayload,
   type BreakCombatPayload,
+  type ChargeStayPayload,
+  type ChargeRetreatPayload,
 } from '../_shared/types.ts'
 import { handleMove } from './_handlers/handleMove.ts'
 import { handleAttack } from './_handlers/handleAttack.ts'
@@ -28,6 +31,8 @@ import { handleRetreat } from './_handlers/handleRetreat.ts'
 import { handleSurrender } from './_handlers/handleSurrender.ts'
 import { handleSuicide } from './_handlers/handleSuicide.ts'
 import { handleBreakCombat } from './_handlers/handleBreakCombat.ts'
+import { handleChargeStay } from './_handlers/handleChargeStay.ts'
+import { handleChargeRetreat } from './_handlers/handleChargeRetreat.ts'
 import {
   loadCombatConfig,
   loadTerrainMap,
@@ -35,7 +40,7 @@ import {
   type UnitRow,
 } from './_handlers/_common.ts'
 
-const TAG = '[resolve_action v2.2]'
+const TAG = '[resolve_action v2.3]'
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') {
@@ -147,7 +152,7 @@ Deno.serve(async (req: Request) => {
         loadCombatConfig(admin),
       ])
       return await handleAttack({
-        admin, gameId, userId: user.userId, userTeam, currentTurn,
+        admin, gameId, userId: user.userId, userTeam, currentTurn, boardRadius,
         units, terrainMap, combatConfig, clientActionId,
         kindRequested: actionType === 'attack_melee' ? 'melee' : 'ranged',
         payload: body.action.payload as Partial<AttackPayload> | null,
@@ -205,6 +210,23 @@ Deno.serve(async (req: Request) => {
         admin, gameId, userId: user.userId, userTeam, currentTurn,
         units, clientActionId,
         payload: body.action.payload as Partial<BreakCombatPayload> | null,
+      })
+    }
+
+    // Phase 2.6 — menu post-charge cavalerie (Rester / Replier 1 hex)
+    if (actionType === 'charge_stay') {
+      return await handleChargeStay({
+        admin, gameId, userId: user.userId, userTeam, currentTurn,
+        units, clientActionId,
+        payload: body.action.payload as Partial<ChargeStayPayload> | null,
+      })
+    }
+
+    if (actionType === 'charge_retreat') {
+      return await handleChargeRetreat({
+        admin, gameId, userId: user.userId, userTeam, currentTurn, boardRadius,
+        units, clientActionId,
+        payload: body.action.payload as Partial<ChargeRetreatPayload> | null,
       })
     }
 

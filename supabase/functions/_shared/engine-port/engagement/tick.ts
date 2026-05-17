@@ -1,3 +1,4 @@
+// v1.3 (16/05/2026) — Phase 2.6 : from_charge → malus defense ×0.8 + attrition ×1.3 côté cavalerie (mirror src v1.3)
 // v1.2 (14/05/2026) — Phase 3.3 : bonus défensif hold appliqué côté receveur (préparation + terrain doublé)
 // v1.1 (13/05/2026) — Phase 3.2-bis : réduction dégâts côté dominant (mirror src v1.1)
 // v1.0 (11/05/2026) — Phase 2.6 Vague B : port engagement/tick pour Deno
@@ -17,6 +18,8 @@ import {
   ENGAGEMENT_MORALE_DELTA_PER_TURN,
   ENGAGEMENT_VARIANCE_LOW,
   ENGAGEMENT_VARIANCE_RANGE,
+  FROM_CHARGE_ATTRITION_MULT,
+  FROM_CHARGE_DEFENSE_MULT,
   RESERVE_RELIEF_RATE,
   type EngagementDissolutionReason,
   type EngagementSideResult,
@@ -35,6 +38,8 @@ function computeAttritionDamage(
   rng: () => number,
   config: CombatConfig,
   defenderOnHold = false,
+  /** Phase 2.6 — true si le défenseur est une cavalerie pinnée via charge_stay. */
+  defenderFromCharge = false,
 ): { rawDamage: number; rollUsed: number; damageNoFloor: number } {
   const aStats = resolveUnitStatsV2(attacker.kind, attacker.subKind)
   const dStats = resolveUnitStatsV2(defender.kind, defender.subKind)
@@ -63,12 +68,16 @@ function computeAttritionDamage(
     * caps.atkPenalty
     * attackerMoraleMult
 
+  // Phase 2.6 — malus défense cavalerie pinnée après charge_stay.
+  const fromChargeDefenseMult = defenderFromCharge ? FROM_CHARGE_DEFENSE_MULT : 1.0
+
   const resistance =
     menEngagedDefender
     * dStats.defense
     * holdDefenseMult
     * defTerrainMult
     * defenderMoraleMult
+    * fromChargeDefenseMult
 
   const attackPossible = aStats.attack > 0 && matchupCoef > 0
   const attritionRate = config.baseAttritionRate ?? DEFAULT_BASE_ATTRITION_RATE
@@ -94,12 +103,19 @@ function applyAttritionToSide(
   contactCap: number,
   support: SupportCount | undefined,
   rollUsed: number,
+  /** Phase 2.6 — true si l'unité est une cavalerie pinnée via charge_stay. */
+  fromCharge = false,
 ): EngagementSideResult {
   const menEngagedBefore = Math.min(unit.effective, contactCap)
   const reserveCap = Math.max(0, unit.effective - menEngagedBefore)
   const reliefCap = Math.round(reserveCap * RESERVE_RELIEF_RATE)
   const absorbCapacity = menEngagedBefore + reliefCap
-  const adjustedDamage = Math.min(damageRaw, absorbCapacity)
+
+  // Phase 2.6 — multiplicateur attrition cavalerie pinnée (avant clamp).
+  const damageAmplified = fromCharge
+    ? Math.round(damageRaw * FROM_CHARGE_ATTRITION_MULT)
+    : damageRaw
+  const adjustedDamage = Math.min(damageAmplified, absorbCapacity)
 
   const split = splitCasualties(adjustedDamage, unit.effective)
   const effectiveAfter = unit.effective - split.actualDamage
@@ -136,8 +152,13 @@ export function resolveEngagementTick(input: EngagementTickInput): EngagementTic
   const caps = TERRAIN_CAPS[input.terrain]
   const contactCap = caps.contactCap
 
-  const aToB = computeAttritionDamage(input.sideA, input.sideB, input.terrain, input.rng, config, input.onHoldB)
-  const bToA = computeAttritionDamage(input.sideB, input.sideA, input.terrain, input.rng, config, input.onHoldA)
+  // Phase 2.6 — flag from_charge appliqué uniquement aux cavaleries.
+  const fromCharge = input.fromCharge === true
+  const aIsCav = fromCharge && input.sideA.kind === 'C'
+  const bIsCav = fromCharge && input.sideB.kind === 'C'
+
+  const aToB = computeAttritionDamage(input.sideA, input.sideB, input.terrain, input.rng, config, input.onHoldB, bIsCav)
+  const bToA = computeAttritionDamage(input.sideB, input.sideA, input.terrain, input.rng, config, input.onHoldA, aIsCav)
 
   // Phase 3.2-bis : réduction côté dominant (cf. src/engine/engagement/tick.ts v1.1).
   const eps = 1
@@ -147,8 +168,8 @@ export function resolveEngagementTick(input: EngagementTickInput): EngagementTic
   const damageToA = Math.round(bToA.rawDamage * reductionA)
   const damageToB = Math.round(aToB.rawDamage * reductionB)
 
-  const resultA = applyAttritionToSide(input.sideA, damageToA, contactCap, input.supportA, bToA.rollUsed)
-  const resultB = applyAttritionToSide(input.sideB, damageToB, contactCap, input.supportB, aToB.rollUsed)
+  const resultA = applyAttritionToSide(input.sideA, damageToA, contactCap, input.supportA, bToA.rollUsed, aIsCav)
+  const resultB = applyAttritionToSide(input.sideB, damageToB, contactCap, input.supportB, aToB.rollUsed, bIsCav)
 
   const dissolved = resultA.dissolved || resultB.dissolved
   let dissolutionReason: EngagementDissolutionReason

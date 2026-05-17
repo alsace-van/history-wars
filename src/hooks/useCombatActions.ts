@@ -21,7 +21,18 @@ export interface MoveAction {
 
 export interface AttackAction {
   type: 'attack_ranged' | 'attack_melee'
-  payload: { unit_id: string; target_unit_id: string }
+  payload: {
+    unit_id: string
+    target_unit_id: string
+    /** Phase 2.6 refonte — pré-move atomique (move + attack en 1 action). */
+    move_dest?: { q: number; r: number }
+    move_path?: ReadonlyArray<{ q: number; r: number; s: number }>
+    /** Phase 2.6 UX — conservé pour compat fire orders bot (désormais peu utilisé client). */
+    charge_intent?: {
+      post_charge: 'stay' | 'retreat' | 'skip_charge'
+      retreat_dest?: { q: number; r: number }
+    }
+  }
 }
 
 /** Phase 2 2C.4 : split d'un pion en 2 selon ratio preset. */
@@ -100,6 +111,18 @@ export interface BreakCombatAction {
   payload: { unit_id: string }
 }
 
+/** Phase 2.6 — menu post-charge cavalerie : Rester en mêlée. */
+export interface ChargeStayAction {
+  type: 'charge_stay'
+  payload: { unit_id: string }
+}
+
+/** Phase 2.6 — menu post-charge cavalerie : Replier 1 hex (dest s'éloigne du défenseur). */
+export interface ChargeRetreatAction {
+  type: 'charge_retreat'
+  payload: { unit_id: string; dest_q: number; dest_r: number }
+}
+
 export type GameAction =
   | MoveAction
   | AttackAction
@@ -109,6 +132,8 @@ export type GameAction =
   | SurrenderAction
   | SuicideAction
   | BreakCombatAction
+  | ChargeStayAction
+  | ChargeRetreatAction
 
 /** Reponse normalisee : ok=true + data, OU ok=false + message UI (toast deja affiche). */
 export interface ActionResponse<T = unknown> {
@@ -230,6 +255,8 @@ function humanizeError(code: string | undefined, fallback: string | undefined): 
     SUICIDE_CAMP_TOO_LOW: 'Ton camp est trop affaibli pour un sacrifice utile. La capitulation s\'impose.',
     // Phase 2.6 — engagement persistant
     NOT_ENGAGED: 'Cette unite n\'est pas engagee. Aucun combat a rompre.',
+    NO_PENDING_POST_CHARGE: 'Aucune decision post-charge en attente pour cette unite.',
+    RETREAT_DEST_TOO_CLOSE: 'La case de repli doit s\'eloigner du defenseur.',
     INTERNAL: 'Erreur serveur, reessaie.',
     NETWORK: 'Probleme reseau.',
   }

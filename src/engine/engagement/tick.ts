@@ -1,3 +1,4 @@
+// v1.3 (16/05/2026) — Phase 2.6 : from_charge → malus defense ×0.8 + attrition ×1.3 côté cavalerie
 // v1.2 (14/05/2026) — Phase 3.3 : bonus défensif hold appliqué côté receveur (préparation + terrain doublé)
 // v1.1 (13/05/2026) — Phase 3.2-bis : réduction dégâts subis côté dominant (récompense victoire tactique)
 // v1.0 (11/05/2026) — Phase 2.6 Vague A : tick d'attrition continue (dégâts bilatéraux + relève 10%)
@@ -17,6 +18,8 @@ import {
   ENGAGEMENT_MORALE_DELTA_PER_TURN,
   ENGAGEMENT_VARIANCE_LOW,
   ENGAGEMENT_VARIANCE_RANGE,
+  FROM_CHARGE_ATTRITION_MULT,
+  FROM_CHARGE_DEFENSE_MULT,
   RESERVE_RELIEF_RATE,
   type EngagementSideResult,
   type EngagementTickInput,
@@ -54,6 +57,12 @@ function computeAttritionDamage(
   rng: () => number,
   config: CombatConfig,
   defenderOnHold = false,
+  /**
+   * Phase 2.6 — true si le défenseur est une cavalerie pinnée via charge_stay
+   * (`engagements.from_charge=true` + defender.kind === 'C'). Applique
+   * FROM_CHARGE_DEFENSE_MULT (≤ 1.0) sur sa stat défense.
+   */
+  defenderFromCharge = false,
 ): { rawDamage: number; rollUsed: number; damageNoFloor: number } {
   const aStats = resolveUnitStatsV2(attacker.kind, attacker.subKind)
   const dStats = resolveUnitStatsV2(defender.kind, defender.subKind)
@@ -82,12 +91,16 @@ function computeAttritionDamage(
     * caps.atkPenalty
     * attackerMoraleMult
 
+  // Phase 2.6 — malus défense cavalerie pinnée après charge_stay.
+  const fromChargeDefenseMult = defenderFromCharge ? FROM_CHARGE_DEFENSE_MULT : 1.0
+
   const resistance =
     menEngagedDefender
     * dStats.defense
     * holdDefenseMult
     * defTerrainMult
     * defenderMoraleMult
+    * fromChargeDefenseMult
 
   // Plancher d'attrition naturelle (cf. contact.ts v1.1 — Phase 2.5 balance)
   const attackPossible = aStats.attack > 0 && matchupCoef > 0
@@ -133,12 +146,23 @@ function applyAttritionToSide(
   contactCap: number,
   support: SupportCount | undefined,
   rollUsed: number,
+  /**
+   * Phase 2.6 — true si l'unité est une cavalerie pinnée via charge_stay
+   * (`fromCharge && unit.kind === 'C'`). Amplifie l'attrition appliquée ce tick
+   * (avant le clamp d'absorbCapacity) via FROM_CHARGE_ATTRITION_MULT.
+   */
+  fromCharge = false,
 ): EngagementSideResult {
   const menEngagedBefore = Math.min(unit.effective, contactCap)
   const reserveCap = Math.max(0, unit.effective - menEngagedBefore)
   const reliefCap = Math.round(reserveCap * RESERVE_RELIEF_RATE)
   const absorbCapacity = menEngagedBefore + reliefCap
-  const adjustedDamage = Math.min(damageRaw, absorbCapacity)
+
+  // Phase 2.6 — multiplicateur attrition cavalerie pinnée (avant clamp).
+  const damageAmplified = fromCharge
+    ? Math.round(damageRaw * FROM_CHARGE_ATTRITION_MULT)
+    : damageRaw
+  const adjustedDamage = Math.min(damageAmplified, absorbCapacity)
 
   const split = splitCasualties(adjustedDamage, unit.effective)
   const effectiveAfter = unit.effective - split.actualDamage
@@ -194,9 +218,16 @@ export function resolveEngagementTick(input: EngagementTickInput): EngagementTic
   const caps = TERRAIN_CAPS[input.terrain]
   const contactCap = caps.contactCap
 
-  // 1. Dégâts bilatéraux calculés sur le snapshot d'avant tick (symétrie)
-  const aToB = computeAttritionDamage(input.sideA, input.sideB, input.terrain, input.rng, config, input.onHoldB)
-  const bToA = computeAttritionDamage(input.sideB, input.sideA, input.terrain, input.rng, config, input.onHoldA)
+  // Phase 2.6 — flags from_charge appliqués UNIQUEMENT au côté cavalerie de
+  // la paire. Le défenseur (infanterie/artillerie) n'a aucun malus.
+  const fromCharge = input.fromCharge === true
+  const aIsCav = fromCharge && input.sideA.kind === 'C'
+  const bIsCav = fromCharge && input.sideB.kind === 'C'
+
+  // 1. Dégâts bilatéraux calculés sur le snapshot d'avant tick (symétrie).
+  //    Quand A frappe B : si B est la cav pinnée, sa défense est réduite (×0.8).
+  const aToB = computeAttritionDamage(input.sideA, input.sideB, input.terrain, input.rng, config, input.onHoldB, bIsCav)
+  const bToA = computeAttritionDamage(input.sideB, input.sideA, input.terrain, input.rng, config, input.onHoldA, aIsCav)
 
   // 2. Phase 3.2-bis — réduction côté dominant. dominance = ratio damageNoFloor (A→B / B→A).
   //    Si A inflige bien plus de dégâts qu'il en reçoit, A est dominant tactique
@@ -208,9 +239,10 @@ export function resolveEngagementTick(input: EngagementTickInput): EngagementTic
   const damageToA = Math.round(bToA.rawDamage * reductionA)
   const damageToB = Math.round(aToB.rawDamage * reductionB)
 
-  // 3. Application : sideA subit damageToA, sideB subit damageToB
-  const resultA = applyAttritionToSide(input.sideA, damageToA, contactCap, input.supportA, bToA.rollUsed)
-  const resultB = applyAttritionToSide(input.sideB, damageToB, contactCap, input.supportB, aToB.rollUsed)
+  // 3. Application : sideA subit damageToA, sideB subit damageToB.
+  //    Si A est la cav pinnée, son attrition est amplifiée (×1.3), idem B.
+  const resultA = applyAttritionToSide(input.sideA, damageToA, contactCap, input.supportA, bToA.rollUsed, aIsCav)
+  const resultB = applyAttritionToSide(input.sideB, damageToB, contactCap, input.supportB, aToB.rollUsed, bIsCav)
 
   // 4. Dissolution
   const dissolved = resultA.dissolved || resultB.dissolved

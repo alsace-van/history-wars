@@ -1,3 +1,4 @@
+// v1.2 (16/05/2026) — Phase 2.6 : fromCharge flag + FROM_CHARGE_DEFENSE/ATTRITION_MULT (mirror src v1.3)
 // v1.1 (14/05/2026) — Phase 3.3 : EngagementTickInput accepte onHoldA/onHoldB (bonus défensif posture)
 // v1.0 (11/05/2026) — Phase 2.6 Vague B : port engagement/types pour Deno
 // Source de verite : src/engine/engagement/types.ts. Duplication controlee (piege #12).
@@ -48,6 +49,8 @@ export interface EngagementTickInput {
   /** Phase 3.3 — posture hold côté A/B (bonus défensif appliqué quand l'autre frappe). */
   onHoldA?: boolean
   onHoldB?: boolean
+  /** Phase 2.6 — engagement issu de charge_stay (active malus cavalerie pinnée). */
+  fromCharge?: boolean
 }
 
 export interface EngagementTickResult {
@@ -75,3 +78,6 @@ export const ENGAGEMENT_VARIANCE_RANGE = 0.10
 export const ENGAGEMENT_MORALE_DELTA_PER_TURN = -1
 // Phase 3.2-bis : plancher du multiplicateur de dégâts subis côté dominant.
 export const DOMINANCE_DAMAGE_FLOOR = 0.25
+// Phase 2.6 — malus cavalerie pinnée via charge_stay (mirror src).
+export const FROM_CHARGE_DEFENSE_MULT = 0.8
+export const FROM_CHARGE_ATTRITION_MULT = 1.3

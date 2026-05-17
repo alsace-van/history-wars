@@ -19,6 +19,12 @@ export interface CreateEngagementArgs {
   attackerId: string
   defenderId: string
   currentTurn: number
+  /**
+   * Phase 2.6 UX : si true, marque l'engagement comme issu de charge_stay
+   * (active malus défense×0.8 + attrition×1.3 côté cavalerie dans tick.ts).
+   * Default false = engagement standard issu d'une mêlée non-mortelle.
+   */
+  fromCharge?: boolean
 }
 
 /**
@@ -38,7 +44,7 @@ export interface CreateEngagementArgs {
 export async function createEngagementAfterMelee(
   args: CreateEngagementArgs,
 ): Promise<EngagementSnapshot | null> {
-  const { admin, gameId, attackerId, defenderId, currentTurn } = args
+  const { admin, gameId, attackerId, defenderId, currentTurn, fromCharge = false } = args
   const { unitAId, unitBId } = normalizePair(attackerId, defenderId)
 
   // Tentative INSERT. Si conflit UNIQUE (engagement existant), on récupère.
@@ -49,8 +55,9 @@ export async function createEngagementAfterMelee(
       unit_a_id: unitAId,
       unit_b_id: unitBId,
       started_turn: currentTurn,
+      from_charge: fromCharge,
     })
-    .select('id, game_id, unit_a_id, unit_b_id, started_turn')
+    .select('id, game_id, unit_a_id, unit_b_id, started_turn, from_charge')
     .maybeSingle()
 
   if (!error && data) {

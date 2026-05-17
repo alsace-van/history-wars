@@ -2,6 +2,145 @@
 
 ---
 
+## Session 25 &mdash; 17/05/2026 &mdash; Phase 2.6 stabilisation UX charge cav + polish anim générique
+
+**Session de bugfix/polish UX exclusivement.** Aucune nouvelle phase. Stabilisation du flow charge cav (preview pré-commit Phase 2.6 v1.0 livrée session 18-19) + amélioration anim générique applicable à toutes les unités.
+
+### 1. Charge cav : preview retreat ne s'ouvrait pas au 1er clic (stale state)
+
+**Symptôme** : 1er clic sur ennemi avec cav sélectionnée → attaque directe sans afficher les cases bleues de repli.
+
+**Cause** : `useChargePreview.submitWithIntent` ne resettait `preview` que si `res.ok` (refus serveur silencieux laissait l'état). Au clic suivant, `chargePreviewTargetId` truthy → branch `commitChargeStay` ligne 116 de useBattleClickHandlers → attaque immédiate sans nouvelle preview.
+
+**Fix** [`src/hooks/useChargePreview.ts`](src/hooks/useChargePreview.ts) **v1.1** :
+- Reset `preview` après chaque submit, QUEL QUE SOIT `res.ok`.
+- Auto-cancel preview sur changement de `selectedUnit?.id`.
+- Auto-cancel si la cible disparaît de `unitStates` (mort, hors vision).
+
+### 2. Retreat post-charge ne s'exécutait pas si défenseur tué (one-shot charge)
+
+**Symptôme** : utilisateur sélectionne case de repli, cav exécute la charge, défenseur tué par la charge (bonus ×1.3-1.5 souvent fatal), la cav reste sur landingPos au lieu de se replier.
+
+**Cause** : [`supabase/functions/resolve_action/_handlers/handleAttack.ts`](supabase/functions/resolve_action/_handlers/handleAttack.ts) ligne 433 exigeait `!defenderKilled && !attackerKilled` pour entrer dans le bloc retreat.
+
+**Fix** **v1.9** : le retreat hit-and-run s'exécute **même si defenderKilled** (c'est le sens tactique historique du hit-and-run). `attackerKilled` reste un blocker (pas de pion à déplacer). Si defenderKilled + intent='stay' → no-op (pas d'engagement possible).
+
+**⚠️ Redéployer EF** : `npx supabase functions deploy resolve_action --project-ref abhbkdyoknrsdavimbpr` (fait par user).
+
+### 3. Position retreat n'apparaissait visuellement qu'en fin de tour
+
+**Symptôme** : EF exécutait bien le retreat (BDD updated), mais le pion restait visuellement figé à landingPos jusqu'au prochain end_turn.
+
+**Cause** : [`src/ui/pages/Game.tsx`](src/ui/pages/Game.tsx) `useChargePreview.onActionCompleted` appelait `refresh()` (table `games`) au lieu de `refreshUnits()` (table `units`). Realtime sur 3 UPDATEs successifs (pré-move, combat, retreat) peut être dédupliqué par Supabase → 3e event jamais reçu. Seul le `useEffect refreshUnits` ligne 138 (déclenché par changement turn_number) resyncait la position.
+
+**Fix Game.tsx** : ajout de `void refreshUnits()` dans `onActionCompleted` de `useChargePreview`. Déplacement de `useUnitPathAnimation()` plus haut pour exposer `setUnitPaths` à `useChargePreview` (cf. fix 4).
+
+### 4. Pré-move charge non animé (le pion sautait directement)
+
+**Symptôme** : la cav se téléportait sur la case de repli sans qu'on voie le galop vers l'ennemi.
+
+**Cause** : `useChargePreview` ne passait pas le `meta.path` à `setUnitPaths` (système d'animation lerp segment-par-segment).
+
+**Fix** [`src/hooks/useChargePreview.ts`](src/hooks/useChargePreview.ts) **v1.2** : nouvel arg optionnel `setUnitPaths`. Dans `submitWithIntent`, avant le submit : injection du path complet dans le Map d'animations. Mirror exact de `useBattleClickHandlers.handleUnitClick` ligne 172-178 pour les attaques non-charge.
+
+### 5. Pion figé à landingPos après animation charge (anim retreat absente)
+
+**Symptôme** : même après fix 3, le pion arrivait à landingPos puis restait figé. Le retreat n'apparaissait qu'à la prochaine action.
+
+**Cause** : [`src/render/units/UnitPlaceholder.tsx`](src/render/units/UnitPlaceholder.tsx) `useEffect` lerp ligne 182 **skip si `animatingRef.current=true`**. Quand Realtime délivre la position retreat PENDANT l'anim charge → useEffect skip → nouvelle position non appliquée. À la fin de l'anim, rien ne re-déclenche le useEffect (targetPos n'a pas changé entre temps).
+
+**Fix UnitPlaceholder v2.15** : à la fin de l'animation path, comparer position finale vs `targetPos` courant. Si différent, déclencher un lerp direct vers la nouvelle cible.
+
+### 6. Vitesse retreat trop rapide + pas de temps d'attaque visible
+
+**Symptôme** : le retreat s'exécutait en 300ms quelque soit la distance (= sprinter olympique sur 3 hex), et aucune pause à landingPos pour voir l'attaque.
+
+**Fix UnitPlaceholder v2.16** :
+- **Pause "impact attaque" 700ms** à l'arrivée landingPos avant le lerp retreat (via `segStartTime = performance.now() + 700` + clamp `t = Math.max(0, ...)`).
+- **Durée du lerp retreat proportionnelle** à la distance hex × vitesse kind (cav = 450ms/hex au lieu de 300ms fixe). Approximation : `hexDist = dist3D / (hexSize * 1.5)` (flat-top).
+- Min 300ms pour les déplacements très courts.
+
+Résultat : galop charge → pause 700ms (combat visible) → repli à vitesse galop (~450ms/hex).
+
+### 7. Anneau jaune (march) vs orange (charge) — incohérence apparente
+
+**Constat** : sur configurations de 2-3 ennemis collés côte à côte, certains apparaissent en charge (orange) et d'autres en march (jaune) alors qu'ils semblent géométriquement alignés.
+
+**Diagnostic** (`useTacticalSelection.ts` log [CAV-TARGETS] temporaire, retiré v1.16) : cohérent avec la géométrie hex flat-top. `findMeleeLandingHex` exige un voisin adjacent libre du défenseur ET un path straight depuis le cav. Si le voisin "between" est bloqué par un autre ennemi adjacent, `aStar` retourne un détour non rectiligne → `isPathStraight=false` → hint='march'.
+
+**Décision** : pas de fix, comportement gameplay cohérent. Une formation serrée se protège mutuellement contre les charges. À réévaluer une fois le relief de terrain implémenté (configurations bien alignées deviendront plus rares).
+
+### 8. Pivot vers direction de mouvement (toutes unités)
+
+**Demande** : les pions doivent pivoter vers la direction de leur déplacement (orientation globale du path, pas par segment).
+
+**Fix UnitPlaceholder v2.17 → v2.19** :
+- Sous-groupe mesh wrappé d'une ref `meshGroupRef`, rotation Y ajustée impérativement (zéro re-render).
+- Helper `applyFacing(group, fromX, fromZ, toX, toZ, kindOffset)` : `rotation.y = Math.atan2(dx, dz) + offset`.
+- Appliqué dans 3 endroits : début d'anim path (direction start→last du path complet, pas par segment), lerp direct (Realtime fallback), retreat post-charge.
+- **Calibrage par kind** via `FACING_OFFSET_BY_KIND` : la conversion Blender (Z-up, Y-forward) → glTF (Y-up, -Z-forward) introduit un offset constant qui varie selon l'export de chaque GLB.
+
+**Valeurs calibrées (17/05/2026)** :
+```ts
+const FACING_OFFSET_BY_KIND: Readonly<Record<UnitKind, number>> = {
+  I: Math.PI / 2,   // soldier.glb (MakerWorld image→3D) — offset interne ≠ Blender
+  C: 0,             // cavalier.glb (Blender) — défaut +Z OK
+  A: 0,             // canonnier/obusier.glb (Blender) — défaut +Z OK
+}
+```
+
+⚠️ Pour tout nouveau GLB ajouté, vérifier visuellement l'orientation et ajuster cette constante si besoin (valeurs typiques : `0`, `Math.PI / 2`, `Math.PI`, `-Math.PI / 2`).
+
+### Fichiers modifiés (session 25)
+
+| Fichier | Version | Résumé |
+|---|---|---|
+| `src/hooks/useChargePreview.ts` | v1.0 → **v1.2** | Reset défensif preview + setUnitPaths pré-move |
+| `src/hooks/useBattleClickHandlers.ts` | v1.6 → **v1.7** | Cleanup log diagnostic [CAV-CLICK] |
+| `src/hooks/useTacticalSelection.ts` | v1.15 (inchangé) | Log diagnostic ajouté puis retiré |
+| `src/ui/pages/Game.tsx` | (inchangé header) | refreshUnits dans onActionCompleted + reorder useUnitPathAnimation |
+| `src/render/units/UnitPlaceholder.tsx` | v2.14 → **v2.19** | Anim post-path + pause attaque + facing dynamique calibré |
+| `supabase/functions/resolve_action/_handlers/handleAttack.ts` | v1.8 → **v1.9** | Retreat hit-and-run même si defenderKilled |
+
+### Tests / validation
+
+- ✅ `npx tsc --noEmit` : EXIT=0 final
+- ✅ User a validé manuellement chaque fix en jeu (preview s'ouvre, retreat s'exécute, anim charge + pause + retreat fluide, facing OK)
+
+### Limitations & risques
+
+- **Approximation hex distance** dans UnitPlaceholder v2.16 (`dist3D / (hexSize * 1.5)`) : suffisant pour calibrer une durée d'animation mais pas exact géométriquement (flat-top diagonal vs horizontal). À refaire avec `cubeDistance` exact si problèmes visuels.
+- **Pause 700ms hardcodée** : peut être trop courte si un toast combat plus long s'affiche. À calibrer si retour user.
+- **FACING_OFFSET_BY_KIND** : si un nouveau mesh GLB est ajouté avec un export différent, le pion sera mal orienté tant qu'on n'ajoute pas son offset. Documentation inline ajoutée.
+- **Migrations 025-028 appliquées prod 16/05/2026** ✅ (vérifié via list_migrations) MAIS **untracked dans git** ❌. Faire `git add supabase/migrations/025-028.sql` en début de session 26. Détails :
+  - 025 : `units.pending_post_charge_target_id` + `engagements.from_charge` — **nécessaire** pour handleAttack v1.9.
+  - 026 : action_types `charge_stay/retreat` — legacy non utilisé par client moderne.
+  - 027 : nerf chargeMultipliers v3 → v4 (1.15/1.20/1.25 au lieu de 1.3/1.4/1.5).
+  - 028 : `is_unit_visible()` alliés ne bloquent plus LoS (anti-fog cav front-line).
+- **Handlers `handleChargeStay.ts` / `handleChargeRetreat.ts` untracked** : code legacy avant la refonte Phase 2.6 atomique. Plus consommés (client envoie `attack_melee` avec `charge_intent`). À supprimer ou conserver pour compat ?
+
+### TODOs ouverts pour la suite
+
+1. **Recalibrer offset facing** si nouveaux GLB ajoutés (vérification visuelle requise).
+2. **Améliorer feedback combat** pendant la pause 700ms (DamageFloater, particules, son).
+3. **Supprimer ou valider** les handlers untracked `handleChargeStay/Retreat.ts` + migrations 025-028.
+4. **Tester scénarios charge avec relief de terrain** (Phase à venir) — le hint march/charge sera plus discriminant avec obstacles.
+
+### État repo en fin de session
+
+Branch `main`, untracked notable :
+- `.claude/worktrees/`
+- `public/models/canonnier.glb`, `obusier.glb`
+- `src/engine/combat/v2/canCharge.ts` (legacy, non utilisé)
+- `src/engine/combat/v2/findAttackPosition.test.ts` (à compléter)
+- `src/engine/combat/v2/findAttackPosition.ts` (livré Phase 2.6)
+- `src/hooks/useChargePreview.ts`, `usePostChargeChoice.ts`
+- `src/render/units/CannonMesh.tsx`, `HowitzerMesh.tsx`
+- `supabase/functions/resolve_action/_handlers/handleChargeRetreat.ts`, `handleChargeStay.ts`
+- `supabase/migrations/025-028_*.sql`
+
+---
+
 ## Session 24 &mdash; 14/05/2026 &mdash; Phase 4-bis Lot 1 — fog of war server-side via RLS units
 
 **Anti-cheat livré.** Un client humain ne peut plus SELECT directement les units ennemies hors de son fog (vision allié + LoS Bresenham hex). Les EFs continuent d'utiliser service_role (bypass RLS) → bot et résolutions de tour pas affectées.

@@ -17,6 +17,7 @@ import { useSettings } from '@hooks/useSettings'
 import { useUnitCriticalActions } from '@hooks/useUnitCriticalActions'
 import { useBattleClickHandlers } from '@hooks/useBattleClickHandlers'
 import { useEngagement } from '@hooks/useEngagement'
+import { useChargePreview } from '@hooks/useChargePreview'
 import { useUnitSizing } from '@hooks/useUnitSizing'
 import { useGameLifecycle } from '@hooks/useGameLifecycle'
 import { useCombatToastFeed } from '@hooks/useCombatToastFeed'
@@ -51,6 +52,7 @@ import { CombatPreviewTooltip } from '@ui/game/CombatPreviewTooltip'
 import { CombatResultPanel } from '@ui/game/CombatResultPanel'
 import { TacticalScene, buildMvpUnitPlacement } from '@/render'
 import { unitRowsToInstances, unitRowsToStates } from '@render/_data/unitAdapter'
+import type { HexTileState } from '@render/types'
 import { spiral, cubeKey, type Cube } from '@engine/hex'
 import { type UnitState, type SplitRatio } from '@engine/units'
 
@@ -254,6 +256,7 @@ export function Game() {
     selectedUnit,
     reachableMap,
     targetableUnitIds,
+    attackTargets,
     tileStates,
     exhaustedUnitIds,
     splitTargetKeys,
@@ -276,6 +279,52 @@ export function Game() {
     visibleTileKeys: inProgress && myTeam ? visibleTileKeys : undefined,
     enemyVisibility: inProgress && myTeam ? enemyVisibility : undefined,
   })
+
+  // v1.2 — useUnitPathAnimation déclaré tôt pour exposer setUnitPaths à
+  // useChargePreview (anim pré-move charge).
+  const { unitPaths, setUnitPaths, onUnitPathDone } = useUnitPathAnimation()
+
+  // Phase 2.6 UX pré-commit cav — preview avant la charge atomique.
+  const chargePreview = useChargePreview({
+    gameId: gameId ?? null,
+    selectedUnit,
+    unitStates,
+    boardKeys: mvpBoardKeys,
+    submitAction,
+    setUnitPaths,
+    onActionCompleted: () => {
+      clearSelection()
+      // fix retreat cav : refresh la table `units` (position retreat), pas
+      // seulement `games`. Sinon le pion attend l'event Realtime (souvent
+      // dédupliqué par Supabase entre 3 UPDATEs successifs) et ne bouge
+      // qu'au prochain refreshUnits forcé par le changement de tour.
+      void refreshUnits()
+      void refresh()
+    },
+  })
+
+  // Override tileStates si preview active : seules les cases de repli sont visibles.
+  const finalTileStates = useMemo(() => {
+    if (!chargePreview.preview) return tileStates
+    const map = new Map<string, HexTileState>()
+    for (const k of chargePreview.preview.retreatKeys) {
+      map.set(k, 'retreat-target')
+    }
+    return map
+  }, [chargePreview.preview, tileStates])
+
+  // Phase 2.6 refonte — injecte attackHint dans chaque UnitInstance ennemie en
+  // fonction du résultat findAttackPosition. UnitPlaceholder s'en sert pour
+  // rendre un anneau coloré au-dessus du pion (charge = orange, march = ambre,
+  // march-fire = violet, melee = rouge sombre).
+  const renderUnitsWithAttackHint = useMemo(() => {
+    if (attackTargets.size === 0) return renderUnitsEnriched
+    return renderUnitsEnriched.map(u => {
+      const target = attackTargets.get(u.id)
+      if (!target) return u
+      return { ...u, attackHint: target.hint }
+    })
+  }, [renderUnitsEnriched, attackTargets])
 
   const critical = useUnitCriticalActions({
     gameId: gameId ?? null,
@@ -388,7 +437,10 @@ export function Game() {
     handleSceneMouseMove, handleUnitPointerOver, handleUnitPointerOut,
   } = useEnemyHoverTooltip({ unitStates, targetableUnitIds })
 
-  const { unitPaths, setUnitPaths, onUnitPathDone } = useUnitPathAnimation()
+  // Ref toujours à jour de la position souris (consommée par useBattleClickHandlers
+  // pour positionner ChargeChoicePopup au pointeur sans subir le retard de re-render).
+  const mousePosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
+  mousePosRef.current = mousePos
 
   // Phase 2.5 C — handlers click extraits dans useBattleClickHandlers (alléger Game.tsx)
   const { handleUnitClick, handleTileClick, handleShakenConfirm } = useBattleClickHandlers({
@@ -436,6 +488,17 @@ export function Game() {
       orderRetreatPickCallbackRef.current = null
       setOrderRetreatPickMode(false)
     },
+    // Phase 2.6 refonte — attackTargets (auto-move + attack atomique).
+    attackTargets,
+    // Phase 2.6 refonte — post-charge cav : repli implicite (cases bleues +
+    // click cav = stay + click ailleurs = stay).
+    // Phase 2.6 UX pré-commit cav — preview avant charge atomique.
+    chargePreviewTargetId: chargePreview.preview?.targetId ?? null,
+    chargePreviewRetreatKeys: chargePreview.preview?.retreatKeys,
+    openChargePreview: chargePreview.openPreview,
+    commitChargeStay: chargePreview.commitStay,
+    commitChargeRetreat: chargePreview.commitRetreat,
+    cancelChargePreview: chargePreview.cancel,
   })
 
   const { handleLeave, handleKick, handleStartBattle, handleEndTurn, handleBreakCombat } = useGameLifecycle({
@@ -446,6 +509,17 @@ export function Game() {
     selectedUnit, engagedUnitIds, navigate,
     onEndTurnSuccess: handleEndTurnSuccess,
   })
+
+  // Phase 2.6 — bloque end_turn tant qu'une décision post-charge cav est en attente.
+  // La cavalerie reste figée (champ pending_post_charge_target_id non-null en BDD),
+  // donc autoriser end_turn laisserait un état serveur incohérent au prochain tour.
+  const handleEndTurnGuarded = useCallback(async () => {
+    if (chargePreview.blockEndTurn) {
+      toast.error('Décision charge en attente : clique l\'ennemi (rester) ou une case bleue (replier).')
+      return
+    }
+    await handleEndTurn()
+  }, [chargePreview.blockEndTurn, handleEndTurn])
 
   // Modal de fin : ouverte automatiquement sur status='finished',
   // refermable une fois (l'utilisateur peut rester sur le plateau pour debriefer).
@@ -565,9 +639,9 @@ export function Game() {
             <TacticalScene
               scale={game.current_scale}
               cubes={mvpCubes}
-              units={renderUnitsEnriched}
+              units={renderUnitsWithAttackHint}
               viewerTeam={showBattle ? myTeam : null}
-              tileStates={showBattle ? tileStates : undefined}
+              tileStates={showBattle ? finalTileStates : undefined}
               selectedUnitId={selectedUnitId}
               targetableUnitIds={showBattle ? targetableUnitIds : undefined}
               mergeTargetUnitIds={showBattle ? mergeTargetUnitIds : undefined}
@@ -623,7 +697,7 @@ export function Game() {
               busy={busy}
               actionsBusy={actionsBusy}
               onStartBattle={handleStartBattle}
-              onEndTurn={handleEndTurn}
+              onEndTurn={handleEndTurnGuarded}
               onLeave={handleLeave}
             />
           </div>

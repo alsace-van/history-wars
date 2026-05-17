@@ -60,6 +60,8 @@ interface EngagementRow {
   unit_a_id: string
   unit_b_id: string
   started_turn: number
+  /** Phase 2.6 (migration 025) : true si engagement issu de charge_stay. */
+  from_charge: boolean
 }
 
 interface UnitRow {
@@ -215,10 +217,11 @@ Deno.serve(async (req: Request) => {
     const units = unitsRaw as UnitRow[]
 
     // 7.5. Phase 2.6 — Charger engagements actifs + terrain + combat_config (en //)
+    //       from_charge ajouté en migration 025 (menu post-charge cavalerie).
     const [engagementsResp, terrainResp, configResp] = await Promise.all([
       admin
         .from('engagements')
-        .select('id, game_id, unit_a_id, unit_b_id, started_turn')
+        .select('id, game_id, unit_a_id, unit_b_id, started_turn, from_charge')
         .eq('game_id', gameId),
       admin
         .from('terrain_tiles')
@@ -316,6 +319,9 @@ Deno.serve(async (req: Request) => {
         supportB,
         onHoldA: onHoldSet.has(a.id),
         onHoldB: onHoldSet.has(b.id),
+        // Phase 2.6 — engagement issu d'une charge "Rester en mêlée".
+        // Active malus defense ×0.8 + attrition ×1.3 côté cavalerie.
+        fromCharge: eng.from_charge === true,
       })
 
       // Mise à jour des snapshots mémoire (effective + morale + flags).

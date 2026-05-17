@@ -85,6 +85,16 @@ export interface EngagementTickInput {
   /** Phase 3.3 — posture hold côté A/B (bonus défensif appliqué quand l'autre frappe). */
   readonly onHoldA?: boolean
   readonly onHoldB?: boolean
+  /**
+   * Phase 2.6 — engagement issu d'une charge cavalerie restée en mêlée
+   * (action `charge_stay`). Active les malus de la cavalerie non-préparée au
+   * combat de ligne :
+   *   - defense ×{@link FROM_CHARGE_DEFENSE_MULT} côté cavalerie (≤ 1.0)
+   *   - attrition ×{@link FROM_CHARGE_ATTRITION_MULT} côté cavalerie (≥ 1.0)
+   * Appliqués uniquement sur la cavalerie (`kind === 'C'`), pas sur le défenseur.
+   * Le caller (resolve_turn) lit `engagements.from_charge` (migration 025).
+   */
+  readonly fromCharge?: boolean
 }
 
 /** Sortie d'un tick : 2 résultats + métadonnées de dissolution. */
@@ -165,3 +175,19 @@ export const ENGAGEMENT_MORALE_DELTA_PER_TURN = -1
  * Récompense la victoire tactique sans rendre le combat trivialement déséquilibré.
  */
 export const DOMINANCE_DAMAGE_FLOOR = 0.25
+
+/**
+ * Phase 2.6 — malus de la cavalerie restée en mêlée après une charge
+ * (`engagements.from_charge=true`). La cavalerie n'est pas optimisée pour le
+ * combat de ligne soutenu : son arme est l'impact ponctuel.
+ *
+ *  - Défense ×0.8 : plus vulnérable aux coups subis
+ *  - Attrition ×1.3 : ses pertes ce tick sont amplifiées
+ *
+ * Appliqués UNIQUEMENT sur la cavalerie de l'engagement (`kind === 'C'`),
+ * pas sur le défenseur (l'infanterie/artillerie n'a pas de bonus à pinner la cav).
+ * Le malus persiste tant que l'engagement vit (≠ malus initial décroissant —
+ * choix simple, à raffiner Phase 5 si besoin de "fatigue de pin").
+ */
+export const FROM_CHARGE_DEFENSE_MULT = 0.8
+export const FROM_CHARGE_ATTRITION_MULT = 1.3

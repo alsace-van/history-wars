@@ -1,3 +1,4 @@
+// v2.5 (16/05/2026) — Fix : si attaquant invisible (fog of war RLS migration 024) ou DELETE post-riposte, déduire le camp via le defender (toujours visible côté humain attaqué). Sans ce fallback, les attaques bot sur unit humaine généraient une notification null.
 // v2.4 (14/05/2026) — Phase 4 : short labels (I1/AO1…) + isBot dans CombatNotification (journal clarté)
 // v2.3 (13/05/2026) — Phase 3.3 : expose menEngaged + contactCap dans CombatNotification (clarté Thermopyles)
 // v2.2 (12/05/2026) — Sprint UX : ajout effectiveBefore dans losses (rapport AVANT/APRÈS)
@@ -216,12 +217,21 @@ function parseAction(
 
   const result = newRow.result as AttackResultSnapshot | null
   // Phase 4 : bot a actor_user_id=null. On déduit le camp via l'attaquant dans units.
+  // v2.5 fix : si l'attaquant est invisible (fog of war RLS migration 024 — bot tire
+  // d'une case que le human n'observe pas) OU déjà DELETE (riposte mortelle), units.find
+  // renvoie undefined → on bascule sur le défenseur qui est TOUJOURS dans `units`
+  // (c'est le pion du human en train de se faire taper). Camp opposé.
   let attackerTeam: Team | undefined
   if (newRow.actor_user_id) {
     attackerTeam = playerTeams.get(newRow.actor_user_id)
   } else if (result) {
     const attackerUnit = units.find(u => u.id === result.attacker_id)
-    attackerTeam = attackerUnit?.team
+    if (attackerUnit) {
+      attackerTeam = attackerUnit.team
+    } else {
+      const defenderUnit = units.find(u => u.id === result.defender_id)
+      if (defenderUnit) attackerTeam = defenderUnit.team === 'blue' ? 'red' : 'blue'
+    }
   }
   if (!attackerTeam) return null
 

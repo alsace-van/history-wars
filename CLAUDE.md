@@ -17,11 +17,12 @@ Architecture 3 niveaux (`tactical | operational | strategic`) — en MVP seul `t
 | Tâche | Fichiers à lire AVANT de coder |
 |---|---|
 | Toute tâche TACTICA | `docs/CLAUDE.md` (conventions strictes) |
-| Vue d'ensemble phases | `PLAN-MASTER-V2.md` |
-| Travail Phase 1 | `PLAN-PHASE-1-FIN-CLAUDE-CODE.md` (TASKs détaillées) |
-| Modif d'un fichier existant | `docs/dependency-map.md` § 3 (impact dépendants) |
-| Bug suspect d'être déjà vu | `docs/CLAUDE.md` § 11 (pièges connus) |
+| **Avant TOUTE modif code** | `docs/dependency-map.md` § 0 TL;DR + § 12 "modifier X, vérifier Y" |
+| Vue d'ensemble phases | `PLAN-MASTER-CHECKLIST.md` |
 | Reprise de session | `docs/WIP.md` (dernière session en tête) |
+| Bug suspect d'être déjà vu | `docs/dependency-map.md` § 10 pièges connus + `docs/CLAUDE.md` § 11 |
+| Hot-path code (combat, click, etc.) | `docs/dependency-map.md` § 11 |
+| Travail Phase 1 (legacy) | `PLAN-PHASE-1-FIN-CLAUDE-CODE.md` |
 | Backlog post-phase | `docs/BACKLOG.md` |
 
 ## 3. Règles critiques (non-négociables)
@@ -86,7 +87,7 @@ Exception : confiance < 95 % AVANT de coder → plan détaillé + questions auto
 
 Ne jamais demander un re-upload si le fichier est accessible via une de ces sources.
 
-## 7. État courant (14/05/2026 — session 24 clôturée)
+## 7. État courant (17/05/2026 — session 25 clôturée)
 
 - Phase 0 → 2.6 ✅ (cf. WIP.md sessions 1-19)
 - Phase 3.1 ✅ fog of war évolué client-side (session 20). Tag `phase-3-1-complete`.
@@ -126,15 +127,22 @@ Ne jamais demander un re-upload si le fichier est accessible via une de ces sour
 - Phase 4-bis Lot 2 ⬜ lookahead 2-3 ply (minimax léger). Auto end_turn ✅ session 23.
 - Phase 5 ⬜ profondeur tactique (formations, fatigue/endurance dédiée, ravitaillement, Infirmier, météo, mode campement Phase 5 = Infirmier amplifie heal).
 - Phases 6-15 ⬜
+- **Session 25 (17/05/2026) ✅** — stabilisation UX charge cav Phase 2.6 + polish anim générique. Bugfix only, pas de nouvelle phase. Détails : `docs/WIP.md` Session 25.
+  - Bug stale preview cav corrigé (`useChargePreview` v1.2 : reset défensif).
+  - Hit-and-run cav fonctionne même si défenseur tué (`handleAttack` v1.9, EF redéployée).
+  - Anim charge + pause impact 700ms + lerp retreat à vitesse kind (`UnitPlaceholder` v2.16).
+  - Facing dynamique vers direction du mouvement avec offset calibré par kind (`UnitPlaceholder` v2.19, `FACING_OFFSET_BY_KIND` ligne ~88).
+  - **À retenir** : tout nouveau GLB ajouté → vérifier visuellement l'orientation, ajuster `FACING_OFFSET_BY_KIND` (valeurs typiques `0`, `π/2`, `π`, `-π/2`).
 
-Prochaine action session 25 :
-1. **Phase 4-bis Lot 2** : lookahead 2-3 ply (minimax léger sur top-N actions, profondeur 2-3, bornage temps EF < 5s).
-2. Possible mesure perf RLS fog (`is_unit_visible` en authenticated context) si lenteur observée côté UI.
-3. Possible Lot B Phase 4 : étendre `AIAction` (charge cav, split/merge, pose d'ordres conditionnels).
+Prochaine action session 26 — à choisir avec user :
+1. **Phase 5 Relief de terrain** (heightmap, biomes, impact charge/LoS/movement) — candidat naturel.
+2. **Phase 4-bis Lot 2** lookahead 2-3 ply minimax.
+3. **Lot B Phase 4** étendre `AIAction` (charge cav, split/merge, ordres conditionnels).
+4. **Nettoyage code legacy** : supprimer `canCharge.ts`, `usePostChargeChoice.ts`, `handleChargeStay/Retreat.ts`, migrations 025-028 non appliquées.
 
-EFs prod : `run_bot_turn` v7, `resolve_turn` v6, `resolve_action` v21, `submit_orders` v4, `start_battle` v5. Migrations 021/022/023/024 appliquées.
+EFs prod (17/05/2026) : `run_bot_turn` v7, `resolve_turn` v6, **`resolve_action` v22** (handleAttack v1.9), `submit_orders` v4, `start_battle` v5. **Migrations 001-028 toutes appliquées prod** (025-028 ajoutées 16/05/2026 mais untracked git → `git add` en début de session 26).
 
-Tests : 345/345 verts. Game.tsx ~660 lignes (toujours > 600 limite — dette technique).
+Tests : 345/345 verts. Game.tsx ~666 lignes (dette technique inchangée).
 
 Plan file actif : `~/.claude/plans/toasty-puzzling-beaver.md` (Phase 4 Lot A).
 

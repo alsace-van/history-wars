@@ -55,14 +55,16 @@ describe('engine/vision', () => {
     expect(m.get('r')).toBe('spotted')
   })
 
-  it('4. Allié sur la ligne masque l\'ennemi (piège #15, LoS team-agnostic)', () => {
-    // L'allié est routed (exclu de la liste d'observateurs) mais reste un blocker physique.
-    // Ainsi seul `observer` peut tenter de voir, et sa ligne passe à travers `ally` → bloqué.
+  it('4. Allié sur la ligne ne masque PAS l\'ennemi (v028 — alliés transparents pour fog)', () => {
+    // v028 (16/05/2026) : convention inversée. Les alliés ne bloquent plus la
+    // LoS de l'équipe (réaliste : troupes coordonnent / communiquent). Seuls
+    // les ennemies bloquent. Test : observer + ally routed + enemy sur ligne →
+    // observer voit l'enemy parce que ally ne bloque plus.
     const observer = makeUnit({ id: 'obs', kind: 'C', team: 'blue', position: cube(0, 0, 0) })
     const ally = makeUnit({ id: 'ally', kind: 'I', team: 'blue', position: cube(2, 0, -2), routed: true })
     const red = makeUnit({ id: 'r', kind: 'I', team: 'red', position: cube(4, 0, -4) })
     const m = visibleEnemiesFromTeam('blue', [observer, ally, red], BOARD)
-    expect(m.has('r')).toBe(false)
+    expect(m.has('r')).toBe(true)
   })
 
   it('5. Ennemi sur la ligne masque l\'ennemi derrière', () => {

@@ -1,4 +1,6 @@
+// v1.15 (16/05/2026) — Phase 2.6 refonte : attackTargets via findAttackPosition (auto-move + attack atomique pour cav/inf/art)
 // v1.13 (14/05/2026) — Fix bug session 23 : parseCubeKey (cubeKey="q,r" 2 comps, destCube.s était undefined → cubeDistance NaN → filtre post-rupture inopérant)
+// v1.14 (16/05/2026) — Phase 2.6 : chargeRetreatMode + chargeRetreatTargetKeys (menu post-charge cav)
 // v1.12 (14/05/2026) — Phase 3.3 Lot C : orderRetreatPickMode (highlight hex pour pré-ordre retreat)
 // v1.11 (14/05/2026) — Phase 3.3 : targetableUnitIds utilise resolveUnitStatsV2 + skip LoS si arcedTrajectory
 // v1.10 (12/05/2026) — Phase 3.1-C : params visibleTileKeys + enemyVisibility (filtre reachable/targetable)
@@ -7,11 +9,14 @@ import { computeCohesion, computeSupport, type CohesionState, type SupportCount 
 import { cubeKey, cubeDistance, neighbors, spiral, parseCubeKey } from '@engine/hex'
 import { bfsReachable } from '@engine/movement'
 import { computeEnemyZoc } from '@engine/zoc'
-import { hasLineOfSight } from '@engine/los'
-import { getUnitStats, resolveUnitStatsV2, type UnitState } from '@engine/units'
+import { getUnitStats, type UnitState } from '@engine/units'
+import { findAttackPosition, type AttackPositionResult } from '@engine/combat/v2'
 import type { VisibilityLevel } from '@engine/vision'
 import type { HexTileState } from '@render/types'
 import type { Team } from '@/types/game'
+
+/** Phase 2.6 refonte — hint visuel pour anneau d'attaque sur pion ennemi. */
+export type AttackHint = 'melee' | 'charge' | 'march' | 'march-fire'
 
 interface UseTacticalSelectionParams {
   inProgress: boolean
@@ -65,6 +70,15 @@ interface UseTacticalSelectionParams {
    * dans la draft d'ordre).
    */
   orderRetreatPickMode?: boolean
+  /**
+   * Phase 2.6 UX pré-commit cav — preview active : highlight les cases de
+   * repli candidates (radius 3 autour de la position d'arrivée prévue).
+   * Calculées par useChargePreview. Click consommé par Game.tsx via
+   * commitChargeRetreat. Distinct de `retreatMode` (Brisé) et `orderRetreatPickMode`
+   * (pré-ordre conditionnel).
+   */
+  chargePreviewActive?: boolean
+  chargePreviewRetreatKeys?: ReadonlySet<string>
 }
 
 interface UseTacticalSelectionResult {
@@ -75,6 +89,14 @@ interface UseTacticalSelectionResult {
   reachableMap: Map<string, number>
   /** Set des unitId ennemis attaquables par l'unite selectionnee (range + LoS) */
   targetableUnitIds: Set<string>
+  /**
+   * Phase 2.6 refonte — Map enemyId → AttackPositionResult + hint visuel.
+   * Contient TOUTES les cibles attaquables (adjacent ou via auto-move). Le hint
+   * pilote l'anneau coloré au-dessus du pion + le HexTileState (charge-target /
+   * march-target / march-fire-target). Source unique consommée par le click
+   * handler pour récupérer le path à envoyer au serveur.
+   */
+  attackTargets: Map<string, AttackPositionResult & { hint: AttackHint }>
   /** Set des cubeKey en ZoC ennemie ; entrer y stoppe le mouvement (cf piege #41) */
   dangerousZocKeys: Set<string>
   /** Map<cubeKey, HexTileState> a passer a TacticalScene */
@@ -104,7 +126,13 @@ interface UseTacticalSelectionResult {
 export function useTacticalSelection(
   params: UseTacticalSelectionParams
 ): UseTacticalSelectionResult {
-  const { inProgress, isMyTurn, myTeam, activeTeam, unitStates, boardKeys, splitMode, retreatMode = false, suicideMode = false, engagedUnitIds, visibleTileKeys, enemyVisibility, orderRetreatPickMode = false } = params
+  const {
+    inProgress, isMyTurn, myTeam, activeTeam, unitStates, boardKeys, splitMode,
+    retreatMode = false, suicideMode = false, engagedUnitIds, visibleTileKeys,
+    enemyVisibility, orderRetreatPickMode = false,
+    chargePreviewActive = false,
+    chargePreviewRetreatKeys,
+  } = params
 
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null)
 
@@ -213,46 +241,74 @@ export function useTacticalSelection(
     return { supportMap, cohesionStateMap }
   }, [unitStates])
 
-  const targetableUnitIds = useMemo<Set<string>>(() => {
-    const out = new Set<string>()
-    if (!selectedUnit || !isSelectedMine || !isMyTurn) return out
-    if (selectedUnit.hasAttacked || selectedUnit.routed) return out
-    // v1.7 (12/05/2026) — Brisée ne peut plus attaquer EN STANDARD sauf si l'ennemi est
-    // strictement plus petit (override "finir une troupe affaiblie"). Cohérent avec
-    // handleAttack.ts côté EF v1.3 — mirror obligatoire pour UI/serveur.
+  // Phase 2.6 refonte — calcul unifié des cibles attaquables via findAttackPosition.
+  // Couvre 4 cas : mêlée adjacente, charge cav (path droit), march inf, march+fire art.
+  // Filtre cohésion (Brisée → ennemi strictement plus petit), routed, hasAttacked,
+  // fog visibility.
+  const attackTargets = useMemo<Map<string, AttackPositionResult & { hint: AttackHint }>>(() => {
+    const map = new Map<string, AttackPositionResult & { hint: AttackHint }>()
+    if (!selectedUnit || !isSelectedMine || !isMyTurn) return map
+    if (selectedUnit.hasAttacked || selectedUnit.routed) return map
     const isBroken = cohesionData.cohesionStateMap.get(selectedUnit.id) === 'broken'
-    // Phase 3.3 — v2 stats (avec subKind) au lieu de v1 (range=4 hardcode A) — alignement client/serveur.
-    const statsV2 = resolveUnitStatsV2(selectedUnit.kind, selectedUnit.subKind)
-    const range = statsV2.range
-    const minRange = statsV2.minRange
-    const arcedTrajectory = statsV2.arcedTrajectory ?? false
+
+    // OPTIM perf — pré-calculer UNE FOIS blockers + enemyZoc + bfsReachable,
+    // puis les passer à chaque findAttackPosition. Évite des recalculs O(N²)
+    // qui faisaient freeze le navigateur sur scenario 10v10.
+    const blockers = new Set<string>()
+    for (const u of unitStates) {
+      if (u.id === selectedUnit.id) continue
+      blockers.add(cubeKey(u.position))
+    }
+    const enemyZoc = computeEnemyZoc(unitStates, selectedUnit.team)
+    const movement = selectedUnit.hasMoved ? 0 : getUnitStats(selectedUnit.kind).movement
+    const reachable = movement > 0
+      ? bfsReachable({
+          start: selectedUnit.position,
+          movementPoints: movement,
+          blockers,
+          enemyZocCubes: enemyZoc,
+        })
+      : new Map<string, number>()
+
     for (const enemy of unitStates) {
       if (enemy.team === selectedUnit.team) continue
-      if (isBroken && enemy.effective >= selectedUnit.effective) continue // override Brisée
-      // Phase 2.5 — on attaque même les ennemis routed / Brisé (coup de grâce historique).
-      const dist = cubeDistance(selectedUnit.position, enemy.position)
-      if (dist === 0 || dist > range) continue
-      if (dist > 1) {
-        // Phase 3.3 : check minRange explicite (ex artillery_light minRange=2 → distance 1 = mêlée, pas ranged).
-        // Le serveur valide pareil ; on s'aligne pour ne pas highlighter une cible invalide.
-        if (dist < minRange) continue
-        // Tir en cloche (obusier) : ignore les blockers unités. Sinon check LoS classique.
-        if (!arcedTrajectory) {
-          const blockers = new Set<string>()
-          for (const u of unitStates) {
-            if (u.id === selectedUnit.id) continue
-            if (u.id === enemy.id) continue
-            blockers.add(cubeKey(u.position))
-          }
-          if (!hasLineOfSight(selectedUnit.position, enemy.position, blockers)) continue
-        }
-      }
+      if (isBroken && enemy.effective >= selectedUnit.effective) continue
       // Phase 3.1-C : impossible de cibler un ennemi non vu (hidden). 'spotted'/'identified' OK.
       if (enemyVisibility && (enemyVisibility.get(enemy.id) ?? 'hidden') === 'hidden') continue
-      out.add(enemy.id)
+      const result = findAttackPosition({
+        attacker: selectedUnit,
+        defender: enemy,
+        allUnits: unitStates,
+        boardKeys,
+        precomputedReachable: reachable,
+        precomputedBlockers: blockers,
+        precomputedEnemyZoc: enemyZoc,
+      })
+      if (!result) continue
+      // Détermination du hint selon kind + résultat.
+      let hint: AttackHint
+      if (selectedUnit.kind === 'A') {
+        // Artillery : peut être tir en place (path vide) ou march+fire (path > 0).
+        hint = 'march-fire'
+      } else if (result.path.length === 0) {
+        // Pas de move : mêlée directe depuis position courante.
+        hint = 'melee'
+      } else if (result.expectStraight && selectedUnit.kind === 'C') {
+        // Cav avec path droit ≥ 2 : charge avec bonus.
+        hint = 'charge'
+      } else {
+        // Inf march, ou cav sans path droit (fallback charge sans bonus).
+        hint = 'march'
+      }
+      map.set(enemy.id, { ...result, hint })
     }
-    return out
-  }, [selectedUnit, isSelectedMine, isMyTurn, unitStates, cohesionData, enemyVisibility])
+    return map
+  }, [selectedUnit, isSelectedMine, isMyTurn, unitStates, cohesionData, enemyVisibility, boardKeys])
+
+  const targetableUnitIds = useMemo<Set<string>>(
+    () => new Set(attackTargets.keys()),
+    [attackTargets],
+  )
 
   // v1.10 (12/05/2026) — Phase 3.1-C : visibleEnemyIds n'est plus calculé ici, il vient de
   // useVisionMap (param enemyVisibility) — single source of truth, évite double calcul fog.
@@ -335,7 +391,8 @@ export function useTacticalSelection(
 
   const tileStates = useMemo<Map<string, HexTileState>>(() => {
     const map = new Map<string, HexTileState>()
-    // Modes exclusifs : split / retreat / suicide / orderRetreatPick n'affichent QUE leur sélection.
+    // Modes exclusifs : split / retreat / suicide / orderRetreatPick / chargeRetreat
+    // n'affichent QUE leur sélection.
     if (splitMode) {
       for (const k of splitTargetKeys) map.set(k, 'split-target')
       return map
@@ -343,6 +400,11 @@ export function useTacticalSelection(
     if (retreatMode) {
       // Réutilise le state 'split-target' (ambre) pour la sélection direction retraite.
       for (const k of retreatTargetKeys) map.set(k, 'split-target')
+      return map
+    }
+    if (chargePreviewActive && chargePreviewRetreatKeys) {
+      // Phase 2.6 UX pré-commit — cases de repli proposées avant la charge.
+      for (const k of chargePreviewRetreatKeys) map.set(k, 'retreat-target')
       return map
     }
     if (orderRetreatPickMode) {
@@ -359,7 +421,7 @@ export function useTacticalSelection(
       map.set(k, enemyZoc.has(k) ? 'dangerous' : 'reachable')
     }
     return map
-  }, [splitMode, splitTargetKeys, retreatMode, retreatTargetKeys, orderRetreatPickMode, orderRetreatPickKeys, suicideMode, reachableMap, enemyZoc])
+  }, [splitMode, splitTargetKeys, retreatMode, retreatTargetKeys, chargePreviewActive, chargePreviewRetreatKeys, orderRetreatPickMode, orderRetreatPickKeys, suicideMode, reachableMap, enemyZoc])
 
   const exhaustedUnitIds = useMemo<Set<string>>(() => {
     const set = new Set<string>()
@@ -423,6 +485,7 @@ export function useTacticalSelection(
     isSelectedMine,
     reachableMap,
     targetableUnitIds,
+    attackTargets,
     dangerousZocKeys: enemyZoc,
     tileStates,
     exhaustedUnitIds,
