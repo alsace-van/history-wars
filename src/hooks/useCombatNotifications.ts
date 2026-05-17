@@ -1,9 +1,10 @@
+// v2.6 (17/05/2026) — différé d'affichage : si attaquant en animation, buffer la notif et flush quand path terminé. Évite "points avant arrivée du pion".
 // v2.5 (16/05/2026) — Fix : si attaquant invisible (fog of war RLS migration 024) ou DELETE post-riposte, déduire le camp via le defender (toujours visible côté humain attaqué). Sans ce fallback, les attaques bot sur unit humaine généraient une notification null.
 // v2.4 (14/05/2026) — Phase 4 : short labels (I1/AO1…) + isBot dans CombatNotification (journal clarté)
 // v2.3 (13/05/2026) — Phase 3.3 : expose menEngaged + contactCap dans CombatNotification (clarté Thermopyles)
 // v2.2 (12/05/2026) — Sprint UX : ajout effectiveBefore dans losses (rapport AVANT/APRÈS)
 // v2.1 (11/05/2026) — Phase 2.5 fix : losses.effectiveAfter (absolu) au lieu de hpAfter (% legacy)
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRealtime } from './useRealtime'
 import type { Team, UnitKind } from '@/types/game'
 import type { UnitState } from '@engine/units'
@@ -125,6 +126,14 @@ interface UseCombatNotificationsOptions {
   playerTeams: Map<string, Team>
   /** Snapshot des units pour resoudre unitId → kind. Si DELETE deja arrive, fallback generique. */
   units: ReadonlyArray<UnitState>
+  /**
+   * v2.6 — Map unitId → path en cours d'animation. Si l'attaquant d'un combat
+   * reçu Realtime est encore en mouvement, la notification est mise en buffer
+   * "pending" et publiée seulement quand le path se termine (onUnitPathDone).
+   * Évite l'affichage des points de combat AVANT que le pion arrive sur la cible.
+   * Si non fourni → comportement legacy (publication immédiate).
+   */
+  unitPaths?: Map<string, ReadonlyArray<unknown>>
 }
 
 interface UseCombatNotificationsResult {
@@ -134,6 +143,17 @@ interface UseCombatNotificationsResult {
   removeNotification: (id: string) => void
   /** Vide toute la liste (utile au changement de partie ou bouton "tout fermer"). */
   clear: () => void
+  /**
+   * v2.6 — Set des unitIds défenseurs dont le combat est encore en buffer (attaquant
+   * en animation). Permet au caller de freezer l'affichage visuel (shrink, disparition)
+   * de ces unités tant que l'anim n'est pas finie. Vide tant qu'aucun combat pending.
+   */
+  pendingDefenderIds: ReadonlySet<string>
+  /**
+   * v2.6 — Set des unitIds attaquants en cours de combat pending. Utile pour
+   * différer les pertes en riposte (effective qui baisse) et les engagements créés.
+   */
+  pendingAttackerIds: ReadonlySet<string>
 }
 
 /**
@@ -154,8 +174,12 @@ export function useCombatNotifications({
   enabled = true,
   playerTeams,
   units,
+  unitPaths,
 }: UseCombatNotificationsOptions): UseCombatNotificationsResult {
   const [notifications, setNotifications] = useState<CombatNotification[]>([])
+  // v2.6 — buffer des notifications dont l'attaquant est encore en animation.
+  // Flushé via useEffect quand le path de l'attaquant disparaît de unitPaths.
+  const [pending, setPending] = useState<CombatNotification[]>([])
 
   // Refs pour acceder aux dernieres valeurs sans re-subscribe a chaque render
   const viewerTeamRef = useRef(viewerTeam)
@@ -164,6 +188,8 @@ export function useCombatNotifications({
   playerTeamsRef.current = playerTeams
   const unitsRef = useRef(units)
   unitsRef.current = units
+  const unitPathsRef = useRef(unitPaths)
+  unitPathsRef.current = unitPaths
 
   useRealtime({
     channelName: gameId ? `combat-notif:${gameId}` : '',
@@ -177,18 +203,46 @@ export function useCombatNotifications({
             filter: `game_id=eq.${gameId}`,
             onChange: payload => {
               const notif = parseAction(payload, viewerTeamRef.current, playerTeamsRef.current, unitsRef.current)
-              if (notif) {
-                setNotifications(prev => {
-                  // Anti-doublon : si l'id est deja en liste, ignore
-                  if (prev.some(n => n.id === notif.id)) return prev
-                  return [...prev, notif]
-                })
+              if (!notif) return
+              // v2.6 — Si l'attaquant a un path en cours, mettre en pending.
+              // Sinon publier immédiatement (legacy).
+              const attackerAnimating = unitPathsRef.current?.has(notif.attackerId) === true
+              if (attackerAnimating) {
+                setPending(prev => (prev.some(n => n.id === notif.id) ? prev : [...prev, notif]))
+              } else {
+                setNotifications(prev => (prev.some(n => n.id === notif.id) ? prev : [...prev, notif]))
               }
             },
           },
         ]
       : undefined,
   })
+
+  // v2.6 — Flush pending : quand unitPaths change, regarder si l'attaquant de
+  // chaque notif pending est encore animé. Si non → publier (transition pending → notifications).
+  useEffect(() => {
+    if (pending.length === 0) return
+    const map = unitPaths
+    const stillPending: CombatNotification[] = []
+    const toFlush: CombatNotification[] = []
+    for (const n of pending) {
+      if (map && map.has(n.attackerId)) {
+        stillPending.push(n)
+      } else {
+        toFlush.push(n)
+      }
+    }
+    if (toFlush.length === 0) return
+    setNotifications(prev => {
+      const existingIds = new Set(prev.map(n => n.id))
+      const merged = [...prev]
+      for (const n of toFlush) {
+        if (!existingIds.has(n.id)) merged.push(n)
+      }
+      return merged
+    })
+    setPending(stillPending)
+  }, [unitPaths, pending])
 
   const removeNotification = useCallback((id: string) => {
     setNotifications(prev => prev.filter(n => n.id !== id))
@@ -198,7 +252,19 @@ export function useCombatNotifications({
     setNotifications([])
   }, [])
 
-  return { notifications, removeNotification, clear }
+  // v2.6 — Sets des défenseurs et attaquants en attente.
+  const pendingDefenderIds = useMemo(() => {
+    const s = new Set<string>()
+    for (const n of pending) s.add(n.defenderId)
+    return s
+  }, [pending])
+  const pendingAttackerIds = useMemo(() => {
+    const s = new Set<string>()
+    for (const n of pending) s.add(n.attackerId)
+    return s
+  }, [pending])
+
+  return { notifications, removeNotification, clear, pendingDefenderIds, pendingAttackerIds }
 }
 
 function parseAction(

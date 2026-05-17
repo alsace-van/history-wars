@@ -12,6 +12,13 @@ import { useBattleUnits } from '@hooks/useBattleUnits'
 import { useCombatActions } from '@hooks/useCombatActions'
 import { useTacticalSelection } from '@hooks/useTacticalSelection'
 import { useCombatNotifications } from '@hooks/useCombatNotifications'
+import { useDeferredUnitDisplay } from '@hooks/useDeferredUnitDisplay'
+import { useDeferredEngagements } from '@hooks/useDeferredEngagements'
+import { useTerrainTiles } from '@hooks/useTerrainTiles'
+import { useHexTemplates } from '@hooks/useHexTemplates'
+import { useHexAssets } from '@hooks/useHexAssets'
+import { usePaintMode } from '@hooks/usePaintMode'
+import { PaintModePanel } from '@ui/editor/PaintModePanel'
 import { useCombatAnimator, type DamageFloaterEntry } from '@hooks/useCombatAnimator'
 import { useSettings } from '@hooks/useSettings'
 import { useUnitCriticalActions } from '@hooks/useUnitCriticalActions'
@@ -221,6 +228,16 @@ export function Game() {
   // Phase 2.6 C — engagements actifs (table engagements migration 017 + Realtime).
   const { engagements: engagementRows, engagedUnitIds, engagementsByUnit } = useEngagement(gameId, showBattle)
 
+  // Phase 5 Lot 1 — terrain_tiles (fetch + Realtime) pour rendu décors 3D.
+  const { terrainMap, templateMap } = useTerrainTiles(gameId, showBattle)
+  // Phase 5 Lot B.5 : charge la bibliotheque de hex_templates + assets customs pour resoudre
+  // les hex avec template_id applique. Hooks actifs quand la bataille est rendue.
+  const { templates, byId: templatesById } = useHexTemplates(showBattle)
+  const { byId: customAssetsById } = useHexAssets(showBattle)
+  // Phase 5 Lot B.6 : paint mode admin (panel + intercept du clic hex).
+  const paintMode = usePaintMode(gameId)
+  const isAdmin = user?.email === 'alsacevancreation@hotmail.com'
+
   // Phase 3.3 Lot B — map { unit_id → action_kind du priority=1 actif } pour l'icône
   // d'ordre conditionnel sur le pion 3D. RLS filtre côté serveur (mes pions seulement).
   const { activeOrders, refresh: refreshActiveOrders } = useActiveOrdersByUnit({
@@ -392,14 +409,39 @@ export function Game() {
   const inspectedEnemyCohesion = inspectedEnemy ? cohesionStateMap.get(inspectedEnemy.id) : undefined
 
   // ---- Notifications combat en onglets (cf piège #52) ----
-  const { notifications: combatNotifs, removeNotification: removeCombatNotif, clear: clearCombatNotifs } =
+  const { notifications: combatNotifs, removeNotification: removeCombatNotif, clear: clearCombatNotifs, pendingDefenderIds, pendingAttackerIds } =
     useCombatNotifications({
       gameId: gameId ?? null,
       viewerTeam: showBattle ? myTeam : null,
       enabled: showBattle,
       playerTeams,
       units: unitStates,
+      // v2.6 — diffère l'affichage des points/journal jusqu'à la fin de l'anim attaquant.
+      unitPaths,
     })
+
+  // v2.6 — Union attaquants + défenseurs gelés pour le rendu :
+  //  - Défenseur : freeze shrink/disparition (peut perdre des hommes ou être tué)
+  //  - Attaquant : freeze shrink (peut perdre des hommes en riposte) + engagements
+  const pendingCombatUnitIds = useMemo(() => {
+    const s = new Set<string>(pendingDefenderIds)
+    for (const id of pendingAttackerIds) s.add(id)
+    return s
+  }, [pendingDefenderIds, pendingAttackerIds])
+
+  // v2.6 — freeze visuel des unités en combat pending : shrink + disparition.
+  const renderUnitsForScene = useDeferredUnitDisplay(renderUnitsWithAttackHint, pendingCombatUnitIds)
+
+  // v2.6 — filtre les engagements impliquant une unité en combat pending : pas
+  // d'affichage de la ligne d'engagement ni du badge "T+N" avant fin d'anim.
+  const deferredEngagementRows = useDeferredEngagements(engagementRows, pendingCombatUnitIds)
+  // Ids des engagements à afficher actuellement (pour filtrer enginePairs côté rendu).
+  const deferredEngagementIds = useMemo(() => {
+    const s = new Set<string>()
+    for (const e of deferredEngagementRows) s.add(e.id)
+    return s
+  }, [deferredEngagementRows])
+
 
   // Phase 3.3 Lot A — toast "Ordre déclenché" côté owner (privacy filter via actor_user_id).
   useOrderTriggeredToasts({
@@ -639,7 +681,7 @@ export function Game() {
             <TacticalScene
               scale={game.current_scale}
               cubes={mvpCubes}
-              units={renderUnitsWithAttackHint}
+              units={renderUnitsForScene as typeof renderUnitsWithAttackHint}
               viewerTeam={showBattle ? myTeam : null}
               tileStates={showBattle ? finalTileStates : undefined}
               selectedUnitId={selectedUnitId}
@@ -650,7 +692,19 @@ export function Game() {
               cameraFocusCube={cameraFocusCube}
               unitPaths={showBattle ? unitPaths : undefined}
               onUnitPathDone={onUnitPathDone}
-              onTileClick={showBattle ? handleTileClick : undefined}
+              onTileClick={
+                showBattle
+                  ? (cube: Cube) => {
+                      // Phase 5 Lot B.6 : si paint mode actif, le clic peint l'hex au lieu de
+                      // declencher la logique gameplay (selection unite, mouvement, etc.).
+                      if (paintMode.active) {
+                        void paintMode.apply(cube)
+                        return
+                      }
+                      handleTileClick(cube)
+                    }
+                  : undefined
+              }
               onUnitClick={showBattle ? handleUnitClick : undefined}
               onUnitPointerOver={showBattle ? handleUnitPointerOver : undefined}
               onUnitPointerOut={showBattle ? handleUnitPointerOut : undefined}
@@ -659,10 +713,23 @@ export function Game() {
               onDamageFloaterDone={removeFloater}
               cohesionStateMap={showBattle ? cohesionStateMap : undefined}
               supportMap={showBattle ? supportMap : undefined}
-              engagements={showBattle ? enginePairs : undefined}
-              tileVisibility={inProgress && myTeam ? visibleTileMap : undefined}
+              engagements={showBattle ? enginePairs.filter(p => deferredEngagementIds.has(p.id)) : undefined}
+              tileVisibility={
+                // Phase 5 Lot B.6 : admin en paint mode bypass le fog (tous hex cliquables).
+                inProgress && myTeam && !(isAdmin && paintMode.active)
+                  ? visibleTileMap
+                  : undefined
+              }
               enemyVisibility={inProgress && myTeam ? enemyVisibility : undefined}
+              terrainMap={showBattle ? terrainMap : undefined}
+              templateMap={showBattle ? templateMap : undefined}
+              templatesById={showBattle ? templatesById : undefined}
+              customAssetsById={showBattle ? customAssetsById : undefined}
             />
+            {/* Phase 5 Lot B.6 : panneau paint mode admin (flottant en bas-gauche). */}
+            {showBattle && isAdmin && (
+              <PaintModePanel templates={templates} paintMode={paintMode} />
+            )}
             {combatPanelOpen && (
               <CombatResultPanel
                 notifications={combatNotifs}

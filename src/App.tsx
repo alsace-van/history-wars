@@ -1,12 +1,15 @@
+// v1.2 (17/05/2026) — Phase 5 Lot B (ext) : routes /editor/maps + /editor/map/:id
+// v1.1 (17/05/2026) — Phase 5 Lot B.3 : route /editor/hex-templates
 // v1.0f (09/05/2026) — Lot 7 : mount <UpdatePrompt /> pour notif nouvelle version SW
 // v1.0e (09/05/2026) — Sous-lot 6B : suppression route /render-test
-// v1.0d (09/05/2026) — Route /render-test pour Lot 6A (demo scene 3D)
-// v1.0c (08/05/2026) — Route /game/:id ajoutee
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import { Auth } from '@ui/pages/Auth'
 import { Lobby } from '@ui/pages/Lobby'
 import { Game } from '@ui/pages/Game'
+import { HexTemplateLibrary } from '@ui/editor/HexTemplateLibrary'
+import { MapsList } from '@ui/editor/MapsList'
+import { MapEditor } from '@ui/editor/MapEditor'
 import { UpdatePrompt } from '@ui/components/UpdatePrompt'
 
 function App() {
@@ -32,6 +35,9 @@ function App() {
         <Route path="/auth" element={<Auth />} />
         <Route path="/lobby" element={<Lobby />} />
         <Route path="/game/:id" element={<Game />} />
+        <Route path="/editor/hex-templates" element={<HexTemplateLibrary />} />
+        <Route path="/editor/maps" element={<MapsList />} />
+        <Route path="/editor/map/:id" element={<MapEditor />} />
         <Route path="*" element={<Navigate to="/lobby" replace />} />
       </Routes>
     </BrowserRouter>

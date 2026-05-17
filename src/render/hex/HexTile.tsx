@@ -1,3 +1,7 @@
+// v1.6 (17/05/2026) — bords (lineSegments) atténués en idle visible (opacity 0.15)
+// v1.5 (17/05/2026) — Overlay highlight au-dessus de la texture terrain (Phase 5 Lot 1) :
+//   illuminations (hover/selected/reachable/etc.) rendues sur un mesh hex PLAT semi-transparent
+//   à Y au-dessus de TerrainDecor.liftY (0.05). Les bords (lineSegments) aussi remontés.
 // v1.4 (12/05/2026) — Phase 3.1 fix : hex hidden rendu en noir opaque (masque PageBackground qui leak à travers)
 // v1.3 (10/05/2026) — Phase 2 2D.6 : support state 'split-target' (ambre, case adjacente pour scinder)
 // v1.2 (10/05/2026) — P1-L1C4-04 : support state 'dangerous' (ZoC ennemie, orange amorti)
@@ -21,7 +25,6 @@ interface HexTileProps {
 }
 
 const TILE_THICKNESS = 0.08
-const EDGE_LIFT = 0.005
 
 /**
  * Geometrie hex : Shape construit explicitement avec sommets aux angles
@@ -50,6 +53,29 @@ function buildHexGeometry(): THREE.ExtrudeGeometry {
 }
 
 const HEX_GEOMETRY = buildHexGeometry()
+
+// v1.5 — Géométrie hex PLATE (sans extrusion) pour l'overlay d'illumination
+// au-dessus de la texture terrain. Convention identique au sol (vertex EST i=0,
+// sens horaire vu d'au-dessus avec y = -sin).
+// Exportée pour réutilisation par CustomHexMesh (Phase 5 Lot B.2).
+export const HEX_FLAT_GEOMETRY = (() => {
+  const shape = new THREE.Shape()
+  for (let i = 0; i < 6; i++) {
+    const angle = (i * Math.PI) / 3
+    const x = Math.cos(angle)
+    const y = -Math.sin(angle)
+    if (i === 0) shape.moveTo(x, y)
+    else shape.lineTo(x, y)
+  }
+  shape.closePath()
+  const geom = new THREE.ShapeGeometry(shape)
+  geom.rotateX(-Math.PI / 2)
+  return geom
+})()
+
+// v1.5 — Y au-dessus de TerrainDecor.liftY (0.05) pour que l'overlay et les bords
+// soient visibles par-dessus la texture d'herbe.
+const OVERLAY_LIFT = 0.07
 
 const HEX_EDGES = (() => {
   const positions: number[] = []
@@ -104,8 +130,14 @@ function HexTileBase({
     )
   }
 
+  // v1.5 — Overlay highlight au-dessus de la texture terrain (Phase 5).
+  // Affiché si state non-idle ET visibility visible. Couleur fillColor semi-transparente.
+  const showOverlay = state !== 'idle' && visibility === 'visible'
+
   return (
     <group position={position}>
+      {/* Sol HexTile : cliquable + colore selon state (caché sous la texture en pratique,
+          mais reste utile pour le raycast et pour les hex sans texture terrain). */}
       <mesh
         geometry={HEX_GEOMETRY}
         scale={[hexSize, 1, hexSize]}
@@ -130,12 +162,34 @@ function HexTileBase({
           opacity={visibility === 'fog' ? 0.35 : 1}
         />
       </mesh>
+      {/* v1.5 — Overlay illumination AU-DESSUS de la texture (Y=0.07) */}
+      {showOverlay && (
+        <mesh
+          geometry={HEX_FLAT_GEOMETRY}
+          scale={[hexSize, 1, hexSize]}
+          position={[0, OVERLAY_LIFT, 0]}
+        >
+          <meshBasicMaterial
+            color={fillColor}
+            transparent
+            opacity={0.45}
+            depthWrite={false}
+          />
+        </mesh>
+      )}
+      {/* v1.6 — Bords remontés. Atténués (opacity 0.15) en idle visible pour adoucir
+          le quadrillage sur la texture. Plein opacity quand state actif. */}
       <lineSegments
         geometry={HEX_EDGES}
         scale={[hexSize, 1, hexSize]}
-        position={[0, TILE_THICKNESS / 2 + EDGE_LIFT, 0]}
+        position={[0, OVERLAY_LIFT + 0.001, 0]}
       >
-        <lineBasicMaterial color={edgeColor} />
+        <lineBasicMaterial
+          color={edgeColor}
+          transparent
+          opacity={state === 'idle' && visibility === 'visible' ? 0.15 : 1}
+          depthWrite={false}
+        />
       </lineSegments>
     </group>
   )

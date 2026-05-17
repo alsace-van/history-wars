@@ -43,3 +43,6 @@ vite.config.d.ts
 *.tsbuildinfo
 vite.config.js
 supabase/.temp/
+
+# Claude Code agent worktrees (temporary isolation copies)
+.claude/worktrees/

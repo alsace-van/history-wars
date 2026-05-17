@@ -1,3 +1,17 @@
+// v2.30 (17/05/2026) — ralenti vitesses déplacement ×1.6 (bot moins "red bull")
+// v2.29 (17/05/2026) — lerp angulaire pour rotation smooth (au lieu de snap instantané).
+//   Vitesse ~6 rad/s : 180° en ~500ms, rendu fluide pour les pivots à face d'hex.
+// v2.28 (17/05/2026) — facing par segment : pivot à chaque face d'hexagone traversée
+//   (au lieu d'un facing unique start→end). Le pion s'aligne sur chaque segment du path.
+// v2.27 (17/05/2026) — GLB cavalier/canon/obusier régénérés en convention +Z avant
+//   (cohérent avec soldier). Offsets = 0 pour tous, facing dynamique réactivé pour tous.
+// v2.26 (17/05/2026) — ajout AxesHelper toggle ?axes=1 pour calibrer offsets GLB
+// v2.25 (17/05/2026) — désactive facing dynamique pour TOUS les kinds (C et A aussi
+//   se comportent mal : C pivote wrong puis revient, A pivote wrong et reste). Garde
+//   uniquement initialFacingY team-based qui est correct. À recalibrer Phase ultérieure
+//   avec GLB orientation cohérente (avant Blender = +Y → +Z Three.js sans offset).
+// v2.24 (17/05/2026) — désactive facing dynamique pour I uniquement.
+// v2.19-2.23 (17/05/2026) — multiples tentatives offset I, toutes échouées en visuel.
 // v2.19 (17/05/2026) — facing dynamique RÉACTIVÉ + offset calibrage par kind.
 //   La conversion Blender (Z-up, Y-forward) → glTF (Y-up, -Z-forward) introduit
 //   parfois un offset constant (généralement π/2 ou π). FACING_OFFSET_BY_KIND
@@ -91,11 +105,11 @@ const SOLDIER_SCALE_RATIO = 0.5
 // Si un pion regarde dans la direction opposée à son mouvement → ajouter π.
 // S'il est tourné de 90° à gauche → essayer +π/2 ; à droite → -π/2.
 const FACING_OFFSET_BY_KIND: Readonly<Record<UnitKind, number>> = {
-  // soldier.glb (MakerWorld image→3D) a une orientation interne ≠ des autres.
-  // π/2 corrige cet écart pour aligner I sur C/A.
-  I: Math.PI / 2,
-  // cavalier.glb, canonnier.glb, obusier.glb (Blender export standard) : pas
-  // d'offset nécessaire — orientation par défaut +Z = bonne face.
+  // v2.27 — Tous les GLB ont été régénérés/calibrés en convention Three.js standard
+  // (face naturelle +Z = avant). Plus aucun offset nécessaire.
+  // Calibration vérifiable via ?axes=1 dans l'URL : la flèche BLEUE (+Z) doit
+  // pointer dans la même direction que le museau / canon / corps du soldat.
+  I: 0,
   C: 0,
   A: 0,
 }
@@ -106,12 +120,14 @@ const RING_NET_LIFT = RING_LIFT + 0.004 // net : 4mm au-dessus du halo — anti 
 // La cavalerie galope (rapide), l'infanterie 800h marche au pas (lente),
 // l'artillerie tracte ses pieces (la plus lente). Pure cosmetique, n'affecte
 // pas la logique de combat ni la portee de mouvement (UNIT_STATS_V2.movement).
+// v2.30 — ralenti global ×1.6 : enchaînement bot moins "sprint" et lecture plus
+// naturelle des trajectoires (notamment quand le bot enchaîne plusieurs unités).
 const SECONDS_PER_HEX_BY_KIND: Readonly<Record<UnitKind, number>> = {
-  C: 0.45,
-  I: 1.40,
-  A: 1.80,
+  C: 0.72,    // ex 0.45 (×1.6)
+  I: 2.25,    // ex 1.40 (×1.6)
+  A: 2.90,    // ex 1.80 (×1.6)
 }
-const DEFAULT_SECONDS_PER_HEX = 1.0
+const DEFAULT_SECONDS_PER_HEX = 1.6
 
 // v2.5 — hauteur visuelle du mesh par kind (en unités locales × soldierScale).
 // Sert à positionner le label kind ("I", "C", "A") au-dessus du sommet du mesh.
@@ -135,26 +151,57 @@ function cubeWorld(c: Cube, hexSize: number): [number, number, number] {
   return [w.x, 0, w.y]
 }
 
-// v2.17 — applique impérativement la rotation Y du mesh vers la direction
-// (fromWorld → toWorld). Y up, axes XZ. Convention Three.js : mesh face par
-// défaut +Z (avant), Math.atan2(dx, dz) donne l'angle qui aligne face vers la
-// direction (dx, dz). Si dist trop faible (sub-hex), on ne touche pas (pour
-// éviter snap aléatoire sur micro-mouvement).
-// v2.19 — réactivé avec offset par kind (FACING_OFFSET_BY_KIND).
-function applyFacing(
-  group: THREE.Group | null,
+// v2.29 — calcule l'angle cible sans l'appliquer. Retourne null si delta trop petit.
+// Convention : mesh face naturelle +Z, Math.atan2(dx, dz) aligne sur (dx, dz).
+// L'ancien `applyFacing` (snap direct) a été retiré : on passe désormais par la
+// ref `targetRotationYRef` + lerp dans useFrame pour un rendu fluide.
+function computeFacing(
   fromX: number,
   fromZ: number,
   toX: number,
   toZ: number,
   kindOffset: number,
-): void {
-  if (!group) return
+): number | null {
   const dx = toX - fromX
   const dz = toZ - fromZ
-  if (Math.abs(dx) < 0.001 && Math.abs(dz) < 0.001) return
-  group.rotation.y = Math.atan2(dx, dz) + kindOffset
+  if (Math.abs(dx) < 0.001 && Math.abs(dz) < 0.001) return null
+  return Math.atan2(dx, dz) + kindOffset
 }
+
+// v2.29 — différence d'angle la plus courte (en signed radians dans [-π, π]).
+// Évite les pivots "rebours" quand on passe de +π à -π.
+function shortestAngleDelta(from: number, to: number): number {
+  let diff = (to - from) % (2 * Math.PI)
+  if (diff > Math.PI) diff -= 2 * Math.PI
+  if (diff < -Math.PI) diff += 2 * Math.PI
+  return diff
+}
+
+// v2.29 — vitesse angulaire du lerp facing (rad/s). 6 rad/s ≈ 180° en 500ms,
+// 60° (1 face d'hex) en ~170ms. Assez rapide pour suivre une cav qui galope
+// (450ms/hex), assez doux pour ne pas paraître robotique.
+const FACING_LERP_SPEED = 6.0
+
+// v2.27 — Facing dynamique réactivé pour tous les kinds. Les GLB ont été
+// régénérés en convention Three.js standard (+Z avant), donc atan2(dx, dz)
+// + offset 0 produit la rotation correcte.
+const DYNAMIC_FACING_BY_KIND: Readonly<Record<UnitKind, boolean>> = {
+  I: true,
+  C: true,
+  A: true,
+}
+
+// v2.26 — Debug helper : activer en ouvrant l'app avec ?axes=1 dans l'URL.
+// Affiche pour chaque pion les axes locaux du sous-groupe mesh :
+//   • flèche ROUGE  = axe +X local
+//   • flèche VERTE  = axe +Y local (vertical, toujours visible)
+//   • flèche BLEUE  = axe +Z local (présumée "face avant" selon convention Three.js)
+// Permet de constater visuellement l'orientation interne de chaque GLB :
+//   - si le museau du cheval pointe dans la direction BLEUE → mesh face = +Z (offset 0 OK)
+//   - si le museau pointe dans la direction ROUGE → mesh face = +X (offset -π/2 nécessaire)
+//   - etc.
+const SHOW_AXES_HELPER =
+  typeof window !== 'undefined' && new URLSearchParams(window.location.search).has('axes')
 
 export function UnitPlaceholder({
   unit,
@@ -177,11 +224,13 @@ export function UnitPlaceholder({
   const targetPos = useMemo<[number, number, number]>(() => cubeWorld(unit.position, hexSize), [unit.position, hexSize])
 
   const ringRadius = hexSize * 0.42
-  // v2.17+v2.19 — facing initial (mount) cohérent avec le facing dynamique.
-  // Bleus regardent vers +Z (vers les rouges au nord) → atan2(0, +Z) = 0.
-  // Rouges regardent vers -Z → atan2(0, -Z) = π.
+  // v2.27 — facing initial (mount) cohérent avec convention spawn :
+  // bleus spawn à gauche (-X world), rouges à droite (+X world).
+  // Blue doit regarder vers +X (droite, vers la base rouge) → rotation Y = π/2
+  //   (atan2(1, 0) = π/2 amène mesh face +Z vers +X).
+  // Red doit regarder vers -X (gauche, vers la base bleue) → rotation Y = -π/2.
   // On ajoute l'offset par kind pour aligner sur la convention GLB calibrée.
-  const initialFacingY = (unit.team === 'red' ? Math.PI : 0) + (FACING_OFFSET_BY_KIND[unit.kind] ?? 0)
+  const initialFacingY = (unit.team === 'red' ? -Math.PI / 2 : Math.PI / 2) + (FACING_OFFSET_BY_KIND[unit.kind] ?? 0)
 
   // Scale soldat Phase 2 : ratio effective/effectiveMax (effectif elastique).
   // Visible par les 2 equipes (observation de la masse). Fallback hp/hpMax v1 si effective absent.
@@ -203,6 +252,10 @@ export function UnitPlaceholder({
   // v2.17 — ref sur le sous-groupe mesh pour ajuster impérativement le facing
   // sans re-render. Les halos/labels du groupRef parent ne pivotent pas.
   const meshGroupRef = useRef<THREE.Group>(null)
+  // v2.29 — angle Y cible du facing. Lerpé doucement dans useFrame vers
+  // meshGroupRef.current.rotation.y. Init à initialFacingY au mount.
+  const targetRotationYRef = useRef<number>(initialFacingY)
+  const lastFacingFrameTimeRef = useRef<number>(0)
   const segIdxRef = useRef(0)
   const segStartRef = useRef<[number, number, number]>(targetPos)
   const segEndRef = useRef<[number, number, number]>(targetPos)
@@ -228,10 +281,12 @@ export function UnitPlaceholder({
       segStartRef.current = [targetPos[0], targetPos[1], targetPos[2]]
       segEndRef.current = [targetPos[0], targetPos[1], targetPos[2]]
     }
-    // v2.17 — facing initial sur le sous-groupe mesh.
+    // v2.17 — facing initial sur le sous-groupe mesh (snap au mount, pas de lerp).
     if (meshGroupRef.current) {
       meshGroupRef.current.rotation.y = initialFacingY
     }
+    // v2.29 — sync targetRotation pour cohérence dès le 1er useFrame.
+    targetRotationYRef.current = initialFacingY
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -248,9 +303,12 @@ export function UnitPlaceholder({
       segStartTimeRef.current = performance.now()
       animatingRef.current = true
       doneCalledRef.current = false
-      // v2.19 — facing global du path complet (start → end) + offset par kind.
-      const endWorld = cubeWorld(path[path.length - 1], hexSize)
-      applyFacing(meshGroupRef.current, cur.x, cur.z, endWorld[0], endWorld[2], FACING_OFFSET_BY_KIND[unit.kind] ?? 0)
+      // v2.28+v2.29 — target facing vers le PREMIER segment (lerpé dans useFrame).
+      if (DYNAMIC_FACING_BY_KIND[unit.kind]) {
+        const firstSegEnd = cubeWorld(path[1], hexSize)
+        const angle = computeFacing(cur.x, cur.z, firstSegEnd[0], firstSegEnd[2], FACING_OFFSET_BY_KIND[unit.kind] ?? 0)
+        if (angle !== null) targetRotationYRef.current = angle
+      }
     }
     // Si pas de path → on laisse le useEffect targetPos prendre le relais
   }, [path, hexSize])
@@ -273,11 +331,31 @@ export function UnitPlaceholder({
     segStartTimeRef.current = performance.now()
     animatingRef.current = true
     doneCalledRef.current = true // pas de path → pas de onPathDone
-    // v2.19 — facing vers la nouvelle position (lerp Realtime fallback).
-    applyFacing(meshGroupRef.current, cur.x, cur.z, targetPos[0], targetPos[2], FACING_OFFSET_BY_KIND[unit.kind] ?? 0)
+    // v2.19+v2.29 — target facing vers la nouvelle position (lerpé dans useFrame).
+    if (DYNAMIC_FACING_BY_KIND[unit.kind]) {
+      const angle = computeFacing(cur.x, cur.z, targetPos[0], targetPos[2], FACING_OFFSET_BY_KIND[unit.kind] ?? 0)
+      if (angle !== null) targetRotationYRef.current = angle
+    }
   }, [targetPos, unit.kind])
 
   useFrame(({ clock }) => {
+    // v2.29 — Lerp angulaire pour le facing (rotation Y). Indépendant du framerate
+    // (utilise delta time réel). Prend le chemin le plus court (shortestAngleDelta).
+    if (meshGroupRef.current) {
+      const now = performance.now()
+      const dt = lastFacingFrameTimeRef.current === 0
+        ? 1 / 60
+        : Math.min(0.1, (now - lastFacingFrameTimeRef.current) / 1000)
+      lastFacingFrameTimeRef.current = now
+      const cur = meshGroupRef.current.rotation.y
+      const target = targetRotationYRef.current
+      const delta = shortestAngleDelta(cur, target)
+      if (Math.abs(delta) > 0.001) {
+        const step = Math.sign(delta) * Math.min(Math.abs(delta), FACING_LERP_SPEED * dt)
+        meshGroupRef.current.rotation.y = cur + step
+      }
+    }
+
     // 1. Animation deplacement (segment ou lerp)
     if (animatingRef.current && groupRef.current) {
       const elapsed = performance.now() - segStartTimeRef.current
@@ -298,6 +376,13 @@ export function UnitPlaceholder({
           segStartRef.current = [...segEndRef.current] as [number, number, number]
           segEndRef.current = cubeWorld(p[nextIdx], hexSize)
           segStartTimeRef.current = performance.now()
+          // v2.28+v2.29 — re-target facing à chaque nouveau segment (lerpé smooth).
+          if (DYNAMIC_FACING_BY_KIND[unit.kind]) {
+            const [sx2, , sz2] = segStartRef.current
+            const [ex2, , ez2] = segEndRef.current
+            const angle = computeFacing(sx2, sz2, ex2, ez2, FACING_OFFSET_BY_KIND[unit.kind] ?? 0)
+            if (angle !== null) targetRotationYRef.current = angle
+          }
         } else {
           animatingRef.current = false
           if (!doneCalledRef.current && p) {
@@ -332,8 +417,11 @@ export function UnitPlaceholder({
               segStartTimeRef.current = performance.now() + 700
               animatingRef.current = true
               doneCalledRef.current = true // pas de nouveau path à signaler
-              // v2.19 — facing vers la case de repli (retreat post-charge).
-              applyFacing(meshGroupRef.current, cur.x, cur.z, targetPos[0], targetPos[2], FACING_OFFSET_BY_KIND[unit.kind] ?? 0)
+              // v2.19+v2.29 — target facing vers la case de repli (lerpé smooth).
+              if (DYNAMIC_FACING_BY_KIND[unit.kind]) {
+                const angle = computeFacing(cur.x, cur.z, targetPos[0], targetPos[2], FACING_OFFSET_BY_KIND[unit.kind] ?? 0)
+                if (angle !== null) targetRotationYRef.current = angle
+              }
             }
           }
         }
@@ -534,6 +622,11 @@ export function UnitPlaceholder({
             <SoldierMesh team={unit.team} opacity={opacity} selected={selected} />
           )}
         </Suspense>
+        {/* v2.26 — Debug axes helper (activé via ?axes=1 dans l'URL).
+            Rouge=+X, Vert=+Y, Bleu=+Z local du mesh. Le museau/canon doit pointer
+            dans la même direction que l'axe BLEU si le mesh respecte la convention
+            Three.js (face naturelle +Z, offset 0 OK). */}
+        {SHOW_AXES_HELPER && <axesHelper args={[2.5]} />}
       </group>
 
       {/* Phase 2 : barre effectif multi-segment (vert effective / orange wounded / sombre tues) — own only.

@@ -1,3 +1,6 @@
+// v8 (17/05/2026) — Phase 4-bis Lot 2 : lookaheadDepth=2 (medium) / 3 (hard), deadline 3.5s
+// v7 (14/05/2026) — Phase 4 polish session 23 (5 fixes : bot bouge, tour bascule, engagé attaque, journal, log clair)
+// v6 (14/05/2026) — Phase 4 polish session 23 (intermediate)
 // v1.0 (14/05/2026) — Phase 4 Lot A3 : EF orchestrator IA solo (1 ply server-side)
 //
 // Pipeline :
@@ -40,7 +43,11 @@ import { DEFAULT_COMBAT_CONFIG } from '../_shared/engine-port/combat/v2/index.ts
 import { DEFAULT_TERRAIN } from '../_shared/engine-port/terrain/index.ts'
 import type { UnitState } from '../_shared/engine-port/units.ts'
 
-const TAG = '[run_bot_turn v1.0]'
+const TAG = '[run_bot_turn v8]'
+
+// Phase 4-bis Lot 2 : deadline absolue pour le lookahead minimax côté EF.
+// 3500 ms laisse 1.5 s pour les writes DB + retour client sous timeout EF 6 s par défaut.
+const LOOKAHEAD_DEADLINE_MS = 3500
 
 interface RunBotTurnBody {
   game_id: string
@@ -134,6 +141,12 @@ Deno.serve(async (req: Request) => {
     // 6. Snapshot UnitState in-memory (sera muté au fil des actions)
     let allUnits: UnitState[] = buildAllUnitStates(units)
 
+    // Phase 4-bis Lot 2 — Profondeur lookahead par profil :
+    //   easy   : 1 ply (random top 3, comportement Phase 4 Lot A)
+    //   medium : 2 ply (beam N=3, ~ 1-2 s par action)
+    //   hard   : 3 ply (beam N=5, deadline 3.5 s)
+    const lookaheadDepth = profile === 'easy' ? 1 : profile === 'medium' ? 2 : 3
+
     // 7. Construire AIContext (sera reconstruit à chaque action si nécessaire)
     function buildCtx(): AIContext {
       const visibleEnemies = visibleEnemiesFromTeam(activeTeam, allUnits, boardKeys)
@@ -148,6 +161,8 @@ Deno.serve(async (req: Request) => {
         profile,
         rng: seededRng(Date.now()),
         engagedUnitIds,
+        lookaheadDepth,
+        deadlineMs: Date.now() + LOOKAHEAD_DEADLINE_MS,
       }
     }
 

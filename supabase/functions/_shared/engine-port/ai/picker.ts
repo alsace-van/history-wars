@@ -1,3 +1,4 @@
+// v1.2 (17/05/2026) — Phase 4-bis Lot 2 : délégation à searchBestAction si lookaheadDepth >= 2 (easy ignore)
 // v1.1 (14/05/2026) — Fix bug session 23 : parseCubeKey au lieu de split (cubeKey="q,r" 2 comps, dest.s était NaN → tous moves score=0)
 // v1.0 (14/05/2026) — Phase 4 Lot A2 : mirror Deno port src/engine/ai/picker.ts
 // PORT FROM src/engine/ai/picker.ts — DO NOT EDIT MANUALLY.
@@ -9,6 +10,7 @@ import { hasLineOfSight } from '../los/index.ts'
 import { getUnitStats, resolveUnitStatsV2 } from '../units.ts'
 import type { UnitState } from '../units.ts'
 import { scoreAction } from './scorer.ts'
+import { searchBestAction } from '../sim/search.ts'
 import type { AIAction, AIContext, ScoredAction } from './types.ts'
 
 export function enumerateActions(unit: UnitState, ctx: AIContext): AIAction[] {
@@ -63,6 +65,21 @@ export function enumerateActions(unit: UnitState, ctx: AIContext): AIAction[] {
 
 export function pickBestActionForUnit(unit: UnitState, ctx: AIContext): AIAction | null {
   if (unit.routed) return null
+
+  // Phase 4-bis Lot 2 : si lookaheadDepth >= 2 et profil != easy, déléguer au minimax.
+  const lookahead = ctx.lookaheadDepth ?? 1
+  if (lookahead >= 2 && ctx.profile !== 'easy') {
+    const beamWidth = ctx.profile === 'hard' ? 5 : 3
+    const enemyBeamWidth = ctx.profile === 'hard' ? 3 : 2
+    const deadline = ctx.deadlineMs ?? (Date.now() + 3500)
+    return searchBestAction(
+      { units: ctx.allUnits, engagedUnitIds: ctx.engagedUnitIds, turn: 0 },
+      unit,
+      { baseCtx: ctx, botTeam: unit.team, beamWidth, enemyBeamWidth, deadline },
+      Math.min(3, Math.max(2, lookahead)),
+    )
+  }
+
   const actions = enumerateActions(unit, ctx)
   if (actions.length === 0) return null
   const scored: ScoredAction[] = actions

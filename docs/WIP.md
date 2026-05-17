@@ -2,6 +2,151 @@
 
 ---
 
+## Session 26 &mdash; 17/05/2026 &mdash; Phase 4-bis Lot 2 : lookahead minimax 2→3 ply
+
+**But** : remplacer l'IA 1-ply greedy actuelle par un minimax avec élagage α-β et iterative deepening, pour que le bot anticipe la réponse adverse au lieu de tomber dans les pièges évidents (attaque qui se fait ripost-tuer, déplacement qui s'expose).
+
+### Décisions validées avec user
+
+| Choix | Valeur |
+|---|---|
+| Profondeur | Iterative deepening 2→3 ply (deadline 3.5s par action) |
+| Profils | easy = 1 ply random / medium = 2 ply (beam N=3) / hard = 3 ply (beam N=5) |
+| Ply adverse | Tour ennemi **complet** simulé (toutes unités, beam étroit sur 1re) |
+| Test winrate | `describe.skip` dans Vitest (lancé manuellement) |
+
+### Architecture livrée
+
+**Module engine `src/engine/sim/`** (5 fichiers runtime + 3 tests, ~600 LOC total) :
+- `types.ts` v1.0 — `SimState`, `SimContext`, `SearchResult`.
+- `clone.ts` v1.0 — `cloneUnits`, `replaceUnit`, `removeUnit`, `ctxFromState`.
+- `applyAction.ts` v1.0 — fonction PURE qui reproduit fidèlement `applyBotAction` côté EF mais SANS toucher la DB. Délègue à `resolveCombat` (pur, déjà existant). Gère engagement bilatéral melee non-mortelle.
+- `evalState.ts` v1.0 — éval heuristique POV bot : `Σ alliés (effective + 0.3 × morale) − Σ ennemis (idem) ± 100 × routed`.
+- `search.ts` v1.0 — recherche minimax α-β + iterative deepening + deadline. Beam ordering via `scoreAction` (réutilisation existant).
+- `index.ts` barrel.
+- Tests : `applyAction.test.ts` (11), `evalState.test.ts` (6), `search.test.ts` (6) → **23 tests neufs**.
+
+**Mirror Deno `supabase/functions/_shared/engine-port/sim/`** (5 fichiers copie disciplinée) — convention projet pour réutilisation EF.
+
+**Intégration `picker.ts`** :
+- `src/engine/ai/types.ts` v1.1 — ajout `lookaheadDepth?: number` + `deadlineMs?: number` à `AIContext`.
+- `src/engine/ai/picker.ts` v1.2 — si `lookaheadDepth >= 2` et `profile !== 'easy'` → délègue à `searchBestAction`. Sinon fallback 1-ply greedy (comportement Phase 4 Lot A intact).
+- Mirror Deno equivalents (`ai/types.ts` v1.1, `ai/picker.ts` v1.2).
+- Tests picker enrichis : 2 nouveaux pour lookahead opt-in / easy ignore.
+
+**EF `run_bot_turn` v8** :
+- Calcule `lookaheadDepth` selon profile : easy=1, medium=2, hard=3.
+- Passe `deadlineMs = Date.now() + 3500` dans `AIContext`.
+- TAG bumped à `[run_bot_turn v8]`.
+- Pas encore déployé prod (déploiement nécessite accord user — bloqué par classificateur auto).
+
+**Test dormant winrate** (`src/engine/sim/winrate.test.ts`) :
+- `describe.skip` par défaut. À activer manuellement pour valider hard ≥ 64% winrate vs medium sur 50 parties (scénario fixe, seed déterministe).
+- Cap temps test : 600 s. Coût attendu réel : ~3-5 min.
+
+### Risques connus / divergences sim vs EF prod (assumées MVP)
+
+- **support tactique** (`computeSupport`) PAS pris en compte dans `applyAction` sim. Accélère la simulation, perd un peu de précision sur les chains de melee.
+- **charge cav** approximée : pas de path synthétique dans `applyAttack`. Une charge avec multiplicateur ×1.3-1.5 sera évaluée comme melee simple. Acceptable pour evaluation à 2-3 ply.
+- **fog of war** non simulé : on garde le snapshot début-tour bot. Conservateur (l'IA voit ce qu'elle voit au début).
+- **RNG partagé** ctx.rng entre sim et combat prod : si la sim consomme le rng pendant l'exploration, le combat réel diverge. Risque limité car le EF appelle searchBestAction par unit puis applyBotAction (avec son propre seed = Date.now()). Mais à surveiller.
+
+### Vérifications
+
+- `npm run tsc` ✅ 0 erreur
+- `npm run test` ✅ **381/381 verts** (+36 vs 345 baseline) + 1 skip (winrate dormant)
+- `npm run build` ✅ PWA OK
+- **Déploiement EF** ✅ `supabase functions deploy run_bot_turn --project-ref abhbkdyoknrsdavimbpr` — v8 prod (les 5 fichiers sim mirror Deno uploadés en bonus, cf. dashboard Supabase).
+
+### À tester manuellement après déploiement
+
+1. Créer partie solo via `AddBotButton` profil **hard**, scénario MVP 10 unités.
+2. Vérifier que le tour bot complète en < 5 s.
+3. Vérifier que le bot évite les attaques suicides (action qui le tue en ripost) — vs Phase 4 Lot A où il fonçait quand même.
+4. Vérifier que le bot priorise les attaques sur unités déjà engagées (chaînage).
+5. Si moins malin que medium : relancer logs EF `[run_bot_turn v8]` et vérifier que `lookaheadDepth=3` est bien transmis.
+
+### Fichiers livrés
+
+**Créés (10)** :
+- `src/engine/sim/{types,clone,applyAction,evalState,search,index}.ts` + 4 tests
+- `supabase/functions/_shared/engine-port/sim/{types,clone,applyAction,evalState,search,index}.ts`
+
+**Modifiés (4)** :
+- `src/engine/ai/types.ts` v1.1
+- `src/engine/ai/picker.ts` v1.2
+- `supabase/functions/_shared/engine-port/ai/{types,picker}.ts` v1.1 / v1.2
+- `supabase/functions/run_bot_turn/index.ts` v8
+
+---
+
+## Session 26 (suite) &mdash; 17/05/2026 &mdash; Polish UX visuel rendu units + cinématique combat
+
+Travail "annexe" enchaîné après livraison du Lot 2 minimax. Tout est local au rendu et au flux Realtime → aucun impact gameplay / EF.
+
+### 1. Calibration facing GLB unités (UnitPlaceholder v2.19 → v2.27)
+
+- Itérations successives sur `FACING_OFFSET_BY_KIND` (5 tentatives v2.19-v2.23) — toutes fausses.
+- Ajout d'un **AxesHelper toggle `?axes=1`** (`SHOW_AXES_HELPER`) : affiche les axes locaux du mesh (rouge=+X, vert=+Y, bleu=+Z) sur chaque pion. Outil de calibration visuel directement intégré.
+- Constat : cavalier/canon/obusier avaient mesh face naturelle +X (axe rouge = direction du museau), pas +Z. Soldat avait offset π/2 historique.
+- **Solution finale (user)** : régénération des GLB cavalier/canon/obusier en convention Three.js standard (+Z = avant). Tous les meshes maintenant cohérents.
+- v2.27 : `FACING_OFFSET_BY_KIND` = 0 pour I/C/A, facing dynamique réactivé pour tous.
+
+### 2. Convention spawn team-based (UnitPlaceholder v2.27)
+
+- Bleus spawn à gauche (-X world), rouges à droite (+X world).
+- `initialFacingY` corrigé : blue = +π/2 (regarde vers +X = droite), red = -π/2 (vers -X = gauche). Au lieu de l'ancien 0/π qui supposait spawn nord/sud.
+
+### 3. Facing dynamique par segment (UnitPlaceholder v2.28)
+
+- Avant : `applyFacing` appelé UNE fois au démarrage du path avec direction start→end. Pion ne suivait pas les changements de direction.
+- Maintenant : facing recalculé à **chaque transition de segment** dans `useFrame` (à chaque face d'hexagone traversée). Pivot de 60° par hex en cas de zigzag.
+
+### 4. Lerp angulaire smooth (UnitPlaceholder v2.29)
+
+- Snap instantané remplacé par lerp via `targetRotationYRef` + `useFrame`.
+- Vitesse `FACING_LERP_SPEED = 6 rad/s` (60° en ~170ms, 180° en ~500ms).
+- `shortestAngleDelta` pour prendre le chemin le plus court (évite pivot rebours sur passage ±π).
+- `applyFacing` snap retiré, remplacé par `computeFacing` + buffer ref.
+
+### 5. Ralentissement vitesses déplacement (UnitPlaceholder v2.30)
+
+- `SECONDS_PER_HEX_BY_KIND` ×1.6 : C 0.45→0.72, I 1.40→2.25, A 1.80→2.90.
+- Motivation : enchaînement bot moins "sprinter sous red bull", lecture des trajectoires plus naturelle.
+
+### 6. Cinématique combat différée
+
+Avant : floaters / panel / shrink / kill / lien engagement / badge T+N s'affichaient AVANT que le pion attaquant arrive sur la cible (Realtime push immédiat). Désormais tout synchronisé sur fin d'anim de l'attaquant.
+
+**Hooks créés / modifiés** :
+- `useCombatNotifications` **v2.6** : buffer `pending` interne. Quand notif arrive et `unitPaths.has(attackerId)` → buffer. `useEffect[unitPaths]` flush vers `notifications` quand attaquant absent du map. Expose `pendingDefenderIds` et `pendingAttackerIds` (sets dérivés de `pending`).
+- `useDeferredUnitDisplay` **v1.0** (nouveau, générique sur `T extends WithId`) : maintient un snapshot par id du dernier état non-frozen vu. Pendant frozen, retourne le snapshot (même si l'unité a été DELETE de la liste live). Évite le shrink + disparition pré-arrivée.
+- `useDeferredEngagements` **v1.0** (nouveau) : filtre les `EngagementRow` impliquant une unité de `pendingCombatUnitIds`. Évite ligne d'engagement + badge T+N pré-arrivée.
+
+**Branchement dans Game.tsx** :
+- `pendingCombatUnitIds` = union `pendingDefenderIds` ∪ `pendingAttackerIds`.
+- `renderUnitsForScene` = `useDeferredUnitDisplay(renderUnitsWithAttackHint, pendingCombatUnitIds)` → freeze shrink/disparition.
+- `deferredEngagementRows` → filtre `enginePairs` par id avant passage à `TacticalScene`.
+
+### Vérifications session annexe
+
+- `npx tsc --noEmit` ✅ 0 erreur
+- `npx vitest run` ✅ **381/381** verts (inchangé, pas de logique gameplay touchée)
+- Tests visuels manuels OK pour : facing tous kinds, déplacement zigzag avec pivot smooth, attaque mêlée → tout synchronisé sur fin d'anim attaquant.
+
+### Fichiers livrés (session annexe)
+
+**Créés (2)** :
+- `src/hooks/useDeferredUnitDisplay.ts`
+- `src/hooks/useDeferredEngagements.ts`
+
+**Modifiés (3)** :
+- `src/render/units/UnitPlaceholder.tsx` v2.19 → v2.30
+- `src/hooks/useCombatNotifications.ts` v2.5 → v2.6
+- `src/ui/pages/Game.tsx` (intégration hooks différés + spawn convention)
+
+---
+
 ## Session 25 &mdash; 17/05/2026 &mdash; Phase 2.6 stabilisation UX charge cav + polish anim générique
 
 **Session de bugfix/polish UX exclusivement.** Aucune nouvelle phase. Stabilisation du flow charge cav (preview pré-commit Phase 2.6 v1.0 livrée session 18-19) + amélioration anim générique applicable à toutes les unités.

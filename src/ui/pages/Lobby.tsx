@@ -134,6 +134,14 @@ export function Lobby() {
             <span className="text-[12px] text-muted-foreground tracking-[0.05em]">
               Officier <strong className="text-foreground font-semibold">{username}</strong>
             </span>
+            {user?.email === 'alsacevancreation@hotmail.com' && (
+              <button
+                onClick={() => navigate('/editor/maps')}
+                className="px-3 py-[7px] text-[11px] font-semibold uppercase tracking-[0.12em] bg-transparent border border-tactica-amber/60 hover:bg-tactica-amber/10 text-tactica-amber rounded-[2px] transition-colors"
+              >
+                🎨 Editeur de cartes
+              </button>
+            )}
             <button
               onClick={() => void signOut()}
               className="px-3 py-[7px] text-[11px] font-semibold uppercase tracking-[0.12em] bg-transparent border border-[rgba(226,232,240,0.18)] hover:border-tactica-amber hover:bg-[rgba(226,232,240,0.06)] text-foreground rounded-[2px] transition-colors"

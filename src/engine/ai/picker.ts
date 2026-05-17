@@ -1,3 +1,4 @@
+// v1.2 (17/05/2026) — Phase 4-bis Lot 2 : délégation à searchBestAction si lookaheadDepth >= 2 (easy ignore)
 // v1.1 (14/05/2026) — Fix bug session 23 : parseCubeKey au lieu de split (cubeKey="q,r" 2 comps, dest.s était NaN → cubeDistance NaN → tous moves score=0)
 // v1.0 (14/05/2026) — Phase 4 Lot A1 : enumerate + pick (greedy 1 ply selon profil)
 // Frontière engine/ : zéro React, zéro Three, zéro Supabase.
@@ -9,6 +10,7 @@ import { hasLineOfSight } from '../los'
 import { getUnitStats, resolveUnitStatsV2 } from '../units/stats'
 import type { UnitState } from '../units/types'
 import { scoreAction } from './scorer'
+import { searchBestAction } from '../sim/search'
 import type { AIAction, AIContext, ScoredAction } from './types'
 
 /**
@@ -82,6 +84,23 @@ export function enumerateActions(unit: UnitState, ctx: AIContext): AIAction[] {
  */
 export function pickBestActionForUnit(unit: UnitState, ctx: AIContext): AIAction | null {
   if (unit.routed) return null
+
+  // Phase 4-bis Lot 2 : si lookaheadDepth >= 2 et profil != easy, déléguer au minimax.
+  // Easy garde son caractère "random parmi top 3" même si lookaheadDepth fourni.
+  const lookahead = ctx.lookaheadDepth ?? 1
+  if (lookahead >= 2 && ctx.profile !== 'easy') {
+    // Cycle d'imports OK : searchBestAction est lazy (appelé au runtime), pas au module init.
+    const beamWidth = ctx.profile === 'hard' ? 5 : 3
+    const enemyBeamWidth = ctx.profile === 'hard' ? 3 : 2
+    const deadline = ctx.deadlineMs ?? (Date.now() + 3500)
+    return searchBestAction(
+      { units: ctx.allUnits, engagedUnitIds: ctx.engagedUnitIds, turn: 0 },
+      unit,
+      { baseCtx: ctx, botTeam: unit.team, beamWidth, enemyBeamWidth, deadline },
+      Math.min(3, Math.max(2, lookahead)),
+    )
+  }
+
   const actions = enumerateActions(unit, ctx)
   if (actions.length === 0) return null
   const scored: ScoredAction[] = actions

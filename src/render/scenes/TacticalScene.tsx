@@ -1,7 +1,8 @@
+// v2.0 (17/05/2026) — Phase 5 Lot B.5 : forward templateMap + templatesById + customAssetsById a TerrainDecor
 // v1.9 (12/05/2026) — Phase 3.1-B : props tileVisibility + enemyVisibility (fog client + silhouettes)
 // v1.8 (11/05/2026) — Phase 2.6 C : prop engagements (ligne 3D rouge pulsante entre pions engagés)
 // v1.7 (11/05/2026) — Phase 2.5 C.2 : props cohesionStateMap + supportMap pour anneaux 3D état/soutien
-// v1.6 (10/05/2026) — Phase 2 2.5 : prop damageFloaters (queue DamageFloater rendue en 3D au-dessus des unités)
+
 import { useMemo } from 'react'
 import { cubeToWorld, type Cube } from '@engine/hex'
 import type { Scale, Team } from '@/types/game'
@@ -14,6 +15,10 @@ import { CameraController } from '../camera/CameraController'
 import { SceneLighting } from '../lighting/SceneLighting'
 import { DamageFloater } from '../effects/DamageFloater'
 import { EngagementOverlay, type EngagementPair } from '../effects/EngagementOverlay'
+import { TerrainDecor } from '../decor/TerrainDecor'
+import type { TerrainType } from '@engine/terrain/types'
+import type { HexTemplate } from '@hooks/useHexTemplates'
+import type { HexAsset } from '@hooks/useHexAssets'
 import type { UnitInstance, HexTileState, HexTileVisibility } from '../types'
 import type { DamageFloaterEntry } from '@hooks/useCombatAnimator'
 import { SceneShell } from './SceneShell'
@@ -55,6 +60,14 @@ interface TacticalSceneProps {
   tileVisibility?: Map<string, HexTileVisibility>
   /** Phase 3.1-B : Map<unitId, VisibilityLevel> pour les ennemis. Key absente = 'hidden' (non rendu). */
   enemyVisibility?: Map<string, VisibilityLevel>
+  /** Phase 5 : Map cubeKey → TerrainType pour rendu décors 3D (TerrainDecor). */
+  terrainMap?: Map<string, TerrainType>
+  /** Phase 5 Lot B.5 : Map cubeKey -> templateId (hex avec custom template). */
+  templateMap?: Map<string, string>
+  /** Phase 5 Lot B.5 : Lookup templateId -> HexTemplate. */
+  templatesById?: Map<string, HexTemplate>
+  /** Phase 5 Lot B.5 : Lookup assetId -> HexAsset pour GLB customs. */
+  customAssetsById?: Map<string, HexAsset>
   className?: string
 }
 
@@ -84,6 +97,10 @@ export function TacticalScene({
   engagements,
   tileVisibility,
   enemyVisibility,
+  terrainMap,
+  templateMap,
+  templatesById,
+  customAssetsById,
   className,
 }: TacticalSceneProps) {
   const { hexSize } = SCALE_CONFIG[scale]
@@ -156,6 +173,15 @@ export function TacticalScene({
       <CameraController scale={scale} target={cameraTarget} />
       <SceneLighting />
       <HexGrid scale={scale} cubes={cubes} onTileClick={onTileClick} tileStates={tileStates} tileVisibility={tileVisibility} />
+      {terrainMap && terrainMap.size > 0 && (
+        <TerrainDecor
+          terrainMap={terrainMap}
+          hexSize={hexSize}
+          templateMap={templateMap}
+          templatesById={templatesById}
+          customAssetsById={customAssetsById}
+        />
+      )}
       {renderedUnits}
       {engagements && engagements.length > 0 && (
         <EngagementOverlay engagements={engagements} hexSize={hexSize} />
