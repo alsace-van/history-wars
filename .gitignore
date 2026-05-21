@@ -46,3 +46,7 @@ supabase/.temp/
 
 # Claude Code agent worktrees (temporary isolation copies)
 .claude/worktrees/
+
+# Phase 5 Lot 5.1 — output SQL généré par scripts/build-scenario.ts (regenerable)
+scripts/test-fixtures/test-output.sql
+scripts/test-fixtures/*.sql

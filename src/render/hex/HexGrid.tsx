@@ -1,12 +1,15 @@
+// v2.0 (21/05/2026) — Phase 5 Lot 5.0 TASK 5.0.5 : wrapper deleguant a HexGridInstanced (perf 5000+ hex)
 // v1.2 (12/05/2026) — Phase 3.1-B : prop tileVisibility (fog client, défaut 'visible')
 // v1.1 (09/05/2026) — L1C.3 : prop tileStates Map<cubeKey, HexTileState> qui override le hover local
 // v1.0 (09/05/2026) — Grille hex parametree par scale, lit SCALE_CONFIG[scale]
-import { useMemo, useState } from 'react'
+//
+// API publique inchangee. L'implementation v1.x (1 mesh/hex × 3 ~ inviable au-dela de
+// 1000 hex) est remplacee par HexGridInstanced (1 draw call sol + 1 overlay + 1 bords).
+// Conservee comme wrapper pour ne pas toucher les call sites (TacticalScene, MapEditor).
+
 import type { Cube } from '@engine/hex'
-import { cubeKey } from '@engine/hex'
 import type { Scale } from '@/types/game'
-import { SCALE_CONFIG } from '@engine/scales'
-import { HexTile } from './HexTile'
+import { HexGridInstanced } from './HexGridInstanced'
 import type { HexTileState, HexTileVisibility } from '../types'
 
 interface HexGridProps {
@@ -28,61 +31,10 @@ interface HexGridProps {
   tileVisibility?: Map<string, HexTileVisibility>
 }
 
-const flat = () => 0
-
-export function HexGrid({
-  scale,
-  cubes,
-  getElevation = flat,
-  onTileClick,
-  tileStates,
-  tileVisibility,
-}: HexGridProps) {
-  const { hexSize } = SCALE_CONFIG[scale]
-  const [hoveredKey, setHoveredKey] = useState<string | null>(null)
-
-  const tiles = useMemo(
-    () =>
-      cubes.map(c => ({
-        cube: c,
-        key: cubeKey(c),
-        elevation: getElevation(c),
-      })),
-    [cubes, getElevation]
-  )
-
-  return (
-    <group>
-      {tiles.map(t => {
-        // Priorite : tileStates explicite (selected/reachable/targetable) > hover local > idle
-        const explicit = tileStates?.get(t.key)
-        let state: HexTileState
-        if (explicit && explicit !== 'idle') {
-          // Si on hover un hex deja highlighte (reachable/targetable), garder le hover visuel
-          state = t.key === hoveredKey ? 'hover' : explicit
-        } else {
-          state = t.key === hoveredKey ? 'hover' : 'idle'
-        }
-        // v1.2 : si tileVisibility absent → tout 'visible'. Sinon : key absente = 'hidden'.
-        const visibility: HexTileVisibility = tileVisibility
-          ? (tileVisibility.get(t.key) ?? 'hidden')
-          : 'visible'
-        return (
-          <HexTile
-            key={t.key}
-            cube={t.cube}
-            hexSize={hexSize}
-            elevation={t.elevation}
-            state={state}
-            visibility={visibility}
-            onClick={() => onTileClick?.(t.cube)}
-            onPointerOver={() => setHoveredKey(t.key)}
-            onPointerOut={() =>
-              setHoveredKey(prev => (prev === t.key ? null : prev))
-            }
-          />
-        )
-      })}
-    </group>
-  )
+/**
+ * Grille hex pour le niveau tactique. Drop-in wrapper Phase 5 Lot 5.0 :
+ * forward toutes les props a HexGridInstanced sans rien faire de plus.
+ */
+export function HexGrid(props: HexGridProps) {
+  return <HexGridInstanced {...props} />
 }

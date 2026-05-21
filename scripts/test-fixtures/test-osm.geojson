@@ -1,0 +1,147 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              2.512,
+              47.015
+            ],
+            [
+              2.518,
+              47.015
+            ],
+            [
+              2.518,
+              47.019
+            ],
+            [
+              2.512,
+              47.019
+            ],
+            [
+              2.512,
+              47.015
+            ]
+          ]
+        ]
+      },
+      "properties": {
+        "landuse": "forest",
+        "name": "Bois Test"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            2.5,
+            47.003
+          ],
+          [
+            2.505,
+            47.005
+          ],
+          [
+            2.51,
+            47.003
+          ],
+          [
+            2.515,
+            47.004
+          ],
+          [
+            2.52,
+            47.003
+          ]
+        ]
+      },
+      "properties": {
+        "waterway": "river",
+        "name": "Rivière Test"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [
+          [
+            2.5,
+            47.01
+          ],
+          [
+            2.52,
+            47.01
+          ]
+        ]
+      },
+      "properties": {
+        "highway": "primary",
+        "name": "Route Principale"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          2.502,
+          47.011
+        ]
+      },
+      "properties": {
+        "building": "house",
+        "name": "Maison 1"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          2.504,
+          47.012
+        ]
+      },
+      "properties": {
+        "building": "farm",
+        "name": "Ferme 1"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          2.503,
+          47.01
+        ]
+      },
+      "properties": {
+        "building": "church",
+        "name": "Chapelle Test"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          2.51,
+          47.005
+        ]
+      },
+      "properties": {
+        "bridge": "yes",
+        "highway": "primary"
+      }
+    }
+  ]
+}
