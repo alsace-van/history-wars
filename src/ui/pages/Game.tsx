@@ -1,6 +1,6 @@
+// v3.30 (21/05/2026) — Phase 5 Lot 5.0 : TacticalStateView etendu metersPerHex + hexMapId (lecture state JSONB)
 // v3.29 (14/05/2026) — Phase 3.3 Lot A : useOrderTriggeredToasts câblé (toast owner)
 // v3.28 (13/05/2026) — QW2 session 22 : extraction useEngagementTickFloaters + useCombatHighlight + useCameraFocus (< 600 lignes)
-// v3.27 (13/05/2026) — Phase 3.2-bis : tick floaters + toast "Combat continu (T+N)" pour engagement persistant
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -64,12 +64,17 @@ import { spiral, cubeKey, type Cube } from '@engine/hex'
 import { type UnitState, type SplitRatio } from '@engine/units'
 
 // v3.22 : board cubes derives a runtime depuis tactical.boardRadius (cf. useMemo dans le composant).
-// La valeur de fallback ci-dessous sert au rendu pre-bataille (lobby) ou si state encore null.
+// Phase 5 Lot 5.0 : metersPerHex + hexMapId aussi stockes dans state.tactical, lus depuis hex_maps via EF.
+// metersPerHex defaut (50) sera consomme Lot 5.2 (engine terrain).
 const DEFAULT_TACTICAL_RADIUS = 7
 
 interface TacticalStateView {
   phase?: string
   boardRadius?: number
+  /** Phase 5 Lot 5.0 — echelle metrique d'un hex (depuis hex_maps.meters_per_hex via EF). */
+  metersPerHex?: number
+  /** Phase 5 Lot 5.0 — reference au template de carte (NULL = scenario legacy MVP). */
+  hexMapId?: string | null
   currentTurn?: number
   activeTeam?: Team
   scenarioId?: string
