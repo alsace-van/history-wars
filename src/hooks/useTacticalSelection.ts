@@ -1,7 +1,7 @@
 // v1.16 (21/05/2026) — Phase 5 Lot 5.6 : selectedHexes (cubeKeys des hex de l'unité sélectionnée, multi-hex)
 // v1.15 (16/05/2026) — Phase 2.6 refonte : attackTargets via findAttackPosition (auto-move + attack atomique pour cav/inf/art)
-// v1.13 (14/05/2026) — Fix bug session 23 : parseCubeKey (cubeKey="q,r" 2 comps, destCube.s était undefined → cubeDistance NaN → filtre post-rupture inopérant)
 // v1.14 (16/05/2026) — Phase 2.6 : chargeRetreatMode + chargeRetreatTargetKeys (menu post-charge cav)
+// v1.13 (14/05/2026) — Fix bug session 23 : parseCubeKey (cubeKey="q,r" 2 comps, destCube.s était undefined → cubeDistance NaN → filtre post-rupture inopérant)
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { computeCohesion, computeSupport, type CohesionState, type SupportCount } from '@engine/cohesion'
 import { cubeKey, cubeDistance, neighbors, spiral, parseCubeKey } from '@engine/hex'

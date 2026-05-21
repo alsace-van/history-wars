@@ -1,7 +1,7 @@
+// v2.3 (21/05/2026) — Phase 5 Lot 5.0 : GameStateV1.tactical.metersPerHex + hexMapId (echelle hex variable)
 // v2.2 (11/05/2026) — Phase 2.6 Vague B : ActionType etendu break_combat + payload + error codes engagement
 // v2.1 (11/05/2026) — Phase 2.5 B : ActionType etendu retreat/surrender/suicide_attack + payloads + error codes cohésion
 // v2.0 (10/05/2026) — Phase 2 2C.2 : ActionType etendu split_unit/merge_unit + AttackResultV2 + payloads + error codes
-// v1.2 (09/05/2026) — Phase 1 L1B.4a : ajout AttackPayload/Result + EndTurn* + INVALID_TARGET, GAME_FINISHED
 
 export type Team = 'blue' | 'red'
 export type UnitKind = 'I' | 'C' | 'A'
@@ -19,6 +19,14 @@ export interface GameStateV1 {
   tactical: {
     phase: TacticalPhase
     boardRadius: number
+    /**
+     * Phase 5 Lot 5.0 — echelle metrique d'un hex en metres.
+     * Lu depuis hex_maps.meters_per_hex au start_battle si games.hex_map_id non-null,
+     * sinon fallback 50 (medieval serre, MVP). Override le SCALE_CONFIG.tactical client.
+     */
+    metersPerHex?: number
+    /** Phase 5 Lot 5.0 — reference au template de carte (NULL = scenario legacy MVP). */
+    hexMapId?: string | null
     currentTurn: number
     activeTeam: Team
     scenarioId: string
