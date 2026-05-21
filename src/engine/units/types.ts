@@ -1,3 +1,4 @@
+// v2.1 (21/05/2026) — Phase 5 Lot 5.6 : positions[] multi-hex + UnitHexPosition
 // v2.0 (10/05/2026) — Phase 2 2A.1 : effective elastique + killed cumul + champs Phase 5/6 placeholders
 // v1.1 (10/05/2026) — Phase 1.5 : ajout `wounded` (soldats blesses, soignables Phase 3)
 // v1.0 (09/05/2026) — Phase 1 L1A.1 : types unite tactique
@@ -7,6 +8,20 @@ import type { Cube } from '../hex'
 import type { Team, UnitKind } from '../../types/game'
 
 export type UnitId = string
+
+/**
+ * Phase 5 Lot 5.6 — 1 hex occupé par une unité multi-hex.
+ * Une UnitState porte `positions: ReadonlyArray<UnitHexPosition>`. En MVP 1-hex,
+ * le tableau contient 1 entrée. Phase 5+ : N entrées contiguës (validation BFS via
+ * `isContiguous` dans engine/units/positions.ts).
+ *
+ * Invariant : somme(effectiveShare) sur toutes les positions === UnitState.effective.
+ * Le respect de cet invariant est géré côté adapter (BDD → engine) + EFs (writes).
+ */
+export interface UnitHexPosition {
+  readonly cube: Cube
+  readonly effectiveShare: number
+}
 
 /**
  * Stats de base d'un type d'unite. Constantes par UnitKind.
@@ -55,7 +70,23 @@ export interface UnitState {
   readonly id: UnitId
   readonly kind: UnitKind
   readonly team: Team
+  /**
+   * DEPRECATED Phase 5+ — hex "principal" (legacy 1-hex). Égal à `positions[0]?.cube`
+   * quand `positions` est rempli. Conservé tant que tous les consommateurs n'utilisent
+   * pas `mainPosition(unit)` ou `allCubes(unit)`. Source de vérité = `positions`.
+   */
   readonly position: Cube
+  /**
+   * Phase 5 Lot 5.6 — hex occupés par l'unité (1..N), contigus.
+   * OPTIONNEL en MVP : si absent, les helpers (`mainPosition`, `allCubes`,
+   * `centroid`, `totalEffective`) fallback sur le couple legacy `position` +
+   * `effective`. L'adapter `unitRowToState` remplit toujours ce champ depuis
+   * `unit_positions` BDD (1 row par hex). Quand présent : la somme des
+   * `effectiveShare` doit valoir `effective` (invariant). Une zone contiguë
+   * doit être garantie côté code (validation BFS via `isContiguous`).
+   * Source de vérité multi-hex pour ZdC, mouvement, combat, LoS, render.
+   */
+  readonly positions?: ReadonlyArray<UnitHexPosition>
   /** Soldats actifs (combattent, recoivent les coups, projettent ZoC). Legacy v1. */
   readonly hp: number
   readonly hpMax: number

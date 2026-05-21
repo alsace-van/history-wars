@@ -1,15 +1,13 @@
+// v1.16 (21/05/2026) — Phase 5 Lot 5.6 : selectedHexes (cubeKeys des hex de l'unité sélectionnée, multi-hex)
 // v1.15 (16/05/2026) — Phase 2.6 refonte : attackTargets via findAttackPosition (auto-move + attack atomique pour cav/inf/art)
-// v1.13 (14/05/2026) — Fix bug session 23 : parseCubeKey (cubeKey="q,r" 2 comps, destCube.s était undefined → cubeDistance NaN → filtre post-rupture inopérant)
 // v1.14 (16/05/2026) — Phase 2.6 : chargeRetreatMode + chargeRetreatTargetKeys (menu post-charge cav)
-// v1.12 (14/05/2026) — Phase 3.3 Lot C : orderRetreatPickMode (highlight hex pour pré-ordre retreat)
-// v1.11 (14/05/2026) — Phase 3.3 : targetableUnitIds utilise resolveUnitStatsV2 + skip LoS si arcedTrajectory
-// v1.10 (12/05/2026) — Phase 3.1-C : params visibleTileKeys + enemyVisibility (filtre reachable/targetable)
+// v1.13 (14/05/2026) — Fix bug session 23 : parseCubeKey (cubeKey="q,r" 2 comps, destCube.s était undefined → cubeDistance NaN → filtre post-rupture inopérant)
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { computeCohesion, computeSupport, type CohesionState, type SupportCount } from '@engine/cohesion'
 import { cubeKey, cubeDistance, neighbors, spiral, parseCubeKey } from '@engine/hex'
 import { bfsReachable } from '@engine/movement'
 import { computeEnemyZoc } from '@engine/zoc'
-import { getUnitStats, type UnitState } from '@engine/units'
+import { getUnitStats, allCubes, type UnitState } from '@engine/units'
 import { findAttackPosition, type AttackPositionResult } from '@engine/combat/v2'
 import type { VisibilityLevel } from '@engine/vision'
 import type { HexTileState } from '@render/types'
@@ -115,6 +113,13 @@ interface UseTacticalSelectionResult {
   suicideTargetIds: Set<string>
   /** Phase 3.3 Lot C — Set des cubeKey atteignables pour pré-ordre retreat (vide hors mode). */
   orderRetreatPickKeys: Set<string>
+  /**
+   * Phase 5 Lot 5.6 — Set des cubeKey occupés par l'unité sélectionnée (1..N hex).
+   * Vide si aucune unité sélectionnée. Utilisé pour dessiner le ring de sélection
+   * autour de TOUS les hex d'une unité multi-hex (et non seulement de son centroïde).
+   * En 1-hex, contient 1 élément = cubeKey(selectedUnit.position).
+   */
+  selectedHexes: Set<string>
   /** QW2 — Unité ennemie en cours d'inspection (panel read-only). null si aucune. */
   inspectedEnemy: UnitState | null
   handleUnitClick: (unit: { id: string; team: Team }) => void
@@ -456,6 +461,14 @@ export function useTacticalSelection(
     setInspectedEnemyId(null)
   }, [])
 
+  // Phase 5 Lot 5.6 — hex occupés par l'unité sélectionnée (multi-hex).
+  // En 1-hex (positions absent), allCubes fallback sur [selectedUnit.position].
+  // En queue conformément à CLAUDE.md règle 3 (jamais déplacer un hook existant).
+  const selectedHexes = useMemo<Set<string>>(() => {
+    if (!selectedUnit) return new Set()
+    return new Set(allCubes(selectedUnit).map(cubeKey))
+  }, [selectedUnit])
+
   // QW2 — Inspection ennemie (hooks en queue cf. CLAUDE.md règle 3).
   const [inspectedEnemyId, setInspectedEnemyId] = useState<string | null>(null)
 
@@ -495,6 +508,7 @@ export function useTacticalSelection(
     retreatTargetKeys,
     suicideTargetIds,
     orderRetreatPickKeys,
+    selectedHexes,
     inspectedEnemy,
     handleUnitClick,
     clearSelection,

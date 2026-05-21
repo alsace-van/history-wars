@@ -1,10 +1,9 @@
+// v2.31 (21/05/2026) — Phase 5 Lot 5.6 : guard multi-hex en début (délègue à UnitFigurines)
 // v2.30 (17/05/2026) — ralenti vitesses déplacement ×1.6 (bot moins "red bull")
 // v2.29 (17/05/2026) — lerp angulaire pour rotation smooth (au lieu de snap instantané).
 //   Vitesse ~6 rad/s : 180° en ~500ms, rendu fluide pour les pivots à face d'hex.
 // v2.28 (17/05/2026) — facing par segment : pivot à chaque face d'hexagone traversée
 //   (au lieu d'un facing unique start→end). Le pion s'aligne sur chaque segment du path.
-// v2.27 (17/05/2026) — GLB cavalier/canon/obusier régénérés en convention +Z avant
-//   (cohérent avec soldier). Offsets = 0 pour tous, facing dynamique réactivé pour tous.
 // v2.26 (17/05/2026) — ajout AxesHelper toggle ?axes=1 pour calibrer offsets GLB
 // v2.25 (17/05/2026) — désactive facing dynamique pour TOUS les kinds (C et A aussi
 //   se comportent mal : C pivote wrong puis revient, A pivote wrong et reste). Garde
@@ -60,6 +59,7 @@ import { HowitzerMesh } from './HowitzerMesh'
 import { UnitHealthBar } from './UnitHealthBar'
 import { UnitStatusRing } from './UnitStatusRing'
 import { UnitSupportRing } from './UnitSupportRing'
+import { UnitFigurines } from './UnitFigurines'
 
 interface UnitPlaceholderProps {
   unit: UnitInstance
@@ -221,6 +221,32 @@ export function UnitPlaceholder({
   support,
   silhouette = false,
 }: UnitPlaceholderProps) {
+  // v2.31 — Guard Phase 5 Lot 5.6 : si l'unité occupe N hex (N > 1), délègue à
+  // UnitFigurines (rendu statique N meshes + label + healthbar au centroïde).
+  // Cas stable pour la vie d'une unité (un split crée de nouveaux IDs, donc
+  // chaque UnitInstance garde son mode 1-hex / multi-hex de bout en bout).
+  // L'animation path multi-hex (bloc rigide) arrive en TASK 5.6.4.
+  if (unit.positions && unit.positions.length > 1) {
+    return (
+      <UnitFigurines
+        unit={unit}
+        positions={unit.positions}
+        hexSize={hexSize}
+        selected={selected}
+        targetable={targetable}
+        exhausted={exhausted}
+        highlighted={highlighted}
+        viewerTeam={viewerTeam}
+        onClick={onClick}
+        onPointerOver={onPointerOver}
+        onPointerOut={onPointerOut}
+        cohesionState={cohesionState}
+        support={support}
+        silhouette={silhouette}
+      />
+    )
+  }
+
   const targetPos = useMemo<[number, number, number]>(() => cubeWorld(unit.position, hexSize), [unit.position, hexSize])
 
   const ringRadius = hexSize * 0.42
