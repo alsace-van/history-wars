@@ -1,10 +1,11 @@
+// v2.3 (21/05/2026) — Phase 5 Lot 5.6 : UnitInstance porte positions[] multi-hex (optionnel)
 // v2.2 (14/05/2026) — Phase 3.3 Lot B : UnitInstance porte activeOrder (icône d'ordre sur pion)
 // v2.1 (14/05/2026) — Phase 3.3 : UnitInstance porte subKind (artillery_light/heavy/archer)
 // v2.0a (10/05/2026) — Phase 2 2D.6 : HexTileState 'split-target' (case adjacente libre pour scinder)
 // v2.0 (10/05/2026) — Phase 2 2E.1 : UnitInstance enrichi avec effective/effectiveMax (Phase 2 effectif elastique)
 import type { Cube } from '@engine/hex'
 import type { Team, UnitKind } from '@/types/game'
-import type { UnitSubKind } from '@engine/units'
+import type { UnitSubKind, UnitHexPosition } from '@engine/units'
 import type { OrderActionKind } from '@engine/orders'
 
 export type HexTileState =
@@ -24,7 +25,18 @@ export type HexTileVisibility = 'visible' | 'fog' | 'hidden'
 
 export interface UnitInstance {
   readonly id: string
+  /**
+   * Hex "principal" (legacy 1-hex). Pour multi-hex, source de vérité = `positions`,
+   * et `position` égale `positions[0].cube`. Conservé tant que les consommateurs
+   * (anim path, hover, etc.) n'utilisent pas systématiquement le centroïde.
+   */
   readonly position: Cube
+  /**
+   * Phase 5 Lot 5.6 — hex occupés par l'unité (1..N), contigus. Optionnel : si
+   * absent → comportement 1-hex (rendu d'1 figurine au `position` legacy).
+   * Si présent et length > 1 → rendu N figurines via `UnitFigurines`.
+   */
+  readonly positions?: ReadonlyArray<UnitHexPosition>
   readonly team: Team
   readonly kind: UnitKind
   /** Soldats actifs courants (legacy v1, conserve 1 phase). */

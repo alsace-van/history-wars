@@ -1,6 +1,7 @@
+// v2.1 (21/05/2026) — Phase 5 Lot 5.6 : exports UnitHexPosition + helpers positions
 // v2.0 (10/05/2026) — Phase 2 2A.3 : exports stats v2 + sizing (split/merge)
 // v1.0 (09/05/2026) — Phase 1 L1A.1 : barrel engine/units
-export type { UnitId, UnitStats, UnitState, UnitSubKind } from './types'
+export type { UnitId, UnitStats, UnitState, UnitSubKind, UnitHexPosition } from './types'
 export {
   UNIT_STATS_BY_KIND,
   getUnitStats,
@@ -22,3 +23,10 @@ export {
   type SizingError,
 } from './sizing'
 export { computeOrdinalLabels, getKindCode } from './labels'
+export {
+  mainPosition,
+  allCubes,
+  centroid,
+  isContiguous,
+  totalEffective,
+} from './positions'

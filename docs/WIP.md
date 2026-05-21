@@ -2,6 +2,102 @@
 
 ---
 
+## Session 27 — 21/05/2026 — Phase 5 Track B : Multi-Hex Foundation (Lot 5.6 partiel)
+
+**Branche** : `phase-5-track-b-multihex` (en cours, PR à ouvrir par user).
+**Périmètre** : TASKs 5.6.1, 5.6.2, 5.6.3, 5.6.6, 5.6.7. Stop avant 5.6.4 (mvmt multi-hex), 5.6.5 (combat multi-hex), 5.6.8 (EF), 5.6.9 (IA) — attente fin Track A (terrain).
+
+**But** : introduire le concept "1 unité = N hex contigus" sans casser le gameplay 1-hex existant.
+
+### TASK 5.6.1 — Migration 042 unit_positions ✅
+
+- Table `unit_positions(unit_id uuid REFERENCES units ON DELETE CASCADE, q int, r int, effective_share int CHECK >= 0, PK(unit_id, q, r))`.
+- Backfill : 1 row par unit existante (`effective_share = effective`). **189 units → 189 positions** (1:1 prod).
+- Index `(q, r)` pour query "qui occupe cet hex ?" rapide.
+- RLS SELECT héritage cascade via `EXISTS (SELECT 1 FROM units WHERE ...)` → applique automatiquement `units_select_fog` (migration 024). Pas de policy INSERT/UPDATE/DELETE → service_role only.
+- `REPLICA IDENTITY FULL` + ajout publication `supabase_realtime`.
+- Migration appliquée prod via MCP `apply_migration` + `get_advisors` propre (warnings pré-existants seulement, rien sur ma nouvelle table).
+
+### TASK 5.6.2 — UnitState refonte positions[] ✅
+
+- `UnitState.positions?: ReadonlyArray<UnitHexPosition>` ajouté (OPTIONNEL pour compat fixtures de tests existants). `position: Cube` legacy conservée tant que tous consommateurs n'utilisent pas helpers.
+- Nouveau type `UnitHexPosition { cube: Cube; effectiveShare: number }`.
+- `src/engine/units/positions.ts` (NEW) — 5 helpers :
+  - `mainPosition(unit): Cube` — `positions[0]?.cube ?? unit.position`
+  - `allCubes(unit): Cube[]` — fallback `[unit.position]`
+  - `centroid(unit): Cube` — moyenne arithmétique arrondie via `cubeRound`, conserve invariant `q+r+s=0`
+  - `isContiguous(positions): boolean` — BFS validation, ≤ 1 hex toujours true
+  - `totalEffective(unit): number` — somme `effectiveShare`, fallback `unit.effective`
+- `unitAdapter.ts` v1.4 : `unitRowToState(row, positionsForUnit?)` + `unitRowsToStates(rows, positionsMap?)` + helper `groupPositionsByUnitId`. Fallback 1-hex automatique si positionsMap absent.
+- `UnitInstance.positions?` ajouté côté render aussi.
+- **24 tests positions** verts.
+
+### TASK 5.6.3 — ZdC sommée multi-hex ✅
+
+- `computeEnemyZoc` itère sur `allCubes(u)` pour chaque ennemi non-routed.
+- Pour chaque hex de l'unité, ajoute ses 6 voisins MOINS les hex de la même unité (anti auto-ZdC).
+- Compat 1-hex : `allCubes` fallback `[position]` → comportement legacy intact.
+- Calcul vérifié : unité 3-hex en ligne projette ZdC sur **10 hex** (3 internes exclus, 10 voisins externes uniques après dédup).
+- **5 nouveaux tests** ZdC (4 legacy + 5 multi-hex = 9 au total dans zoc.test.ts).
+
+### TASK 5.6.6 — Render multi-hex figurines ✅
+
+- `UnitLabel.tsx` (NEW) — Billboard centralisé extrait de UnitPlaceholder (label + icônes ⚔/⬢/ordre + count). Réutilisable.
+- `UnitFigurines.tsx` (NEW) — N meshes positionnés sur les hex de `positions`, 1 UnitLabel + 1 UnitHealthBar centrés sur le centroïde. Ring de sélection sur CHAQUE hex si `selected=true`. Click sur n'importe quelle figurine → `onClick(unit)`. **Pas d'anim path en MVP** (déplacement bloc rigide arrivera en TASK 5.6.4).
+- `UnitPlaceholder.tsx` v2.31 — guard tout en début : `if (unit.positions && unit.positions.length > 1) return <UnitFigurines ... />`. **Critique Rules of Hooks** : suppose qu'une unité reste stable dans son mode 1-hex / multi-hex pendant sa vie (split = nouveaux IDs).
+
+### TASK 5.6.7 — Sélection multi-hex ✅
+
+- `useTacticalSelection` v1.16 — ajout `selectedHexes: Set<string>` via `useMemo(() => new Set(allCubes(selectedUnit).map(cubeKey)))` en queue conformément à CLAUDE.md règle 3.
+- En 1-hex : Set d'1 élément. En multi-hex : N éléments.
+- Click sur n'importe quel hex d'une unité multi-hex → already handled via UnitFigurines hitbox cylinder par figurine (chacune émet onClick(unit)).
+- Ring de sélection dessiné autour de chaque hex via UnitFigurines (cf 5.6.6).
+
+### Vérifications
+
+- `npm run tsc` ✅ 0 erreur (sur mes fichiers ; les modifs Track A présentes sur le working dir compilent OK aussi).
+- `npm run test` ✅ **410/410 verts** (+29 vs 381 baseline) + 1 skip dormant.
+- Migration 042 appliquée prod ✅, backfill 189 = 189.
+- `get_advisors` ✅ clean sur unit_positions.
+
+### Périmètre EXCLU respecté
+
+Aucun fichier interdit n'a été modifié par Track B :
+- `src/engine/movement/path.ts`, `range.ts` ✗
+- `src/engine/combat/v2/*` ✗
+- `src/engine/sim/applyAction.ts` ✗
+- `src/engine/los/*` ✗
+- `src/engine/terrain/**` ✗
+- `supabase/functions/resolve_action/**`, `engine-port/**`, `start_battle/**` ✗
+- Migrations ≥ 035 et ≤ 041 (réservées Track A) ✗
+
+### Fichiers livrés (Track B uniquement)
+
+**Créés (5)** :
+- `supabase/migrations/042_unit_multi_hex.sql`
+- `src/engine/units/positions.ts`
+- `src/engine/units/__tests__/positions.test.ts`
+- `src/render/units/UnitLabel.tsx`
+- `src/render/units/UnitFigurines.tsx`
+
+**Modifiés (8)** :
+- `src/engine/units/types.ts` v2.1
+- `src/engine/units/index.ts` v2.1
+- `src/engine/zoc/zoc.ts` v1.1 + tests v1.1
+- `src/render/types.ts` v2.3
+- `src/render/_data/unitAdapter.ts` v1.4
+- `src/render/units/UnitPlaceholder.tsx` v2.31
+- `src/hooks/useTacticalSelection.ts` v1.16
+- `docs/WIP.md` (cette entrée)
+
+### Suite Track B (après synchro Track A)
+
+Quand Track A merge sa branche terrain (lots 5.0-5.5) :
+- Rebase `phase-5-track-b-multihex` sur main.
+- Reprendre TASK 5.6.4 (mouvement bloc rigide), 5.6.5 (combat multi-hex), 5.6.8 (EF mirror Deno), 5.6.9 (IA).
+
+---
+
 ## Session 26 &mdash; 17/05/2026 &mdash; Phase 4-bis Lot 2 : lookahead minimax 2→3 ply
 
 **But** : remplacer l'IA 1-ply greedy actuelle par un minimax avec élagage α-β et iterative deepening, pour que le bot anticipe la réponse adverse au lieu de tomber dans les pièges évidents (attaque qui se fait ripost-tuer, déplacement qui s'expose).
