@@ -1,7 +1,7 @@
+// v2.3 (21/05/2026) — Phase 5 Lot 5.0 : GameStateV1.tactical.metersPerHex + hexMapId (echelle hex variable)
 // v2.2 (11/05/2026) — Phase 2.6 Vague B : ActionType etendu break_combat + payload + error codes engagement
 // v2.1 (11/05/2026) — Phase 2.5 B : ActionType etendu retreat/surrender/suicide_attack + payloads + error codes cohésion
 // v2.0 (10/05/2026) — Phase 2 2C.2 : ActionType etendu split_unit/merge_unit + AttackResultV2 + payloads + error codes
-// v1.2 (09/05/2026) — Phase 1 L1B.4a : ajout AttackPayload/Result + EndTurn* + INVALID_TARGET, GAME_FINISHED
 
 export type Team = 'blue' | 'red'
 export type UnitKind = 'I' | 'C' | 'A'
@@ -19,6 +19,14 @@ export interface GameStateV1 {
   tactical: {
     phase: TacticalPhase
     boardRadius: number
+    /**
+     * Phase 5 Lot 5.0 — echelle metrique d'un hex en metres.
+     * Lu depuis hex_maps.meters_per_hex au start_battle si games.hex_map_id non-null,
+     * sinon fallback 50 (medieval serre, MVP). Override le SCALE_CONFIG.tactical client.
+     */
+    metersPerHex?: number
+    /** Phase 5 Lot 5.0 — reference au template de carte (NULL = scenario legacy MVP). */
+    hexMapId?: string | null
     currentTurn: number
     activeTeam: Team
     scenarioId: string
@@ -52,6 +60,9 @@ export type ActionType =
   | 'suicide_attack'
   // Phase 2.6 — rupture volontaire d'engagement persistant
   | 'break_combat'
+  // Phase 2.6 — menu post-charge cavalerie (Rester en mêlée / Replier 1 hex)
+  | 'charge_stay'
+  | 'charge_retreat'
 
 export interface MovePayload {
   unit_id: string
@@ -93,6 +104,37 @@ export interface ResolveActionBody {
 export interface AttackPayload {
   unit_id: string         // attacker
   target_unit_id: string  // defender
+  /**
+   * Phase 2.6 refonte — pré-move atomique. Si fourni, le serveur effectue
+   * d'abord l'UPDATE move (q, r, last_move_path, has_moved=true) PUIS l'attack
+   * standard. Une seule transaction. Permet :
+   *  - Cav : charge atomique avec last_move_path → isChargeApplicable détecte
+   *    auto le bonus si path droit ≥ 2.
+   *  - Inf : auto-march + mêlée standard.
+   *  - Art : auto-position + tir depuis la nouvelle case (LoS validée serveur).
+   *
+   * Si `move_dest` absent : comportement legacy (attaque depuis position
+   * courante uniquement, doit être à portée ou adjacent).
+   */
+  move_dest?: { q: number; r: number }
+  /**
+   * Path explicite calculé client via findAttackPosition. Le serveur le
+   * re-calcule via aStar pour validation anti-cheat ; en cas de mismatch
+   * (e.g. blocker apparu entre-temps), refuse l'action.
+   */
+  move_path?: ReadonlyArray<{ q: number; r: number; s: number }>
+  /**
+   * Phase 2.6 UX existant — préservé pour compat fire orders bot. Quand le
+   * client humain n'envoie pas d'intent, le serveur peut set pending_post_charge.
+   *  - `stay` / `retreat` : auto-résolution post-charge (legacy popup, désormais
+   *    inutilisé côté client humain mais utile pour bots).
+   *  - `skip_charge` : force phase='melee' (désactive le bonus même si path
+   *    éligible). No-op côté client moderne mais conservé pour rétrocompat.
+   */
+  charge_intent?: {
+    post_charge: 'stay' | 'retreat' | 'skip_charge'
+    retreat_dest?: { q: number; r: number }
+  }
 }
 
 /** Resultat brut engine, dupliqué cote client (engine/combat/types).
@@ -323,6 +365,45 @@ export interface BreakCombatPayload {
   unit_id: string
 }
 
+/**
+ * Phase 2.6 — Menu post-charge cavalerie.
+ *
+ * Après une charge réussie où le défenseur survit, la cavalerie a
+ * `pending_post_charge_target_id` non-null. Le joueur doit choisir :
+ *  - `charge_stay`    : créer l'engagement avec from_charge=true (malus
+ *                        defense ×0.8 + attrition ×1.3 côté cavalerie).
+ *  - `charge_retreat` : déplacer la cavalerie d'1 hex adjacent libre,
+ *                        pas d'engagement créé.
+ *
+ * Les deux handlers clear `pending_post_charge_target_id`.
+ */
+export interface ChargeStayPayload {
+  unit_id: string
+}
+
+export interface ChargeRetreatPayload {
+  unit_id: string
+  dest_q: number
+  dest_r: number
+}
+
+export interface ChargeStayResultSnapshot {
+  unit_id: string
+  engagement: EngagementSnapshot
+}
+
+export interface ChargeRetreatResultSnapshot {
+  unit_id: string
+  from: { q: number; r: number }
+  to: { q: number; r: number }
+  snapshot: {
+    unit_id: string
+    q: number
+    r: number
+    has_moved: boolean
+  }
+}
+
 // ----------------------------------------------------------------------------
 // Phase 3.2 — Pré-postures / ordres conditionnels (table unit_orders, EF submit_orders)
 // ----------------------------------------------------------------------------
@@ -420,6 +501,8 @@ export interface EngagementSnapshot {
   unit_a_id: string
   unit_b_id: string
   started_turn: number
+  /** Phase 2.6 — true si engagement créé via charge_stay (malus cav active). */
+  from_charge?: boolean
 }
 
 // ----------------------------------------------------------------------------
@@ -532,6 +615,8 @@ export const ERROR_CODES = {
   SUICIDE_CAMP_TOO_LOW: 'SUICIDE_CAMP_TOO_LOW',
   // Phase 2.6 — engagement persistant
   NOT_ENGAGED: 'NOT_ENGAGED',
+  NO_PENDING_POST_CHARGE: 'NO_PENDING_POST_CHARGE',
+  RETREAT_DEST_TOO_CLOSE: 'RETREAT_DEST_TOO_CLOSE',
   // Phase 3.2 — pré-postures / ordres conditionnels
   ORDERS_LIMIT_EXCEEDED: 'ORDERS_LIMIT_EXCEEDED',
   INVALID_TRIGGER: 'INVALID_TRIGGER',

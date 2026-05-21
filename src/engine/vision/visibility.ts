@@ -19,13 +19,26 @@ const LEVEL_RANK: Record<VisibilityLevel, number> = { hidden: 0, spotted: 1, ide
 
 /**
  * Recompose le Set des positions occupées (cubeKey) par les autres unités.
- * Sert de blockers à `hasLineOfSight`. Convention Phase 1.5 (piège #15) :
- * alliées ET ennemies bloquent.
+ * Sert de blockers à `hasLineOfSight`.
+ *
+ * v2 (16/05/2026) — Convention révisée : seules les unités ENNEMIES (team
+ * différente de `viewerTeam` si fourni) bloquent la LoS pour la fog of war.
+ * Les alliés communiquent / coordonnent leur observation, ils ne bloquent pas
+ * la vision collective de l'équipe. Si `viewerTeam` non fourni → comportement
+ * legacy (toutes les units bloquent, pour combat ranged où alliés peuvent
+ * théoriquement bloquer un tir).
+ *
+ * Mirror de migration 028 côté serveur.
  */
-function buildBlockers(allUnits: ReadonlyArray<UnitState>, exclude: ReadonlySet<string>): Set<string> {
+function buildBlockers(
+  allUnits: ReadonlyArray<UnitState>,
+  exclude: ReadonlySet<string>,
+  viewerTeam?: Team,
+): Set<string> {
   const blockers = new Set<string>()
   for (const u of allUnits) {
     if (exclude.has(u.id)) continue
+    if (viewerTeam && u.team === viewerTeam) continue
     blockers.add(cubeKey(u.position))
   }
   return blockers
@@ -48,8 +61,9 @@ export function visibleHexesFromUnit(
   const vision = stats.vision
   if (vision <= 0) return visible
 
-  // Blockers = toutes les unités sauf l'observateur lui-même.
-  const blockers = buildBlockers(allUnits, new Set([unit.id]))
+  // Blockers = unités ennemies sauf l'observateur lui-même. Les alliés ne
+  // bloquent pas la vision collective de l'équipe (v028).
+  const blockers = buildBlockers(allUnits, new Set([unit.id]), unit.team)
 
   // spiral inclut le centre + tous les hex à distance ≤ vision.
   const candidates = spiral(unit.position, vision)
@@ -118,9 +132,9 @@ export function visibleEnemiesFromTeam(
       const obsVision = getUnitStatsV2(obs.kind).vision
       if (dist > obsVision) continue
 
-      // LoS : blockers = toutes les unités sauf l'observateur et la cible (cohérent
-      // avec useTacticalSelection.targetableUnitIds et engine combat).
-      const blockers = buildBlockers(allUnits, new Set([obs.id, enemy.id]))
+      // LoS fog : blockers = unités ennemies (team ≠ viewer) sauf observateur
+      // et cible. Les alliés ne bloquent pas (v028 — mirror SQL is_unit_visible).
+      const blockers = buildBlockers(allUnits, new Set([obs.id, enemy.id]), team)
       if (!hasLineOfSight(obs.position, enemy.position, blockers)) continue
 
       const candidate: VisibilityLevel = dist <= Math.floor(obsVision / 2) ? 'identified' : 'spotted'

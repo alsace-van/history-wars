@@ -1,3 +1,12 @@
+// v1.9 (16/05/2026) — fix hit-and-run : retreat post-charge exécuté même si
+//   defenderKilled (la cav doit pouvoir se replier après avoir achevé l'ennemi —
+//   c'est le sens tactique du hit-and-run historique). Skip validDirection
+//   quand defender supprimé. attackerKilled reste un blocker (pas d'attacker
+//   à déplacer).
+// v1.8 (16/05/2026) — Phase 2.6 UX pré-commit : retreat radius étendu de 1 à 3 hex (charge_intent.retreat_dest)
+// v1.7 (16/05/2026) — Phase 2.6 refonte : pré-move atomique si payload.move_path fourni (auto-charge cav + auto-march inf + auto-position art)
+// v1.6 (16/05/2026) — Phase 2.6 UX : payload.charge_intent → résout charge_stay/retreat direct (skip pending modal)
+// v1.5 (16/05/2026) — Phase 2.6 : charge cav non-mortelle → set pending_post_charge_target_id (menu Rester/Replier)
 // v1.4 (14/05/2026) — Phase 3.3 : lookup hold posture pour bonus défensif (attaquant + défenseur)
 // v1.3 (14/05/2026) — Phase 3.3 : skip LoS si attacker.arcedTrajectory (obusier tire par-dessus les unités)
 // v1.2 (11/05/2026) — Phase 2.6 Vague B : INSERT engagement après mêlée non-mortelle
@@ -23,7 +32,36 @@ import type { CombatConfig } from '../../_shared/engine-port/combat/v2/types.ts'
 import type { TerrainType } from '../../_shared/engine-port/terrain/index.ts'
 import type { Cube } from '../../_shared/engine-port/hex/index.ts'
 
-const TAG = '[handleAttack v1.4]'
+const TAG = '[handleAttack v1.8]'
+
+/**
+ * Phase 2.6 refonte — valide un move_path fourni par le client (pré-move atomique).
+ * Vérifie : path[0]==start, path[N-1]==goal, chaque pas adjacent, pas de blocker
+ * sauf goal, longueur ≤ movement budget. Skip ZoC (trust client : engine ZoC déjà
+ * appliquée client-side, faible risque cheat MVP).
+ *
+ * Retourne `null` si valide, sinon un message d'erreur descriptif.
+ */
+function validateMovePath(
+  start: Cube,
+  goal: Cube,
+  path: ReadonlyArray<Cube>,
+  blockers: ReadonlySet<string>,
+  movement: number,
+): string | null {
+  if (path.length < 2) return 'move_path must have at least start + goal'
+  if (path[0].q !== start.q || path[0].r !== start.r) return 'move_path[0] != attacker position'
+  const last = path[path.length - 1]
+  if (last.q !== goal.q || last.r !== goal.r) return 'move_path last hex != move_dest'
+  if (path.length - 1 > movement) return `move_path length ${path.length - 1} > movement ${movement}`
+  for (let i = 1; i < path.length; i++) {
+    const prev = path[i - 1]
+    const cur = path[i]
+    if (cubeDistance(prev, cur) !== 1) return `move_path step ${i} not adjacent`
+    if (blockers.has(cubeKey(cur))) return `move_path step ${i} hits blocker`
+  }
+  return null
+}
 
 /** Phase 3.3 — lookup ordre priority=1 actif kind='hold' pour un pion (stance défensive). */
 // deno-lint-ignore no-explicit-any
@@ -46,6 +84,8 @@ export interface HandleAttackArgs {
   userId: string
   userTeam: Team
   currentTurn: number
+  /** Phase 2.6 UX : rayon du plateau pour valider charge_intent.retreat_dest. */
+  boardRadius: number
   units: UnitRow[]
   terrainMap: Map<string, TerrainType>
   combatConfig: CombatConfig
@@ -56,7 +96,7 @@ export interface HandleAttackArgs {
 }
 
 export async function handleAttack(args: HandleAttackArgs): Promise<Response> {
-  const { admin, gameId, userId, userTeam, currentTurn, units, terrainMap, combatConfig, clientActionId, kindRequested, payload } = args
+  const { admin, gameId, userId, userTeam, currentTurn, boardRadius, units, terrainMap, combatConfig, clientActionId, kindRequested, payload } = args
 
   if (!payload || typeof payload.unit_id !== 'string' || typeof payload.target_unit_id !== 'string') {
     return errorResponse(ERROR_CODES.INVALID_PAYLOAD, 'expected { unit_id, target_unit_id }', 400)
@@ -80,10 +120,65 @@ export async function handleAttack(args: HandleAttackArgs): Promise<Response> {
     return errorResponse(ERROR_CODES.INVALID_PAYLOAD, 'cannot attack ally (friendly fire)', 400)
   }
 
+  const stats = resolveUnitStatsV2(attackerRow.kind, attackerRow.sub_kind ?? undefined)
+
+  // Phase 2.6 refonte — pré-move atomique. Si payload.move_path fourni, on
+  // applique d'abord le déplacement de l'attaquant (UPDATE units q,r,
+  // last_move_path, has_moved) puis on continue avec l'attaque depuis la
+  // nouvelle position. Une seule transaction, idéal pour auto-charge cav +
+  // auto-march inf + auto-position art.
+  if (payload.move_dest && payload.move_path && payload.move_path.length > 0) {
+    if (attackerRow.has_moved) {
+      return errorResponse(ERROR_CODES.ALREADY_MOVED, 'attacker has already moved this turn', 400)
+    }
+    const startCube = cube(attackerRow.q, attackerRow.r)
+    const goalCube = cube(payload.move_dest.q, payload.move_dest.r)
+    const pathCubes: Cube[] = payload.move_path.map(p => ({ q: p.q, r: p.r, s: -p.q - p.r }))
+
+    // Blockers = positions des autres unités (le défenseur compte aussi : on
+    // s'arrête à 1 hex de lui pour la mêlée, pas dessus). Goal autorisé.
+    const moveBlockers = new Set<string>()
+    for (const u of units) {
+      if (u.id === attackerId) continue
+      moveBlockers.add(cubeKey(cube(u.q, u.r)))
+    }
+
+    const validationErr = validateMovePath(startCube, goalCube, pathCubes, moveBlockers, stats.movement)
+    if (validationErr) {
+      return errorResponse(ERROR_CODES.INVALID_MOVE, validationErr, 400)
+    }
+
+    // Validation in-board (rayon plateau).
+    if (cubeDistance(goalCube, cube(0, 0)) > boardRadius) {
+      return errorResponse(ERROR_CODES.OUT_OF_BOARD, 'move_dest beyond boardRadius', 400)
+    }
+
+    // UPDATE units : nouvelle position + last_move_path + has_moved.
+    const { error: moveErr } = await admin.from('units').update({
+      q: goalCube.q,
+      r: goalCube.r,
+      last_move_path: pathCubes.map(c => ({ q: c.q, r: c.r, s: c.s })),
+      has_moved: true,
+    }).eq('id', attackerId).eq('game_id', gameId)
+    if (moveErr) {
+      if (moveErr.code === '23505') {
+        return errorResponse(ERROR_CODES.TARGET_OCCUPIED, 'move_dest just got occupied (race)', 400)
+      }
+      console.error(`${TAG} pre-move update failed:`, moveErr.message)
+      return errorResponse(ERROR_CODES.INTERNAL, `pre-move failed: ${moveErr.message}`, 500)
+    }
+
+    // Patch l'attackerRow en mémoire pour que tout le code aval voit la
+    // nouvelle position (notamment buildUnitState → lastMovePath → isChargeApplicable).
+    attackerRow.q = goalCube.q
+    attackerRow.r = goalCube.r
+    attackerRow.has_moved = true
+    attackerRow.last_move_path = pathCubes.map(c => ({ q: c.q, r: c.r, s: c.s }))
+  }
+
   const attackerPos = cube(attackerRow.q, attackerRow.r)
   const defenderPos = cube(defenderRow.q, defenderRow.r)
   const distance = cubeDistance(attackerPos, defenderPos)
-  const stats = resolveUnitStatsV2(attackerRow.kind, attackerRow.sub_kind ?? undefined)
 
   if (kindRequested === 'melee') {
     if (distance !== 1) {
@@ -110,8 +205,14 @@ export async function handleAttack(args: HandleAttackArgs): Promise<Response> {
     }
   }
 
-  // UnitState v2
-  const attacker = buildUnitState(attackerRow)
+  // UnitState v2.
+  // Phase 2.6 UX — si charge_intent.skip_charge, on strip lastMovePath de
+  // l'attaquant *en mémoire* (la BDD reste intacte). Conséquence : resolveCombat
+  // ne détecte plus de charge éligible → phase='melee' standard, pas de bonus.
+  let attacker = buildUnitState(attackerRow)
+  if (payload.charge_intent?.post_charge === 'skip_charge') {
+    attacker = { ...attacker, lastMovePath: undefined }
+  }
   const defender = buildUnitState(defenderRow)
 
   // Phase 2.5 — check cohésion attaquant : Brisé ne peut pas attaquer (sauf suicide_attack).
@@ -328,6 +429,84 @@ export async function handleAttack(args: HandleAttackArgs): Promise<Response> {
       defenderId,
       currentTurn,
     })
+  }
+
+  // Phase 2.6 — charge cav ponctuelle : si phase='charge' ET attaquant survit.
+  // v1.6 UX : si le client a fourni `charge_intent` dans le payload (mini popup
+  // pré-commit), on résout direct selon le choix. Sinon, fallback legacy :
+  // set `pending_post_charge_target_id` qui ouvre la modale côté client.
+  // v1.9 : le retreat hit-and-run s'exécute MÊME si defenderKilled (la cav
+  // doit pouvoir se retirer après avoir achevé l'ennemi). attackerKilled reste
+  // un blocker (pas d'attaquant à déplacer).
+  if (combat.attackPhase === 'charge' && !attackerKilled) {
+    const intent = payload.charge_intent
+    if (intent?.post_charge === 'stay') {
+      // Rester en mêlée : engagement immédiat avec from_charge=true.
+      // Si defenderKilled : pas d'engagement possible (pas de cible) → no-op.
+      if (!defenderKilled) {
+        await createEngagementAfterMelee({
+          admin, gameId, attackerId, defenderId, currentTurn, fromCharge: true,
+        })
+      }
+    } else if (intent?.post_charge === 'retreat' && intent.retreat_dest) {
+      // Replier 1-3 hex : déplace la cavalerie. Validation defensive (in-board,
+      // distance ≤ 3, libre, ne se rapproche pas du défenseur — sinon fallback stay).
+      const destQ = intent.retreat_dest.q
+      const destR = intent.retreat_dest.r
+      const origin = cube(attackerRow.q, attackerRow.r)
+      const dest = cube(destQ, destR)
+      const occupied = units.some(u => u.id !== attackerId && u.q === destQ && u.r === destR)
+      // v1.8 (16/05/2026) — retreat radius étendu à 3 (au lieu de 1) pour
+      // donner une vraie zone de retraite (feedback user pré-commit UX).
+      const validAdjacent = cubeDistance(origin, dest) >= 1 && cubeDistance(origin, dest) <= 3
+      const validBoard = cubeDistance(dest, cube(0, 0)) <= boardRadius
+      // v1.9 : si defenderKilled, defenderRow.q/r reflète encore la position
+      // d'avant suppression (la row est en mémoire, pas re-fetched). On peut
+      // l'utiliser pour validDirection. Si jamais defenderRow n'existait pas
+      // (ne devrait pas arriver), on skip le check directionnel.
+      const defenderPos = cube(defenderRow.q, defenderRow.r)
+      const distBefore = cubeDistance(origin, defenderPos)
+      const distAfter = cubeDistance(dest, defenderPos)
+      const validDirection = distAfter >= distBefore
+
+      if (validAdjacent && validBoard && !occupied && validDirection) {
+        const { error: moveErr } = await admin
+          .from('units')
+          .update({ q: destQ, r: destR, last_move_path: null })
+          .eq('id', attackerId)
+          .eq('game_id', gameId)
+        if (moveErr) {
+          console.warn(`${TAG} charge_intent retreat update failed:`, moveErr.message)
+          // Fallback : si le déplacement échoue ET défenseur vivant, on retombe
+          // sur stay (engagement). Si défenseur mort, no-op (cav reste à landing).
+          if (!defenderKilled) {
+            await createEngagementAfterMelee({
+              admin, gameId, attackerId, defenderId, currentTurn, fromCharge: true,
+            })
+          }
+        }
+        // Sinon : pas d'engagement (la cav s'éloigne), aucun pending. Done.
+      } else {
+        // Intent invalide → fallback stay (mieux que pending modal pour UX fluide).
+        // Si defenderKilled, pas d'engagement possible → cav reste sur landing.
+        console.warn(`${TAG} charge_intent retreat invalid (adj=${validAdjacent} board=${validBoard} occupied=${occupied} dir=${validDirection}), fallback ${defenderKilled ? 'stay-at-landing' : 'engagement'}`)
+        if (!defenderKilled) {
+          await createEngagementAfterMelee({
+            admin, gameId, attackerId, defenderId, currentTurn, fromCharge: true,
+          })
+        }
+      }
+    } else if (!defenderKilled) {
+      // Pas d'intent fourni → legacy fallback : set pending (modale s'ouvre côté client).
+      // Si defenderKilled, pas de décision pending nécessaire (pas de cible).
+      const { error: pendingErr } = await admin
+        .from('units')
+        .update({ pending_post_charge_target_id: defenderId })
+        .eq('id', attackerId)
+      if (pendingErr) {
+        console.warn(`${TAG} set pending_post_charge_target_id failed:`, pendingErr.message)
+      }
+    }
   }
 
   return jsonResponse({ ok: true, result })

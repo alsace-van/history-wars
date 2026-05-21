@@ -43,6 +43,9 @@ export interface UnitRow {
   regiment_id?: string | null
   formation?: string | null
   last_move_path?: ReadonlyArray<{ q: number; r: number; s: number }> | null
+  /** Phase 2.6 (migration 025) : si non-null, cavalerie en attente du choix
+   *  Rester/Replier après une charge où le défenseur a survécu. */
+  pending_post_charge_target_id?: string | null
 }
 
 /**
@@ -70,6 +73,7 @@ export function unitRowToInstance(row: UnitRow): UnitInstance {
     hasAttacked: row.has_attacked,
     // Phase 3.3 — propage subKind à UnitInstance pour labels + stats résolus UI.
     subKind: row.sub_kind ?? undefined,
+    pendingPostChargeTargetId: row.pending_post_charge_target_id ?? undefined,
   }
 }
 

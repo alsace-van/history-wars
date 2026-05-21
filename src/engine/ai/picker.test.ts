@@ -78,6 +78,27 @@ describe('engine/ai/picker', () => {
     expect(action).not.toBeNull()
   })
 
+  it('lookaheadDepth=2 + medium → délègue à searchBestAction (retourne une action valide)', () => {
+    const me = makeUnit({ id: 'm', kind: 'I', effective: 800 })
+    const enemy = makeUnit({ id: 'e', team: 'red', kind: 'I', effective: 110, effectiveMin: 100, position: cube(1, 0, -1) })
+    const baseCtx = makeCtx([me, enemy], ['e'], 'medium')
+    const ctx: AIContext = { ...baseCtx, lookaheadDepth: 2, deadlineMs: Date.now() + 500 }
+    const action = pickBestActionForUnit(me, ctx)
+    expect(action).not.toBeNull()
+    // Cible faible adjacente : minimax doit converger sur l'attaque.
+    expect(action?.kind).toBe('attack_melee')
+  })
+
+  it('lookaheadDepth=3 + easy → IGNORE le lookahead (reste random top 3)', () => {
+    const me = makeUnit({ id: 'm', kind: 'I', effective: 800 })
+    const enemy = makeUnit({ id: 'e', team: 'red', kind: 'A', effective: 60, effectiveMax: 120, effectiveMin: 30, position: cube(1, 0, -1) })
+    const baseCtx = makeCtx([me, enemy], ['e'], 'easy', 0)
+    const ctx: AIContext = { ...baseCtx, lookaheadDepth: 3, deadlineMs: Date.now() + 500 }
+    const action = pickBestActionForUnit(me, ctx)
+    // Seed 0 → premier des top 3 (greedy 1-ply), pas le résultat de la recherche.
+    expect(action).not.toBeNull()
+  })
+
   it('easy picker = parmi top 3 (déterministe avec seed fixe)', () => {
     const me = makeUnit({ id: 'm', kind: 'I', effective: 800 })
     const enemy = makeUnit({ id: 'e', team: 'red', kind: 'A', effective: 60, effectiveMax: 120, effectiveMin: 30, position: cube(1, 0, -1) })

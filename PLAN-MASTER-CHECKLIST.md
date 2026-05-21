@@ -297,3 +297,18 @@ Prochaine étape : **Vague A engine moral-cohésion** (`engine/cohesion/*` + maj
 1. Tester manuellement une partie complète 2 navigateurs (split/merge/charge cav/saturation terrain/coup de grâce routed).
 2. `npm run build` PWA + Lighthouse score ≥ 90.
 3. Tag git `phase-2-complete` après validation.
+
+---
+
+**Mise à jour 17/05/2026 — session 25** :
+- Phases 2 / 2.5 / 2.6 / 3 / 3.1 / 3.2 / 3.3 / 4 / 4-bis Lot 1 toutes livrées (cf. `docs/WIP.md` sessions 15→24).
+- **Session 25 = stabilisation UX uniquement** (pas de nouvelle phase) :
+  - Phase 2.6 charge cav : flow preview→retreat fluide, hit-and-run même sur kill, pré-move animé.
+  - Polish anim générique : pause impact + lerp proportionnel + facing dynamique calibré par kind.
+  - Détails et limitations : cf. `docs/WIP.md` Session 25.
+
+**Prochaines pistes possibles** (à choisir avec user en début de session 26) :
+1. **Phase 5 — Relief de terrain** (heightmap, biomes, impact sur charge/LoS/movement) — déjà esquissé sur Phase 5 idea, candidat naturel.
+2. **Phase 4-bis Lot 2/3** — autres anti-cheat / hardening backend.
+3. **Phase 8 — Boucle opérationnelle campagne** (cf. backlog).
+4. **Nettoyage code legacy** : supprimer `canCharge.ts`, `usePostChargeChoice.ts`, `handleChargeStay/Retreat.ts` (handlers non consommés par le client moderne). ⚠️ Garder migration 025 (utilisée par handleAttack v1.9). Migration 026 inoffensive mais inutile (peut être laissée). 027 + 028 = équilibrage/UX gardés. **Toutes les migrations 025-028 sont DÉJÀ appliquées prod**, juste à `git add` localement.

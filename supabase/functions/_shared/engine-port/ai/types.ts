@@ -1,3 +1,4 @@
+// v1.1 (17/05/2026) — Phase 4-bis Lot 2 : ajout lookaheadDepth + deadlineMs (opt-in minimax)
 // v1.0 (14/05/2026) — Phase 4 Lot A2 : mirror Deno port src/engine/ai/types.ts
 // PORT FROM src/engine/ai/types.ts — DO NOT EDIT MANUALLY.
 
@@ -26,6 +27,8 @@ export interface AIContext {
   readonly profile: AIProfile
   readonly rng: () => number
   readonly engagedUnitIds: ReadonlySet<UnitId>
+  readonly lookaheadDepth?: number
+  readonly deadlineMs?: number
 }
 
 export interface ScoredAction {

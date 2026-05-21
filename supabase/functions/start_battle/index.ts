@@ -1,6 +1,7 @@
+// v3.0 (21/05/2026) — Phase 5 Lot 5.0 : lit hex_maps.radius + meters_per_hex via games.hex_map_id (fallback MVP)
 // v2.0 (10/05/2026) — Phase 2 2B.5 : seed effective + terrain_tiles plaine_standard sur tout le board
 // v1.0 (09/05/2026) — Phase 1 L1B.2 : EF start_battle
-// Logique : host valide → spawn 6 units (effective Phase 2) + seed terrain → games.status='in_progress' + state.tactical.
+// Logique : host valide → lookup hex_map (Phase 5) → spawn 6 units + seed terrain → games.status='in_progress' + state.tactical.
 
 import { corsHeaders, jsonResponse, errorResponse } from '../_shared/cors.ts'
 import { extractUserFromJWT } from '../_shared/auth.ts'
@@ -68,7 +69,7 @@ Deno.serve(async (req: Request) => {
     // 3. Charger game + verifier host + status lobby
     const { data: game, error: gameErr } = await admin
       .from('games')
-      .select('id, status, scenario_id, created_by')
+      .select('id, status, scenario_id, created_by, hex_map_id')
       .eq('id', gameId)
       .single()
 
@@ -83,6 +84,26 @@ Deno.serve(async (req: Request) => {
     }
     if (!isSupportedScenario(game.scenario_id)) {
       return errorResponse(ERROR_CODES.INVALID_SCENARIO, `scenario ${game.scenario_id} not supported`, 400)
+    }
+
+    // 3-bis. Phase 5 Lot 5.0 — lookup hex_maps si lie. Sinon fallback MVP.
+    // boardRadius prioritaire : hex_maps.radius > DEFAULT_BOARD_RADIUS (7).
+    // metersPerHex prioritaire : hex_maps.meters_per_hex > 50 (medieval serre par defaut).
+    let boardRadius: number = DEFAULT_BOARD_RADIUS
+    let metersPerHex = 50
+    if (game.hex_map_id) {
+      const { data: hexMap, error: hexMapErr } = await admin
+        .from('hex_maps')
+        .select('radius, meters_per_hex')
+        .eq('id', game.hex_map_id)
+        .single()
+      if (hexMapErr || !hexMap) {
+        console.warn('[start_battle v3.0] hex_map_id set but lookup failed:', hexMapErr?.message)
+        // non-bloquant : on continue avec les defauts MVP
+      } else {
+        boardRadius = hexMap.radius ?? DEFAULT_BOARD_RADIUS
+        metersPerHex = hexMap.meters_per_hex ?? 50
+      }
     }
 
     // 4. Players : au moins 2, au moins 1 par equipe.
@@ -138,8 +159,9 @@ Deno.serve(async (req: Request) => {
     }
 
     // 6a-bis. Phase 2 : seed terrain_tiles (defaut plaine_standard pour tout le board)
-    // MVP Phase 2 : terrain monotone. Diversification via scenario JSONB Phase 7.
-    const boardHexes = generateBoardHexes(DEFAULT_BOARD_RADIUS)
+    // Phase 5 Lot 5.0 : boardRadius lu dynamiquement (hex_maps.radius ou fallback).
+    // MVP : terrain monotone plaine. Lot 5.2+ : lecture depuis hex_maps.tiles JSONB.
+    const boardHexes = generateBoardHexes(boardRadius)
     const terrainToInsert = boardHexes.map(h => ({
       game_id: gameId,
       q: h.q,
@@ -153,12 +175,17 @@ Deno.serve(async (req: Request) => {
       return errorResponse(ERROR_CODES.INTERNAL, `terrain insert failed: ${terrainErr.message}`, 500)
     }
 
-    // 6b. Update games.status + state
+    // 6b. Update games.status + state.
+    // Phase 5 Lot 5.0 : boardRadius + metersPerHex + hexMapId persistes au demarrage.
+    // Le snapshot fige les dimensions : modifier hex_maps apres start_battle n'affecte
+    // pas les parties en cours (cohesion + replayabilite).
     const newState: GameStateV1 = {
       version: 1,
       tactical: {
         phase: 'orders',
-        boardRadius: DEFAULT_BOARD_RADIUS,
+        boardRadius,
+        metersPerHex,
+        hexMapId: game.hex_map_id ?? null,
         currentTurn: 1,
         activeTeam: 'blue',
         scenarioId: game.scenario_id,
@@ -187,16 +214,17 @@ Deno.serve(async (req: Request) => {
       turn: 0,
       actor_user_id: user.userId,
       action_type: 'start_battle',
-      payload: { scenarioId: game.scenario_id },
+      payload: { scenarioId: game.scenario_id, hexMapId: game.hex_map_id ?? null },
       result: {
         units_count: unitsToInsert.length,
-        board_radius: DEFAULT_BOARD_RADIUS,
+        board_radius: boardRadius,
+        meters_per_hex: metersPerHex,
         terrain_count: terrainToInsert.length,
       },
       seed: Date.now(),
     })
     if (actionErr) {
-      console.warn('[start_battle v2.0] game_actions log failed:', actionErr.message)
+      console.warn('[start_battle v3.0] game_actions log failed:', actionErr.message)
       // non-bloquant : la partie est lancee, le log est best-effort
     }
 
@@ -208,7 +236,7 @@ Deno.serve(async (req: Request) => {
     })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'unknown error'
-    console.error('[start_battle v2.0] uncaught:', message)
+    console.error('[start_battle v3.0] uncaught:', message)
     return errorResponse(ERROR_CODES.INTERNAL, message, 500)
   }
 })

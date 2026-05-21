@@ -45,12 +45,16 @@ export interface UnitRow {
   regiment_id: string | null
   formation: string | null
   last_move_path: Array<{ q: number; r: number; s: number }> | null
+  // Phase 2.6 (migration 025) : si non-null, cavalerie en attente du choix
+  // Rester/Replier après une charge réussie où le défenseur a survécu.
+  pending_post_charge_target_id: string | null
 }
 
 /** SELECT explicite de toutes les colonnes units Phase 2 (cf. piege #31). */
 export const UNIT_SELECT_COLUMNS =
   'id, game_id, team, kind, q, r, hp, hp_max, wounded, morale, morale_max, routed, has_moved, has_attacked, ' +
-  'effective, effective_max, effective_min, killed, sub_kind, regiment_id, formation, last_move_path'
+  'effective, effective_max, effective_min, killed, sub_kind, regiment_id, formation, last_move_path, ' +
+  'pending_post_charge_target_id'
 
 /**
  * Construit un UnitState (engine-port v2) a partir d'une UnitRow.

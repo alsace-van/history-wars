@@ -1,3 +1,4 @@
+// v1.1 (17/05/2026) — Phase 4-bis Lot 2 : ajout lookaheadDepth + deadlineMs (opt-in minimax)
 // v1.0 (14/05/2026) — Phase 4 Lot A1 : types IA (action enum + context + profile)
 // Frontière engine/ : zéro React, zéro Three, zéro Supabase.
 
@@ -47,6 +48,20 @@ export interface AIContext {
   readonly rng: () => number
   /** Set des unitId engagés (mêlée persistante). Mouvement bloqué tant qu'engagé. */
   readonly engagedUnitIds: ReadonlySet<UnitId>
+  /**
+   * Phase 4-bis Lot 2 — profondeur du lookahead minimax.
+   *  - undefined / 1 → greedy 1 ply (comportement Phase 4 Lot A, easy/medium MVP).
+   *  - 2 → minimax 2 ply (beam étroit, medium par défaut).
+   *  - 3 → minimax 3 ply (beam plus large, hard par défaut).
+   * Si défini, `pickBestActionForUnit` délègue à `searchBestAction` (engine/sim).
+   * Easy ignore ce flag (reste random parmi top 3 pour conserver son caractère).
+   */
+  readonly lookaheadDepth?: number
+  /**
+   * Phase 4-bis Lot 2 — deadline absolue (Date.now() ms). Utilisée par iterative deepening
+   * pour borner le temps total de la recherche. Si undefined : 3500 ms par défaut.
+   */
+  readonly deadlineMs?: number
 }
 
 /** Score interne d'une action candidate (utilisé par picker). */

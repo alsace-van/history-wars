@@ -1,3 +1,4 @@
+// v1.2 (16/05/2026) — Phase 2.6 refonte : suppression PostChargeChoiceModal (remplacé par repli implicite via cases bleues + click cav = stay)
 // v1.0 (11/05/2026) — Phase 2.5 C : regroupement EndGameModal + ShakenAttackConfirm (alléger Game.tsx)
 import type { UnitState } from '@engine/units'
 import type { Team } from '@/types/game'

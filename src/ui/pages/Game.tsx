@@ -1,6 +1,6 @@
+// v3.30 (21/05/2026) — Phase 5 Lot 5.0 : TacticalStateView etendu metersPerHex + hexMapId (lecture state JSONB)
 // v3.29 (14/05/2026) — Phase 3.3 Lot A : useOrderTriggeredToasts câblé (toast owner)
 // v3.28 (13/05/2026) — QW2 session 22 : extraction useEngagementTickFloaters + useCombatHighlight + useCameraFocus (< 600 lignes)
-// v3.27 (13/05/2026) — Phase 3.2-bis : tick floaters + toast "Combat continu (T+N)" pour engagement persistant
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -12,11 +12,19 @@ import { useBattleUnits } from '@hooks/useBattleUnits'
 import { useCombatActions } from '@hooks/useCombatActions'
 import { useTacticalSelection } from '@hooks/useTacticalSelection'
 import { useCombatNotifications } from '@hooks/useCombatNotifications'
+import { useDeferredUnitDisplay } from '@hooks/useDeferredUnitDisplay'
+import { useDeferredEngagements } from '@hooks/useDeferredEngagements'
+import { useTerrainTiles } from '@hooks/useTerrainTiles'
+import { useHexTemplates } from '@hooks/useHexTemplates'
+import { useHexAssets } from '@hooks/useHexAssets'
+import { usePaintMode } from '@hooks/usePaintMode'
+import { PaintModePanel } from '@ui/editor/PaintModePanel'
 import { useCombatAnimator, type DamageFloaterEntry } from '@hooks/useCombatAnimator'
 import { useSettings } from '@hooks/useSettings'
 import { useUnitCriticalActions } from '@hooks/useUnitCriticalActions'
 import { useBattleClickHandlers } from '@hooks/useBattleClickHandlers'
 import { useEngagement } from '@hooks/useEngagement'
+import { useChargePreview } from '@hooks/useChargePreview'
 import { useUnitSizing } from '@hooks/useUnitSizing'
 import { useGameLifecycle } from '@hooks/useGameLifecycle'
 import { useCombatToastFeed } from '@hooks/useCombatToastFeed'
@@ -51,16 +59,22 @@ import { CombatPreviewTooltip } from '@ui/game/CombatPreviewTooltip'
 import { CombatResultPanel } from '@ui/game/CombatResultPanel'
 import { TacticalScene, buildMvpUnitPlacement } from '@/render'
 import { unitRowsToInstances, unitRowsToStates } from '@render/_data/unitAdapter'
+import type { HexTileState } from '@render/types'
 import { spiral, cubeKey, type Cube } from '@engine/hex'
 import { type UnitState, type SplitRatio } from '@engine/units'
 
 // v3.22 : board cubes derives a runtime depuis tactical.boardRadius (cf. useMemo dans le composant).
-// La valeur de fallback ci-dessous sert au rendu pre-bataille (lobby) ou si state encore null.
+// Phase 5 Lot 5.0 : metersPerHex + hexMapId aussi stockes dans state.tactical, lus depuis hex_maps via EF.
+// metersPerHex defaut (50) sera consomme Lot 5.2 (engine terrain).
 const DEFAULT_TACTICAL_RADIUS = 7
 
 interface TacticalStateView {
   phase?: string
   boardRadius?: number
+  /** Phase 5 Lot 5.0 — echelle metrique d'un hex (depuis hex_maps.meters_per_hex via EF). */
+  metersPerHex?: number
+  /** Phase 5 Lot 5.0 — reference au template de carte (NULL = scenario legacy MVP). */
+  hexMapId?: string | null
   currentTurn?: number
   activeTeam?: Team
   scenarioId?: string
@@ -219,6 +233,16 @@ export function Game() {
   // Phase 2.6 C — engagements actifs (table engagements migration 017 + Realtime).
   const { engagements: engagementRows, engagedUnitIds, engagementsByUnit } = useEngagement(gameId, showBattle)
 
+  // Phase 5 Lot 1 — terrain_tiles (fetch + Realtime) pour rendu décors 3D.
+  const { terrainMap, templateMap } = useTerrainTiles(gameId, showBattle)
+  // Phase 5 Lot B.5 : charge la bibliotheque de hex_templates + assets customs pour resoudre
+  // les hex avec template_id applique. Hooks actifs quand la bataille est rendue.
+  const { templates, byId: templatesById } = useHexTemplates(showBattle)
+  const { byId: customAssetsById } = useHexAssets(showBattle)
+  // Phase 5 Lot B.6 : paint mode admin (panel + intercept du clic hex).
+  const paintMode = usePaintMode(gameId)
+  const isAdmin = user?.email === 'alsacevancreation@hotmail.com'
+
   // Phase 3.3 Lot B — map { unit_id → action_kind du priority=1 actif } pour l'icône
   // d'ordre conditionnel sur le pion 3D. RLS filtre côté serveur (mes pions seulement).
   const { activeOrders, refresh: refreshActiveOrders } = useActiveOrdersByUnit({
@@ -254,6 +278,7 @@ export function Game() {
     selectedUnit,
     reachableMap,
     targetableUnitIds,
+    attackTargets,
     tileStates,
     exhaustedUnitIds,
     splitTargetKeys,
@@ -276,6 +301,52 @@ export function Game() {
     visibleTileKeys: inProgress && myTeam ? visibleTileKeys : undefined,
     enemyVisibility: inProgress && myTeam ? enemyVisibility : undefined,
   })
+
+  // v1.2 — useUnitPathAnimation déclaré tôt pour exposer setUnitPaths à
+  // useChargePreview (anim pré-move charge).
+  const { unitPaths, setUnitPaths, onUnitPathDone } = useUnitPathAnimation()
+
+  // Phase 2.6 UX pré-commit cav — preview avant la charge atomique.
+  const chargePreview = useChargePreview({
+    gameId: gameId ?? null,
+    selectedUnit,
+    unitStates,
+    boardKeys: mvpBoardKeys,
+    submitAction,
+    setUnitPaths,
+    onActionCompleted: () => {
+      clearSelection()
+      // fix retreat cav : refresh la table `units` (position retreat), pas
+      // seulement `games`. Sinon le pion attend l'event Realtime (souvent
+      // dédupliqué par Supabase entre 3 UPDATEs successifs) et ne bouge
+      // qu'au prochain refreshUnits forcé par le changement de tour.
+      void refreshUnits()
+      void refresh()
+    },
+  })
+
+  // Override tileStates si preview active : seules les cases de repli sont visibles.
+  const finalTileStates = useMemo(() => {
+    if (!chargePreview.preview) return tileStates
+    const map = new Map<string, HexTileState>()
+    for (const k of chargePreview.preview.retreatKeys) {
+      map.set(k, 'retreat-target')
+    }
+    return map
+  }, [chargePreview.preview, tileStates])
+
+  // Phase 2.6 refonte — injecte attackHint dans chaque UnitInstance ennemie en
+  // fonction du résultat findAttackPosition. UnitPlaceholder s'en sert pour
+  // rendre un anneau coloré au-dessus du pion (charge = orange, march = ambre,
+  // march-fire = violet, melee = rouge sombre).
+  const renderUnitsWithAttackHint = useMemo(() => {
+    if (attackTargets.size === 0) return renderUnitsEnriched
+    return renderUnitsEnriched.map(u => {
+      const target = attackTargets.get(u.id)
+      if (!target) return u
+      return { ...u, attackHint: target.hint }
+    })
+  }, [renderUnitsEnriched, attackTargets])
 
   const critical = useUnitCriticalActions({
     gameId: gameId ?? null,
@@ -343,14 +414,39 @@ export function Game() {
   const inspectedEnemyCohesion = inspectedEnemy ? cohesionStateMap.get(inspectedEnemy.id) : undefined
 
   // ---- Notifications combat en onglets (cf piège #52) ----
-  const { notifications: combatNotifs, removeNotification: removeCombatNotif, clear: clearCombatNotifs } =
+  const { notifications: combatNotifs, removeNotification: removeCombatNotif, clear: clearCombatNotifs, pendingDefenderIds, pendingAttackerIds } =
     useCombatNotifications({
       gameId: gameId ?? null,
       viewerTeam: showBattle ? myTeam : null,
       enabled: showBattle,
       playerTeams,
       units: unitStates,
+      // v2.6 — diffère l'affichage des points/journal jusqu'à la fin de l'anim attaquant.
+      unitPaths,
     })
+
+  // v2.6 — Union attaquants + défenseurs gelés pour le rendu :
+  //  - Défenseur : freeze shrink/disparition (peut perdre des hommes ou être tué)
+  //  - Attaquant : freeze shrink (peut perdre des hommes en riposte) + engagements
+  const pendingCombatUnitIds = useMemo(() => {
+    const s = new Set<string>(pendingDefenderIds)
+    for (const id of pendingAttackerIds) s.add(id)
+    return s
+  }, [pendingDefenderIds, pendingAttackerIds])
+
+  // v2.6 — freeze visuel des unités en combat pending : shrink + disparition.
+  const renderUnitsForScene = useDeferredUnitDisplay(renderUnitsWithAttackHint, pendingCombatUnitIds)
+
+  // v2.6 — filtre les engagements impliquant une unité en combat pending : pas
+  // d'affichage de la ligne d'engagement ni du badge "T+N" avant fin d'anim.
+  const deferredEngagementRows = useDeferredEngagements(engagementRows, pendingCombatUnitIds)
+  // Ids des engagements à afficher actuellement (pour filtrer enginePairs côté rendu).
+  const deferredEngagementIds = useMemo(() => {
+    const s = new Set<string>()
+    for (const e of deferredEngagementRows) s.add(e.id)
+    return s
+  }, [deferredEngagementRows])
+
 
   // Phase 3.3 Lot A — toast "Ordre déclenché" côté owner (privacy filter via actor_user_id).
   useOrderTriggeredToasts({
@@ -388,7 +484,10 @@ export function Game() {
     handleSceneMouseMove, handleUnitPointerOver, handleUnitPointerOut,
   } = useEnemyHoverTooltip({ unitStates, targetableUnitIds })
 
-  const { unitPaths, setUnitPaths, onUnitPathDone } = useUnitPathAnimation()
+  // Ref toujours à jour de la position souris (consommée par useBattleClickHandlers
+  // pour positionner ChargeChoicePopup au pointeur sans subir le retard de re-render).
+  const mousePosRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
+  mousePosRef.current = mousePos
 
   // Phase 2.5 C — handlers click extraits dans useBattleClickHandlers (alléger Game.tsx)
   const { handleUnitClick, handleTileClick, handleShakenConfirm } = useBattleClickHandlers({
@@ -436,6 +535,17 @@ export function Game() {
       orderRetreatPickCallbackRef.current = null
       setOrderRetreatPickMode(false)
     },
+    // Phase 2.6 refonte — attackTargets (auto-move + attack atomique).
+    attackTargets,
+    // Phase 2.6 refonte — post-charge cav : repli implicite (cases bleues +
+    // click cav = stay + click ailleurs = stay).
+    // Phase 2.6 UX pré-commit cav — preview avant charge atomique.
+    chargePreviewTargetId: chargePreview.preview?.targetId ?? null,
+    chargePreviewRetreatKeys: chargePreview.preview?.retreatKeys,
+    openChargePreview: chargePreview.openPreview,
+    commitChargeStay: chargePreview.commitStay,
+    commitChargeRetreat: chargePreview.commitRetreat,
+    cancelChargePreview: chargePreview.cancel,
   })
 
   const { handleLeave, handleKick, handleStartBattle, handleEndTurn, handleBreakCombat } = useGameLifecycle({
@@ -446,6 +556,17 @@ export function Game() {
     selectedUnit, engagedUnitIds, navigate,
     onEndTurnSuccess: handleEndTurnSuccess,
   })
+
+  // Phase 2.6 — bloque end_turn tant qu'une décision post-charge cav est en attente.
+  // La cavalerie reste figée (champ pending_post_charge_target_id non-null en BDD),
+  // donc autoriser end_turn laisserait un état serveur incohérent au prochain tour.
+  const handleEndTurnGuarded = useCallback(async () => {
+    if (chargePreview.blockEndTurn) {
+      toast.error('Décision charge en attente : clique l\'ennemi (rester) ou une case bleue (replier).')
+      return
+    }
+    await handleEndTurn()
+  }, [chargePreview.blockEndTurn, handleEndTurn])
 
   // Modal de fin : ouverte automatiquement sur status='finished',
   // refermable une fois (l'utilisateur peut rester sur le plateau pour debriefer).
@@ -565,9 +686,9 @@ export function Game() {
             <TacticalScene
               scale={game.current_scale}
               cubes={mvpCubes}
-              units={renderUnitsEnriched}
+              units={renderUnitsForScene as typeof renderUnitsWithAttackHint}
               viewerTeam={showBattle ? myTeam : null}
-              tileStates={showBattle ? tileStates : undefined}
+              tileStates={showBattle ? finalTileStates : undefined}
               selectedUnitId={selectedUnitId}
               targetableUnitIds={showBattle ? targetableUnitIds : undefined}
               mergeTargetUnitIds={showBattle ? mergeTargetUnitIds : undefined}
@@ -576,7 +697,19 @@ export function Game() {
               cameraFocusCube={cameraFocusCube}
               unitPaths={showBattle ? unitPaths : undefined}
               onUnitPathDone={onUnitPathDone}
-              onTileClick={showBattle ? handleTileClick : undefined}
+              onTileClick={
+                showBattle
+                  ? (cube: Cube) => {
+                      // Phase 5 Lot B.6 : si paint mode actif, le clic peint l'hex au lieu de
+                      // declencher la logique gameplay (selection unite, mouvement, etc.).
+                      if (paintMode.active) {
+                        void paintMode.apply(cube)
+                        return
+                      }
+                      handleTileClick(cube)
+                    }
+                  : undefined
+              }
               onUnitClick={showBattle ? handleUnitClick : undefined}
               onUnitPointerOver={showBattle ? handleUnitPointerOver : undefined}
               onUnitPointerOut={showBattle ? handleUnitPointerOut : undefined}
@@ -585,10 +718,23 @@ export function Game() {
               onDamageFloaterDone={removeFloater}
               cohesionStateMap={showBattle ? cohesionStateMap : undefined}
               supportMap={showBattle ? supportMap : undefined}
-              engagements={showBattle ? enginePairs : undefined}
-              tileVisibility={inProgress && myTeam ? visibleTileMap : undefined}
+              engagements={showBattle ? enginePairs.filter(p => deferredEngagementIds.has(p.id)) : undefined}
+              tileVisibility={
+                // Phase 5 Lot B.6 : admin en paint mode bypass le fog (tous hex cliquables).
+                inProgress && myTeam && !(isAdmin && paintMode.active)
+                  ? visibleTileMap
+                  : undefined
+              }
               enemyVisibility={inProgress && myTeam ? enemyVisibility : undefined}
+              terrainMap={showBattle ? terrainMap : undefined}
+              templateMap={showBattle ? templateMap : undefined}
+              templatesById={showBattle ? templatesById : undefined}
+              customAssetsById={showBattle ? customAssetsById : undefined}
             />
+            {/* Phase 5 Lot B.6 : panneau paint mode admin (flottant en bas-gauche). */}
+            {showBattle && isAdmin && (
+              <PaintModePanel templates={templates} paintMode={paintMode} />
+            )}
             {combatPanelOpen && (
               <CombatResultPanel
                 notifications={combatNotifs}
@@ -623,7 +769,7 @@ export function Game() {
               busy={busy}
               actionsBusy={actionsBusy}
               onStartBattle={handleStartBattle}
-              onEndTurn={handleEndTurn}
+              onEndTurn={handleEndTurnGuarded}
               onLeave={handleLeave}
             />
           </div>

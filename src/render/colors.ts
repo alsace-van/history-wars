@@ -41,6 +41,10 @@ export const COLORS = {
   unitSelectedRing: 0xef9f27, // amber autour cylindre selectionne
   unitTargetableHalo: 0xff6b6b, // halo rouge si cible attaque (L1C.4)
   unitMergeTargetHalo: 0x60a5fa, // halo bleu cyan si cible fusion (v1.3)
+  // Phase 2.6 refonte — anneaux distincts selon le type d'attaque proposé.
+  unitChargeHalo: 0xf97316,     // orange — cav charge avec bonus
+  unitMarchHalo: 0xfbbf24,      // ambre — inf march OU cav fallback (path non-droit)
+  unitMarchFireHalo: 0xa855f7,  // violet — art auto-position + tir
 
   // Background scene
   sceneBg: 0x0f172a,

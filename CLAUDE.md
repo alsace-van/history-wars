@@ -17,11 +17,12 @@ Architecture 3 niveaux (`tactical | operational | strategic`) — en MVP seul `t
 | Tâche | Fichiers à lire AVANT de coder |
 |---|---|
 | Toute tâche TACTICA | `docs/CLAUDE.md` (conventions strictes) |
-| Vue d'ensemble phases | `PLAN-MASTER-V2.md` |
-| Travail Phase 1 | `PLAN-PHASE-1-FIN-CLAUDE-CODE.md` (TASKs détaillées) |
-| Modif d'un fichier existant | `docs/dependency-map.md` § 3 (impact dépendants) |
-| Bug suspect d'être déjà vu | `docs/CLAUDE.md` § 11 (pièges connus) |
+| **Avant TOUTE modif code** | `docs/dependency-map.md` § 0 TL;DR + § 12 "modifier X, vérifier Y" |
+| Vue d'ensemble phases | `PLAN-MASTER-CHECKLIST.md` |
 | Reprise de session | `docs/WIP.md` (dernière session en tête) |
+| Bug suspect d'être déjà vu | `docs/dependency-map.md` § 10 pièges connus + `docs/CLAUDE.md` § 11 |
+| Hot-path code (combat, click, etc.) | `docs/dependency-map.md` § 11 |
+| Travail Phase 1 (legacy) | `PLAN-PHASE-1-FIN-CLAUDE-CODE.md` |
 | Backlog post-phase | `docs/BACKLOG.md` |
 
 ## 3. Règles critiques (non-négociables)
@@ -86,7 +87,7 @@ Exception : confiance < 95 % AVANT de coder → plan détaillé + questions auto
 
 Ne jamais demander un re-upload si le fichier est accessible via une de ces sources.
 
-## 7. État courant (14/05/2026 — session 24 clôturée)
+## 7. État courant (17/05/2026 — session 26 clôturée)
 
 - Phase 0 → 2.6 ✅ (cf. WIP.md sessions 1-19)
 - Phase 3.1 ✅ fog of war évolué client-side (session 20). Tag `phase-3-1-complete`.
@@ -123,20 +124,36 @@ Ne jamais demander un re-upload si le fichier est accessible via une de ces sour
   - Anti units fantômes : `useEffect refresh units` sur `turn_number` change dans Game.tsx (units ennemies sortant du fog ne reçoivent plus d'UPDATE Realtime).
   - Validé prod : SET LOCAL ROLE authenticated, 5→4 units retournées, red A correctement filtré (LoS bloquée par red I).
   - EFs server-side non affectées (service_role bypass RLS).
-- Phase 4-bis Lot 2 ⬜ lookahead 2-3 ply (minimax léger). Auto end_turn ✅ session 23.
+- **Phase 4-bis Lot 2 ✅** (session 26) — lookahead minimax 2→3 ply avec α-β + iterative deepening :
+  - Nouveau module `src/engine/sim/` (5 fichiers : types, clone, applyAction PUR, evalState, search) + mirror Deno `engine-port/sim/`.
+  - `applyAction` reproduit `applyBotAction` EF sans toucher la DB → simulation in-memory possible.
+  - `pickBestActionForUnit` (picker v1.2) délègue à `searchBestAction` si `ctx.lookaheadDepth >= 2` et `profile !== 'easy'`. Fallback 1-ply garanti.
+  - Profils : easy=1 ply (random top 3, inchangé) / medium=2 ply beam N=3 / hard=3 ply beam N=5.
+  - Iterative deepening avec deadline 3.5s par action (EF). Toujours retourne min. l'action 1-ply fallback.
+  - Test winrate dormant (`describe.skip`) : 50 parties hard vs medium, assert hard ≥ 64%.
+  - 381/381 tests verts (+36).
+  - **EF v8 déployée prod** ✅ (session 26, dashboard `abhbkdyoknrsdavimbpr/functions/run_bot_turn`).
 - Phase 5 ⬜ profondeur tactique (formations, fatigue/endurance dédiée, ravitaillement, Infirmier, météo, mode campement Phase 5 = Infirmier amplifie heal).
 - Phases 6-15 ⬜
+- **Session 25 (17/05/2026) ✅** — stabilisation UX charge cav Phase 2.6 + polish anim générique. Bugfix only, pas de nouvelle phase. Détails : `docs/WIP.md` Session 25.
+  - Bug stale preview cav corrigé (`useChargePreview` v1.2 : reset défensif).
+  - Hit-and-run cav fonctionne même si défenseur tué (`handleAttack` v1.9, EF redéployée).
+  - Anim charge + pause impact 700ms + lerp retreat à vitesse kind (`UnitPlaceholder` v2.16).
+  - Facing dynamique vers direction du mouvement avec offset calibré par kind (`UnitPlaceholder` v2.19, `FACING_OFFSET_BY_KIND` ligne ~88).
+  - **À retenir** : tout nouveau GLB ajouté → vérifier visuellement l'orientation, ajuster `FACING_OFFSET_BY_KIND` (valeurs typiques `0`, `π/2`, `π`, `-π/2`).
 
-Prochaine action session 25 :
-1. **Phase 4-bis Lot 2** : lookahead 2-3 ply (minimax léger sur top-N actions, profondeur 2-3, bornage temps EF < 5s).
-2. Possible mesure perf RLS fog (`is_unit_visible` en authenticated context) si lenteur observée côté UI.
-3. Possible Lot B Phase 4 : étendre `AIAction` (charge cav, split/merge, pose d'ordres conditionnels).
+Prochaine action session 27 — à choisir avec user :
+1. **Phase 5 Relief de terrain** (heightmap, biomes, impact charge/LoS/movement) — candidat naturel.
+2. **Lot B Phase 4** étendre `AIAction` (charge cav, split/merge, ordres conditionnels) — exploiter les nouvelles mécaniques Phase 3.3-bis avec le minimax.
+3. **Nettoyage code legacy** : supprimer `canCharge.ts`, `usePostChargeChoice.ts`, `handleChargeStay/Retreat.ts`, migrations 025-028 non appliquées.
+4. **Tuning IA Lot 2** : lancer le winrate test, ajuster `evalState` ou beam widths si hard < 64%.
+5. **Validation visuelle bot hard** : créer partie solo via AddBotButton profil hard, vérifier décisions non-suicidaires + tour < 5s.
 
-EFs prod : `run_bot_turn` v7, `resolve_turn` v6, `resolve_action` v21, `submit_orders` v4, `start_battle` v5. Migrations 021/022/023/024 appliquées.
+EFs prod (17/05/2026) : `run_bot_turn` **v8** (déployée session 26), `resolve_turn` v6, **`resolve_action` v22** (handleAttack v1.9), `submit_orders` v4, `start_battle` v5. **Migrations 001-028 toutes appliquées prod** (025-028 ajoutées 16/05/2026 mais untracked git → `git add` en début de session 27).
 
-Tests : 345/345 verts. Game.tsx ~660 lignes (toujours > 600 limite — dette technique).
+Tests : 381/381 verts (+36 vs session 25). Game.tsx ~666 lignes (dette technique inchangée).
 
-Plan file actif : `~/.claude/plans/toasty-puzzling-beaver.md` (Phase 4 Lot A).
+Plan file actif : `~/.claude/plans/cached-nibbling-wadler.md` (Phase 4-bis Lot 2 — minimax).
 
 Mémoires user : `~/.claude/projects/.../memory/`
 - `ux_tactica_lisibilite.md` — FoW strict, ratios, économie visuelle
