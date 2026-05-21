@@ -38,8 +38,7 @@ import { useCombatHighlight } from '@hooks/useCombatHighlight'
 import { useCameraFocus } from '@hooks/useCameraFocus'
 import { useOrderTriggeredToasts } from '@hooks/useOrderTriggeredToasts'
 import { useActiveOrdersByUnit } from '@hooks/useActiveOrdersByUnit'
-import { useBotAutoTurn } from '@hooks/useBotAutoTurn'
-import { supabase } from '@lib/supabase'
+import { useBotControls } from '@hooks/useBotControls'
 import {
   isHost,
   isPlayerInGame,
@@ -593,53 +592,19 @@ export function Game() {
     void refreshActiveOrders()
   }, [preOrders.orders, refreshActiveOrders])
 
-  // Phase 4 Lot A5 — auto-trigger run_bot_turn quand activeTeam = bot. Host only.
-  // À la fin du tour bot, on auto-bascule via endTurn (resolve_turn v1.6 autorise
-  // un humain à end_turn quand activeTeam contient un bot). Délai 1.2s pour que
-  // l'utilisateur visualise les déplacements du bot avant la bascule.
-  useBotAutoTurn({
+  // Phase 5 Lot 5.0 TASK 5.0.6 — bot controls (auto-turn + addBot) extraits dans useBotControls
+  const { handleAddBot } = useBotControls({
     gameId: gameId ?? null,
-    activeTeam: showBattle ? activeTeam : null,
+    showBattle,
+    activeTeam,
     players: players.map(p => ({ team: p.team, is_bot: p.is_bot })),
     iAmHost,
     currentTurn: tactical?.currentTurn ?? game?.turn_number ?? 0,
-    enabled: showBattle,
-    onBotTurnComplete: () => {
-      if (!gameId) return
-      void refresh()
-      window.setTimeout(() => {
-        void endTurn(gameId).catch((e: unknown) => {
-          console.error('[Game] auto endTurn after bot failed', e)
-        })
-      }, 1200)
-    },
+    blueSlots,
+    redSlots,
+    refresh,
+    endTurn,
   })
-
-  // Phase 4 — handler ajout bot (host uniquement, slot vacant). Insère game_players
-  // is_bot=true avec difficulté choisie. RLS migration 022 autorise.
-  const handleAddBot = useCallback(async (team: Team, difficulty: 'easy' | 'medium' | 'hard') => {
-    if (!gameId) return
-    const teamSlots = team === 'blue' ? blueSlots : redSlots
-    const emptySlot = teamSlots.find(s => s.player === null)
-    if (!emptySlot) {
-      toast.error('Aucun slot vacant pour ajouter un bot')
-      return
-    }
-    const { error } = await supabase.from('game_players').insert({
-      game_id: gameId,
-      user_id: null,
-      team,
-      slot_index: emptySlot.index,
-      role: emptySlot.role,
-      is_bot: true,
-      bot_difficulty: difficulty,
-    })
-    if (error) {
-      toast.error(`Bot impossible : ${error.message}`)
-      return
-    }
-    toast.success(`🤖 Bot ${difficulty} ajouté au camp ${team === 'blue' ? 'bleu' : 'rouge'}`)
-  }, [gameId, blueSlots, redSlots])
 
   if (authLoading || !user || loading || !game) {
     return (
